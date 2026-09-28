@@ -8,6 +8,7 @@
 |---|---|
 | País y proveedores | México; estudios de Chopo y otros laboratorios privados (en su mayoría PDFs digitales) |
 | Perfiles iniciales | Eduardo, Eugenia (esposa), Beatriz (mamá); perfiles adicionales ilimitados. Consentimiento explícito de cada adulto |
+| Usuarios y permisos | Eduardo, Eugenia y Beatriz usan la app con cuenta propia. Cada una ve solo su perfil; solo Eduardo (admin) administra y ve todos. Las dos aceptan de forma explícita que el admin vea sus datos, y pueden exportar o pedir borrar su perfil |
 | Nombre | House (nombre definitivo del producto y del repo) |
 | Corpus inicial | ~30 documentos históricos, casi todos PDF y algunos DICOM; sirven de banco de pruebas |
 | Plataformas | Web instalable (PWA) con cámara para móvil; app nativa queda para después |
@@ -51,7 +52,7 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 ## 4. Usuarios y perfiles
 
 - **Admin (Eduardo):** el único que ve todos los perfiles. Sube, revisa y configura.
-- **Miembro adulto (Eugenia, Beatriz):** ve solo su propio perfil.
+- **Miembro adulto (Eugenia, Beatriz):** usa la app con su propia cuenta y ve solo su propio perfil; nunca ve los de otros. El admin puede ver el suyo, con su consentimiento explícito.
 - **Dependiente (hijos, adultos mayores):** perfil administrado por un adulto. Los rangos de referencia cambian por edad y sexo, y los pediátricos son distintos.
 - Permisos por perfil y compartición temporal con un médico mediante un enlace de solo lectura con expiración.
 
