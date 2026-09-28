@@ -1,4 +1,4 @@
-# Vitalia (nombre de trabajo): Expediente de salud familiar con IA
+# House: Expediente de salud familiar con IA
 
 > Documento de producto v0.1. Uso personal y familiar, no comercial. Autor: PM (Claude) con Eduardo como usuario y stakeholder único.
 
@@ -8,6 +8,7 @@
 |---|---|
 | País y proveedores | México; estudios de Chopo y otros laboratorios privados (en su mayoría PDFs digitales) |
 | Perfiles iniciales | Eduardo, Eugenia (esposa), Beatriz (mamá); perfiles adicionales ilimitados. Consentimiento explícito de cada adulto |
+| Nombre | House (nombre definitivo del producto y del repo) |
 | Corpus inicial | ~30 documentos históricos, casi todos PDF y algunos DICOM; sirven de banco de pruebas |
 | Plataformas | Web instalable (PWA) con cámara para móvil; app nativa queda para después |
 | Hardware | MacBook Air M5, 16 GB: desarrollo y procesamiento local; no es servidor 24/7 |
