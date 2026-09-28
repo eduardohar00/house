@@ -65,7 +65,15 @@ RELACION A/G |
 TRIGLICERIDOS | mg/dL
 VOLUMEN CORPUSCULAR MEDIO | fl
 VOLUMEN PLAQUETARIO MEDIO | fl
-pH |"""
+pH |
+T3 TOTAL | ng/dL
+T3 LIBRE | pg/mL
+T3 CAPTACION | UCT
+TIROXINA (T4) TOTAL | µg/dL
+T4 LIBRE | ng/dL
+INDICE DE TIROXINA LIBRE | µg/dL
+YODO PROTEICO HORMONAL | µg/dL
+HORMONA ESTIMULANTE DE TIROIDES (TSH) | µUI/mL"""
 CASES = [tuple(x.strip() for x in line.rsplit("|", 1)) for line in PRINTED.splitlines()]
 
 

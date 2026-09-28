@@ -19,7 +19,7 @@ from .base import LLMRequest, LLMResponse
 # El "*" que algunos laboratorios ponen tras un valor fuera de rango se tolera.
 _LINE = re.compile(
     r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?P<value>\d+(?:[.,]\d+)?)(?:\s*\*)?"
-    r"(?:\s*(?P<unit>x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ]+(?:/[A-Za-zµμ]+)?|%|[fF][lL]|pg)"
+    r"(?:\s*(?P<unit>x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ]+(?:/[A-Za-zµμ]+)?|%|[fF][lL]|pg|UCT)"
     r"(?:\s+(?P<ref>\S.*?))?"
     r"|\s+(?P<ref_only>[<>]=?\s*\d.*?|\d+(?:[.,]\d+)?\s*-\s*\d.*?))\s*$"
 )

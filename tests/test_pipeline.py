@@ -296,3 +296,24 @@ def test_ratio_printed_with_mg_dl_is_not_a_conversion():
     (row,) = process(raw, line)
     assert (row.key, row.value, row.unit) == ("chol_hdl_ratio", 5.0, "")
     assert not row.converted and not row.problems and row.status == "high"
+
+
+def test_same_unit_spelled_differently_is_not_a_conversion():
+    line = "HORMONA ESTIMULANTE DE TIROIDES (TSH) 2.1000 µUI/mL 0.3500 - 4.9400"
+    raw = RawExtraction(
+        document_type="laboratorio",
+        collected_on=None,
+        lab_name=None,
+        rows=[
+            RawRow(
+                analyte_name="HORMONA ESTIMULANTE DE TIROIDES (TSH)",
+                value_text="2.1000",
+                unit_text="µUI/mL",
+                ref_text="0.3500 - 4.9400",
+                evidence=line,
+            )
+        ],
+    )
+    (row,) = process(raw, line)
+    assert (row.key, row.value, row.unit) == ("tsh", 2.1, "mIU/L")
+    assert not row.converted and not row.problems and row.status == "ok"

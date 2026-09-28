@@ -35,11 +35,15 @@ _CONV: dict[tuple[str, str], tuple[float, float, str]] = {
 _CANON = {
     "mg/dl": "mg/dL",
     "ng/ml": "ng/mL",
+    "ng/dl": "ng/dL",
+    "pg/ml": "pg/mL",
     "%": "%",
     "u/l": "U/L",
     "g/dl": "g/dL",
     "miu/l": "mIU/L",
     "uiu/ml": "mIU/L",
+    "uui/ml": "mIU/L",  # µUI/mL (español)
+    "mui/l": "mIU/L",
     "mg/l": "mg/L",
     "mmol/l": "mmol/L",
     "ug/dl": "µg/dL",
@@ -54,12 +58,12 @@ _CANON = {
 
 # Cocientes sin unidad que algunos laboratorios imprimen con la unidad de sus operandos
 # (p. ej. índice aterogénico CT/HDL "6.3 mg/dL"). El valor no cambia: no es una conversión.
-_RATIO_PRINTED_AS = {("chol_hdl_ratio", "mg/dl"), ("ldl_hdl_ratio", "mg/dl")}
+_RATIO_PRINTED_AS = {("chol_hdl_ratio", "mg/dl"), ("ldl_hdl_ratio", "mg/dl"), ("t3_uptake", "uct")}
 
 
 def same_unit(key: str, unit_text: str | None, canonical_unit: str) -> bool:
     u = norm_unit(unit_text)
-    return u == norm_unit(canonical_unit) or (key, u) in _RATIO_PRINTED_AS
+    return u == norm_unit(canonical_unit) or _CANON.get(u) == canonical_unit or (key, u) in _RATIO_PRINTED_AS
 
 
 def to_canonical(key: str, value: float, unit_text: str | None, canonical_unit: str) -> tuple[float, str]:

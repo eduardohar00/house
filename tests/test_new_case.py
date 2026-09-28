@@ -80,6 +80,7 @@ RELACION A/G 1.20 1.00 - 2.20
 INDICE LDL / HDL 3.1 * <2.7
 INDICE ATEROGENICO 5.0 * mg/dL <3.5
 pH 6.0 5.0 - 7.0
+T3 CAPTACION 1.10 UCT 0.69 - 1.41
 LIMÍTROFE 150 - 199
 ALTO = ó >200
 CÉDULA PROFESIONAL : 1234567
@@ -100,6 +101,7 @@ def test_prefill_keeps_flagged_unitless_and_urine_rows():
         ("ldl_hdl_ratio", 3.1, ""),
         ("chol_hdl_ratio", 5.0, ""),
         ("urine_ph", 6.0, ""),
+        ("t3_uptake", 1.1, ""),
     }
     assert unrecognized == []
 

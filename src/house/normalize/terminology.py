@@ -107,7 +107,12 @@ _BASE: tuple[Analyte, ...] = (
     Analyte("hemoglobin", "Hemoglobina", "718-7", "g/dL", "sangre", ("hemoglobina", "hemoglobin", "hb")),
     Analyte("ferritin", "Ferritina", "2276-4", "ng/mL", "sangre", ("ferritina", "ferritin")),
     Analyte(
-        "tsh", "TSH", "3016-3", "mIU/L", "tiroides", ("tsh", "hormona estimulante de tiroides", "tirotropina")
+        "tsh",
+        "TSH",
+        "3016-3",
+        "mIU/L",
+        "tiroides",
+        ("tsh", "hormona estimulante de tiroides", "hormona estimulante de tiroides tsh", "tirotropina"),
     ),
     Analyte(
         "vitamin_d",
@@ -295,6 +300,22 @@ _EXTRA: tuple[Analyte, ...] = (
         "urine_sg", "Gravedad específica (orina)", "", "", "orina", "gravedad especifica", "densidad urinaria"
     ),
     _a("urine_ph", "pH (orina)", "", "", "orina", "ph", "ph urinario"),
+    _a("t3_total", "T3 total", "3053-6", "ng/dL", "tiroides", "t3 total", "triyodotironina total"),
+    _a("t3_free", "T3 libre", "3051-0", "pg/mL", "tiroides", "t3 libre", "triyodotironina libre"),
+    _a("t3_uptake", "Captación de T3", "", "", "tiroides", "t3 captacion", "captacion de t3"),
+    _a(
+        "t4_total",
+        "T4 total",
+        "3026-2",
+        "µg/dL",
+        "tiroides",
+        "tiroxina t4 total",
+        "t4 total",
+        "tiroxina total",
+    ),
+    _a("t4_free", "T4 libre", "3024-7", "ng/dL", "tiroides", "t4 libre", "tiroxina libre"),
+    _a("fti", "Índice de tiroxina libre", "", "µg/dL", "tiroides", "indice de tiroxina libre", "t7"),
+    _a("pbi", "Yodo proteico hormonal", "", "µg/dL", "tiroides", "yodo proteico hormonal"),
 )
 
 CATALOG: tuple[Analyte, ...] = _BASE + _EXTRA
