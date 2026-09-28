@@ -1,0 +1,7 @@
+# Datos de salud: nunca al repositorio
+/data/
+/uploads/
+*.dcm
+.env
+.env.*
+!.env.example
