@@ -28,7 +28,7 @@
 
 Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mockup/house-mockup.html) (se abre en el navegador). Es dirección de diseño, no código de producción.
 
-**Estructura de la app:** selector de perfil arriba y tres secciones: **Resumen**, **Expediente clínico** y **Documentos**.
+**Estructura de la app:** selector de perfil arriba (con PIN o passkey para cambiar de persona) y seis secciones: **Resumen**, **Expediente clínico**, **Documentos**, **Asistente**, **Consulta** y **Familia** (esta última solo para el admin).
 
 **Resumen**
 - Los marcadores se agrupan por sistema, en este orden: metabolismo de la glucosa, lípidos y riesgo cardiovascular, hígado, riñón, sangre y hierro, tiroides, vitaminas. Cada grupo muestra cuántos de sus marcadores están en rango.
@@ -42,7 +42,24 @@ Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mocku
 
 **Documentos:** tabla de originales con tipo, origen y estado de revisión de la extracción; punto de entrada para agregar documentos.
 
-**Pendiente de diseñar:** subida y pantalla de revisión de extracciones, chat con el expediente, resumen para consulta, vista de familia del admin y cambio de perfil con PIN o passkey.
+**Subir y revisar un documento**
+- Flujo: elegir archivo, procesamiento visible por pasos (lectura y limpieza en la Mac, extracción y verificación con IA), revisión y guardado.
+- Revisión lado a lado: el documento original con la fila resaltada y la tabla de datos extraídos (nombre en el documento, nombre normalizado con LOINC, valor editable, unidad, referencia, barra de confianza).
+- Lo dudoso se marca con la razón (lectura de OCR dudosa, método distinto al histórico, conversión de unidades) y **hay que confirmarlo o corregirlo** antes de poder guardar.
+- Pestaña "Lo que ve la IA": el texto exacto que se enviaría, con nombre, folio y médico reemplazados.
+- Salvaguarda de persona: si el documento parece de otra persona que el perfil abierto, no se puede guardar; solo el admin puede asignarlo.
+
+**Asistente ("Pregunta a tu expediente")**
+- Respuestas solo con datos del perfil abierto, con citas al documento de origen (laboratorio y fecha) y tablas cuando ayudan.
+- Ante "¿Tengo diabetes?" no diagnostica: muestra los datos y remite al médico.
+- Ante un dato que no existe (presión arterial de 2023) responde que no lo encontró y qué documento ayudaría; no inventa.
+- Preguntas sugeridas como punto de partida.
+
+**Consulta:** eliges especialidad y motivo, y se genera un resumen de una hoja (alergias, problemas, medicamentos, resultados relevantes con últimos 3 valores y estado, preguntas sugeridas). Se puede copiar o compartir con un enlace de solo lectura que vence en 7 días y se puede revocar.
+
+**Familia (solo admin):** tarjeta por persona (atención, vigilar, mejoraron), pendientes de toda la familia (resurtidos, prevención, citas), estado del consentimiento y último acceso, exportar o borrar un perfil (con confirmación), y panel de datos y privacidad (último respaldo, documentos enviados a la IA, uso mensual de IA frente al tope).
+
+**Pendiente de diseñar:** onboarding y creación de perfiles, alta manual de medicamentos y antecedentes, DICOM y estudios de imagen (visor y reporte), recordatorios y notificaciones, configuración (proveedor de IA, presupuesto, respaldos), versión móvil con cámara y estados de error o vacío.
 
 ## 1. Visión
 

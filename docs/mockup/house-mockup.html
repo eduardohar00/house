@@ -126,6 +126,85 @@ header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
 .sp{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
 .sp.a{background:var(--warn-bg);color:var(--warn)}.sp.c{background:var(--accent-soft);color:var(--accent)}.sp.r{background:var(--good-bg);color:var(--good)}
 @media (max-width:520px){.ev{grid-template-columns:1fr}}
+.lock{position:fixed;inset:0;background:rgba(10,20,25,.6);display:grid;place-items:center;z-index:50;padding:16px}
+.lock[hidden]{display:none}
+.lockbox{background:var(--surface);border-radius:20px;padding:24px;width:min(320px,100%);text-align:center;display:grid;gap:12px}
+.lockbox h2{margin:0;font-size:20px}.lockbox p{margin:0;color:var(--muted);font-size:14px}
+.dots{display:flex;justify-content:center;gap:12px;padding:6px}
+.dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted)}
+.dots i.on{background:var(--accent);border-color:var(--accent)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pad button{padding:12px 0;font-size:20px;font-weight:600;border:1px solid var(--line);background:var(--bg);border-radius:12px}
+.link{border:0;background:none;color:var(--accent);font-weight:600;padding:6px}
+.hint{font-size:12px!important}
+.drop{border:2px dashed var(--line);border-radius:16px;padding:32px 16px;text-align:center;display:grid;gap:10px;justify-items:center;background:var(--bg)}
+.drop b{font-size:17px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:10px;padding:8px 16px;font-weight:600}
+.btn.ghost{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.steps{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.steps li{display:flex;gap:10px;align-items:center;color:var(--muted)}
+.steps li.done{color:var(--ink)}.steps li.now{color:var(--ink);font-weight:600}
+.steps i{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:11px;flex:none}
+.steps li.done i{background:var(--good);border-color:var(--good);color:#fff}
+.steps li.now i{border-color:var(--accent);border-top-color:transparent;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.steps li.now i{animation:none}}
+.rv{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}
+@media (max-width:1180px){.rv{grid-template-columns:1fr}}
+.paper{background:#fff;color:#1c2529;border:1px solid var(--line);border-radius:10px;padding:18px;font-size:12.5px;line-height:1.5;display:grid;gap:2px;box-shadow:var(--shadow)}
+.paper h4{margin:0 0 6px;font-size:14px;letter-spacing:.04em}
+.paper .pi{color:#b4373a;background:#fdeaea;border-radius:3px;padding:0 3px}
+.dl{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:2px 6px;border-radius:5px;border-left:3px solid transparent}
+.dl span:nth-child(3){color:#6b7a81}
+.dl.hl{background:#dff0f1;border-left-color:#0F6E75}
+.dl.fg{border-left-color:#e0a04a}
+.mt{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
+.mt div{background:var(--bg);border-radius:10px;padding:8px 10px;font-size:13px}
+.mt small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.rt th,.rt td{padding:6px 8px;font-size:13px}
+.rt tr.fl2{background:var(--warn-bg)}
+.rt input{width:76px;font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+.cf{display:inline-block;width:44px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;overflow:hidden}
+.cf i{display:block;height:100%;background:var(--good)}.cf.lo i{background:var(--warn)}
+.lc{color:var(--muted);font-size:11px}
+.anon{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;line-height:1.6}
+.anon mark{background:var(--warn-bg);color:var(--warn);border-radius:4px;padding:0 4px;font-weight:700}
+.warnb{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:10px 12px;font-weight:600;font-size:14px}
+.okb{background:var(--good-bg);color:var(--good);border-radius:10px;padding:10px 12px;font-weight:600}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.chat{padding:18px;display:grid;gap:12px}
+.msgs{display:grid;gap:12px;max-height:480px;overflow-y:auto;padding:4px}
+.mb{max-width:min(640px,92%);padding:10px 14px;border-radius:14px;line-height:1.5;overflow-wrap:anywhere}
+.mb.u{justify-self:end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.mb.a{justify-self:start;background:var(--bg);border:1px solid var(--line);border-bottom-left-radius:4px;display:grid;gap:8px}
+.mb table{font-size:13px}.mb th,.mb td{padding:5px 8px}
+.cite{display:inline-block;font-size:11px;font-weight:600;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:1px 7px;margin:1px 3px 1px 0;white-space:nowrap}
+.ft{font-size:12px;color:var(--muted)}
+.typing i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin:0 2px;animation:bl 1s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes bl{50%{opacity:.25}}
+.ask{display:flex;gap:8px}
+.ask input,.fm2 input,.fm2 select,.fm2 textarea{font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);min-width:0}
+.ask input{flex:1}
+.fm2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end}
+.fm2 label{display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:600}
+.sheet{background:#fff;color:#1c2529;border:1px solid var(--line);border-radius:12px;padding:24px;display:grid;gap:14px;max-width:820px;box-shadow:var(--shadow);font-size:14px}
+.sheet h3{margin:0;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:#5b6a71}
+.sheet h2{margin:0;font-size:22px}
+.sheet table th,.sheet table td{border-color:#e3e9ec;padding:6px 8px;font-size:13px}
+.sheet ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.sheet .ft{color:#6b7a81}
+.fg3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.pc{padding:18px;display:grid;gap:10px}
+.pc h3{margin:0;font-size:18px}
+.kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.kp div{background:var(--bg);border-radius:10px;padding:8px 4px}
+.kp b{display:block;font-size:22px}.kp small{color:var(--muted);font-size:11px}
+.meter{height:8px;border-radius:4px;background:var(--line);overflow:hidden}.meter i{display:block;height:100%;background:var(--accent)}
+.acts{display:flex;flex-wrap:wrap;gap:6px}
+.mini{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:4px 10px;font-size:13px;font-weight:600}
+.mini.dn{border-color:var(--warn);color:var(--warn)}
 .tblwrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -158,6 +237,9 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
     <button role="tab" data-v="res" aria-selected="true">Resumen</button>
     <button role="tab" data-v="exp" aria-selected="false">Expediente clínico</button>
     <button role="tab" data-v="doc" aria-selected="false">Documentos</button>
+    <button role="tab" data-v="asi" aria-selected="false">Asistente</button>
+    <button role="tab" data-v="con" aria-selected="false">Consulta</button>
+    <button role="tab" data-v="fam" aria-selected="false" id="navFam">Familia</button>
   </nav>
 
   <div class="col" id="vRes">
@@ -192,7 +274,12 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
 
   <div class="col" id="vExp" hidden></div>
 
+  <div class="col" id="vAsi" hidden></div>
+  <div class="col" id="vCon" hidden></div>
+  <div class="col" id="vFam" hidden></div>
+
   <div class="col" id="vDoc" hidden>
+    <div id="upflow" hidden></div>
     <section class="card docs">
       <div class="dh"><div><h2>Documentos</h2><p id="docsub"></p></div><button class="add" id="addDoc">Agregar documento</button></div>
       <p class="addhint" id="addhint" hidden>En la aplicación real: subes un PDF, una foto o una carpeta DICOM, y revisas lo que se extrajo antes de confirmarlo.</p>
@@ -200,6 +287,13 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
     </section>
   </div>
 </div>
+
+<div class="lock" id="lock" hidden><div class="lockbox" role="dialog" aria-modal="true" aria-label="Ingresar PIN">
+  <h2>Hola, <span id="lockName"></span></h2><p>Ingresa tu PIN de 4 dígitos</p>
+  <div class="dots" id="dots"></div><div class="pad" id="pad"></div>
+  <button class="link" id="passkey">Usar passkey (Face ID o Touch ID)</button>
+  <button class="link" id="lockCancel" style="color:var(--muted)">Cancelar</button>
+  <p class="hint">En la maqueta sirve cualquier PIN.</p></div></div>
 
 <script>
 const DATES=['2021-03-14','2022-05-09','2023-04-18','2024-06-11','2025-05-20','2026-08-27'];
@@ -259,7 +353,7 @@ function spark(vals,c){
 
 function renderProfiles(){
   $('profiles').innerHTML=Object.entries(PEOPLE).map(([k,p])=>`<button data-k="${k}" aria-pressed="${k===who}"><span class="av">${p.ini}</span>${p.name}</button>`).join('');
-  $('profiles').querySelectorAll('button').forEach(b=>b.onclick=()=>{who=b.dataset.k;renderAll()});
+  $('profiles').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(b.dataset.k!==who)openLock(b.dataset.k)});
 }
 function renderHead(){
   const p=PEOPLE[who];
@@ -465,6 +559,7 @@ const X={
 };
 function allEvents(){
   const ev=X[who].eventos.map(e=>({d:e[0],t:e[1],title:e[2],src:e[3]}));
+  if(who==='eduardo')EXTRA.forEach(e=>ev.push({...e}));
   DATES.forEach((d,i)=>ev.push({d,t:'Laboratorio',title:i%2?'Química sanguínea completa':'Perfil de lípidos y glucosa',src:LABS[i]}));
   return ev.sort((a,b)=>b.d.localeCompare(a.d));
 }
@@ -498,13 +593,234 @@ function renderDocsTab(){
 let vw='res';
 function setView(v){
   vw=v;
-  ['res','exp','doc'].forEach(k=>$('v'+k[0].toUpperCase()+k.slice(1)).hidden=k!==v);
+  ['res','exp','doc','asi','con','fam'].forEach(k=>$('v'+k[0].toUpperCase()+k.slice(1)).hidden=k!==v);
   $('nav').querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.v===v));
   if(v==='res')renderDetail();
 }
 $('nav').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
-$('addDoc').onclick=()=>{$('addhint').hidden=!$('addhint').hidden};
-function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();hideTip()}
+$('addDoc').onclick=()=>{upOpen=true;upState=0;renderUp();$('upflow').scrollIntoView({behavior:'smooth',block:'nearest'})};
+/* ---------- PIN ---------- */
+let pend=null,pin='';
+function drawPin(){$('dots').innerHTML=[0,1,2,3].map(i=>`<i class="${i<pin.length?'on':''}"></i>`).join('')}
+function openLock(k){pend=k;pin='';$('lockName').textContent=PEOPLE[k].name;drawPin();$('lock').hidden=false}
+function keyPin(d){if(d==='x')pin=pin.slice(0,-1);else if(pin.length<4)pin+=d;drawPin();if(pin.length===4)setTimeout(unlock,150)}
+function unlock(){
+  $('lock').hidden=true;who=pend;chat=[];conGen=false;upState=0;evf='Todo';shareOn=false;delAsk=null;
+  if(!PEOPLE[who].admin&&vw==='fam')vw='res';
+  renderAll();setView(vw);
+}
+$('pad').innerHTML=[1,2,3,4,5,6,7,8,9,'',0,'x'].map(k=>k===''?'<span></span>':`<button data-k="${k}" aria-label="${k==='x'?'Borrar':k}">${k==='x'?'⌫':k}</button>`).join('');
+$('pad').querySelectorAll('button').forEach(b=>b.onclick=()=>keyPin(b.dataset.k));
+$('passkey').onclick=unlock;
+$('lockCancel').onclick=()=>{$('lock').hidden=true};
+
+/* ---------- Subir y revisar documento ---------- */
+const EXTRA=[];
+let upState=0,anonView=false,timer=null;
+const REV0=[
+ {r:1,doc:'Glucosa',std:'Glucosa en ayunas',loinc:'2345-7',v:92,u:'mg/dL',ref:'70 a 99',conf:.99},
+ {r:2,doc:'Colesterol total',std:'Colesterol total',loinc:'2093-3',v:189,u:'mg/dL',ref:'menor a 200',conf:.99},
+ {r:3,doc:'Colesterol LDL (calculado)',std:'Colesterol LDL',loinc:'13457-7',v:108,u:'mg/dL',ref:'menor a 100',conf:.88,flag:'Método calculado. Tus estudios anteriores usaban medición directa; confirma que son comparables.'},
+ {r:4,doc:'Colesterol HDL',std:'Colesterol HDL',loinc:'2085-9',v:51,u:'mg/dL',ref:'40 o más',conf:.99},
+ {r:5,doc:'Triglicéridos',std:'Triglicéridos',loinc:'2571-8',v:131,u:'mg/dL',ref:'menor a 150',conf:.99},
+ {r:6,doc:'Creatinina',std:'Creatinina',loinc:'2160-0',v:1.01,u:'mg/dL',ref:'0.70 a 1.30',conf:.98},
+ {r:7,doc:'TGP (ALT)',std:'ALT (TGP)',loinc:'1742-6',v:31,u:'U/L',ref:'hasta 41',conf:.98},
+ {r:8,doc:'Ferritina',std:'Ferritina',loinc:'2276-4',v:132,u:'ng/mL',ref:'30 a 400',conf:.62,flag:'Lectura dudosa: el escaneo puede decir 132 o 13.2. Compara con el original y corrige si hace falta.'},
+ {r:9,doc:'Vitamina D 25-OH',std:'Vitamina D',loinc:'1989-3',v:36.9,u:'ng/mL',ref:'30 a 100',conf:.93,raw:'92 nmol/L',flag:'El documento reporta 92 nmol/L. Convertido a ng/mL (dividido entre 2.496).'}
+];
+let REV=[];
+const STEPS=['Leyendo el PDF (en tu Mac)','Clasificando: informe de laboratorio','Quitando datos personales (en tu Mac)','Extrayendo 9 resultados (IA)','Verificando con una segunda pasada (IA)'];
+function startUp(){
+  REV=REV0.map(r=>({...r,ok:!r.flag}));upState=1;anonView=false;renderUp();
+  let i=0;clearInterval(timer);
+  timer=setInterval(()=>{i++;if(i>=STEPS.length){clearInterval(timer);upState=2}renderUp()},750);
+  window._stp=()=>i;
+}
+function docPage(){
+  const L=(r,n,v,rf)=>`<div class="dl ${REV[r-1]&&REV[r-1].flag?'fg':''}" data-r="${r}"><span>${n}</span><span><b>${v}</b></span><span>${rf}</span></div>`;
+  return `<div class="paper" aria-label="Documento original (ejemplo)">
+   <h4>LABORATORIO CLÍNICO EJEMPLO</h4>
+   <div>Paciente: <span class="pi">EDUARDO EJEMPLO GARCÍA</span> · Edad: 43 años · Sexo: M</div>
+   <div>Folio: <span class="pi">A-20260922-0417</span> · Toma: 22/09/2026 · Médico: <span class="pi">Dr. Ramos</span></div>
+   <div style="height:8px"></div><div style="font-weight:700">QUÍMICA CLÍNICA</div>
+   ${L(1,'Glucosa','92 mg/dL','70 - 99')}${L(2,'Colesterol total','189 mg/dL','< 200')}${L(3,'Colesterol LDL (calculado)','108 mg/dL','< 100')}
+   ${L(4,'Colesterol HDL','51 mg/dL','> 40')}${L(5,'Triglicéridos','131 mg/dL','< 150')}${L(6,'Creatinina','1.01 mg/dL','0.70 - 1.30')}
+   ${L(7,'TGP (ALT)','31 U/L','hasta 41')}${L(8,'Ferritina','132 ng/mL','30 - 400')}${L(9,'Vitamina D 25-OH','92 nmol/L','75 - 250')}
+   <div style="margin-top:8px;color:#6b7a81">Los datos en rojo se quitan antes de enviar texto a la IA.</div></div>`;
+}
+function anonText(){
+  return `Tipo de documento: informe de laboratorio
+Paciente: <mark>[NOMBRE]</mark> · Edad: 43 años · Sexo: M
+Folio: <mark>[FOLIO]</mark> · Toma: 22/09/2026 · Médico: <mark>[MÉDICO]</mark>
+
+QUÍMICA CLÍNICA
+Glucosa 92 mg/dL (70 - 99)
+Colesterol total 189 mg/dL (< 200)
+Colesterol LDL (calculado) 108 mg/dL (< 100)
+Colesterol HDL 51 mg/dL (> 40)
+Triglicéridos 131 mg/dL (< 150)
+Creatinina 1.01 mg/dL (0.70 - 1.30)
+TGP (ALT) 31 U/L (hasta 41)
+Ferritina 132 ng/mL (30 - 400)
+Vitamina D 25-OH 92 nmol/L (75 - 250)`;
+}
+function renderUp(){
+  const el=$('upflow');el.hidden=upState===0&&!upOpen;
+  if(el.hidden)return;
+  let h='';
+  if(upState===0){
+    h=`<section class="card docs"><div class="dh"><div><h2>Agregar documento</h2><p>PDF, foto o carpeta DICOM.</p></div><button class="mini" id="upX">Cerrar</button></div>
+    <div class="drop"><b>Arrastra el archivo aquí</b><span class="ft">o</span>
+    <label class="btn" style="cursor:pointer">Elegir archivo<input type="file" id="upfile" hidden></label>
+    <button class="btn ghost" id="upDemo">Usar documento de ejemplo</button>
+    <span class="ft">Se lee y se limpia en tu Mac. A la IA solo llega texto sin tus datos personales.</span></div></section>`;
+  }else if(upState===1){
+    const n=window._stp?window._stp():0;
+    h=`<section class="card docs"><div class="dh"><div><h2>Procesando</h2><p>Informe de laboratorio de ejemplo</p></div></div>
+    <ul class="steps">${STEPS.map((t,i)=>`<li class="${i<n?'done':i===n?'now':''}"><i>${i<n?'✓':''}</i>${t}</li>`).join('')}</ul></section>`;
+  }else if(upState===2){
+    const pend=REV.filter(r=>!r.ok).length,wrong=who!=='eduardo';
+    const rows=REV.map(r=>`<tr class="${r.ok?'':'fl2'}" data-r="${r.r}">
+      <td>${r.doc}${r.raw?`<div class="lc">en el documento: ${r.raw}</div>`:''}</td>
+      <td>${r.std}<div class="lc">LOINC ${r.loinc}</div></td>
+      <td><input class="vi" data-r="${r.r}" value="${r.v}" inputmode="decimal" aria-label="Valor de ${r.std}"> ${r.u}</td>
+      <td>${r.ref}</td>
+      <td><span class="cf ${r.conf<.9?'lo':''}"><i style="width:${Math.round(r.conf*100)}%"></i></span> <span class="lc">${Math.round(r.conf*100)} %</span></td>
+      <td>${r.ok?'<span class="sp r">Listo</span>':`<button class="mini dn cf-ok" data-r="${r.r}">Confirmar</button>`}</td></tr>
+      ${r.flag&&!r.ok?`<tr class="fl2"><td colspan="6" class="lc" style="white-space:normal;color:var(--warn)">▲ ${r.flag}</td></tr>`:''}`).join('');
+    h=`<section class="card docs">
+    <div class="dh"><div><h2>Revisar antes de guardar</h2><p>Compara lo extraído con el original. Nada se guarda hasta que confirmes.</p></div>
+      <div class="tabs"><button id="vDoc1" aria-pressed="${!anonView}">Documento y datos</button><button id="vAn" aria-pressed="${anonView}">Lo que ve la IA</button></div></div>
+    <div class="mt"><div><small>Persona detectada</small>Eduardo</div><div><small>Tipo</small>Laboratorio</div><div><small>Fecha del estudio</small>22 sep 2026</div><div><small>Origen</small>Laboratorio Ejemplo</div></div>
+    ${wrong?`<div class="warnb">Este documento parece de Eduardo, pero estás en el perfil de ${PEOPLE[who].name}. Solo el administrador puede asignarlo; cambia al perfil de Eduardo para guardarlo.</div>`:''}
+    ${anonView?`<div class="anon">${anonText()}</div><p class="ft">Esto es todo lo que se enviaría a la IA. Nombre, folio y médico se reemplazan; la fecha de nacimiento no aparece, solo la edad.</p>`:
+    `<div class="rv"><div>${docPage()}</div><div class="tblwrap"><table class="rt"><thead><tr><th>En el documento</th><th>Se guardará como</th><th>Valor</th><th>Referencia</th><th>Confianza</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`}
+    <div class="bar"><span class="${pend?'':'ft'}" style="${pend?'color:var(--warn);font-weight:600':''}">${pend?pend+' por revisar':'Todo revisado'}</span>
+      <div class="acts"><button class="btn ghost" id="upDisc">Descartar</button><button class="btn" id="upOk" ${pend||wrong?'disabled':''}>Confirmar y guardar</button></div></div></section>`;
+  }else{
+    const ch=REV.filter(r=>r.flag).map(r=>`<li>${r.std}: <b>${r.v} ${r.u}</b> (confirmado)</li>`).join('');
+    h=`<section class="card docs"><div class="okb">Guardado: 9 resultados agregados al perfil de Eduardo.</div>
+    <ul style="margin:0;padding-left:18px">${ch}</ul>
+    <p class="ft">En la aplicación real, el resumen, las gráficas y el expediente se actualizan al confirmar. Aquí el documento aparece en la tabla de abajo.</p>
+    <div class="acts"><button class="btn" id="upNew">Agregar otro</button><button class="btn ghost" id="upX">Cerrar</button></div></section>`;
+  }
+  el.innerHTML=h;
+  const on=(id,f)=>{const x=$(id);if(x)x.onclick=f};
+  on('upX',()=>{upOpen=false;upState=0;renderUp()});
+  on('upDemo',startUp);on('upNew',()=>{upState=0;renderUp()});on('upDisc',()=>{upState=0;upOpen=false;renderUp()});
+  const f=$('upfile');if(f)f.onchange=()=>startUp();
+  on('vDoc1',()=>{anonView=false;renderUp()});on('vAn',()=>{anonView=true;renderUp()});
+  on('upOk',()=>{EXTRA.push({d:'2026-09-22',t:'Laboratorio',title:'Química sanguínea completa',src:'Laboratorio Ejemplo'});upState=3;renderUp();renderDocsTab()});
+  el.querySelectorAll('.cf-ok').forEach(b=>b.onclick=()=>{REV[b.dataset.r-1].ok=true;renderUp()});
+  el.querySelectorAll('.vi').forEach(i=>i.onchange=()=>{const r=REV[i.dataset.r-1],n=parseFloat(String(i.value).replace(',','.'));if(!isNaN(n)){r.v=n;if(r.flag)r.ok=true}renderUp()});
+  el.querySelectorAll('tr[data-r]').forEach(tr=>tr.onmouseenter=()=>el.querySelectorAll('.dl').forEach(d=>d.classList.toggle('hl',d.dataset.r===tr.dataset.r)));
+  el.querySelectorAll('.dl').forEach(d=>d.onmouseenter=()=>{el.querySelectorAll('.dl').forEach(x=>x.classList.toggle('hl',x===d));el.querySelectorAll('tr[data-r]').forEach(t=>t.style.outline=t.dataset.r===d.dataset.r?'2px solid var(--accent)':'none')});
+}
+let upOpen=false;
+
+/* ---------- Asistente ---------- */
+let chat=[];
+const QS=[['ldl','¿Cómo ha evolucionado mi colesterol LDL?'],['lip','Compara mis lípidos de 2021 contra hoy'],['med','¿Qué medicamentos tomo? ¿Hay algo que revisar?'],['dm','¿Tengo diabetes?'],['pa','¿Cuál era mi presión arterial en 2023?']];
+const cite=i=>`<span class="cite">${LABS[i]} · ${fd(DATES[i])}</span>`;
+const bmx=id=>BM.find(b=>b.id===id);
+function answer(k){
+  const p=PEOPLE[who],li=DATES.length-1,S=id=>p.s[id];
+  if(k==='ldl'){const b=bmx('ldl'),v=S('ldl'),x=st(b,v[li]);
+    return `<div>Tu LDL ${v[li]<v[0]?'bajó':'subió'} de <b>${v[0]} mg/dL</b> en ${DATES[0].slice(0,4)} a <b>${v[li]} mg/dL</b> en ${fd(DATES[li])} (${pct(v[0],v[li])} %). La referencia es ${rtOf(b)}: hoy está <b>${x==='ok'?'en rango':x==='high'?'por encima':'por debajo'}</b>.</div>
+    <table><tbody>${v.map((q,i)=>`<tr><td>${fd(DATES[i])}</td><td><b>${q}</b> mg/dL</td><td>${cite(i)}</td></tr>`).join('')}</tbody></table>
+    <div class="ft">Descripción de tus datos. Para decidir qué hacer con ellos, habla con tu médico.</div>`}
+  if(k==='lip'){const ids=['ldl','hdl','tg','pcr'];
+    return `<div>Así están tus lípidos y tu marcador de inflamación, ${DATES[0].slice(0,4)} contra hoy:</div>
+    <div class="tblwrap"><table><thead><tr><th>Marcador</th><th>${DATES[0].slice(0,4)}</th><th>Hoy</th><th>Referencia</th><th>Estado</th></tr></thead><tbody>${ids.map(id=>{const b=bmx(id),v=S(id);return `<tr><td>${b.n}</td><td>${fv(b,v[0])}</td><td><b>${fv(b,v[li])}</b></td><td>${rtOf(b)}</td><td>${STL[st(b,v[li])]}</td></tr>`}).join('')}</tbody></table></div>
+    <div>${cite(0)}${cite(li)}</div><div class="ft">Unidades: mg/dL, salvo la proteína C reactiva (mg/L).</div>`}
+  if(k==='med'){const m=X[who].meds;
+    return `<div>En tu expediente hay ${m.length} medicamento${m.length>1?'s':''} activo${m.length>1?'s':''}:</div>
+    <ul style="margin:0;padding-left:18px">${m.map(r=>`<li><b>${r[0]}</b>, ${r[1]}. Para: ${r[2]}, desde ${r[3]}.</li>`).join('')}</ul>
+    <div>Revisé interacciones y duplicidades entre ellos y con tus alergias${X[who].alergias.length?` (${X[who].alergias[0]})`:''}: <b>no encontré alertas</b> en las bases consultadas.</div>
+    <div class="ft">Fuente: expediente clínico, medicamentos actuales. No incluye lo que tomes sin registrar. Confirma con tu médico o farmacéutico.</div>`}
+  if(k==='dm'){const g=bmx('glu'),a=bmx('a1c');
+    return `<div><b>No puedo diagnosticar.</b> Ese diagnóstico lo hace tu médico con criterios clínicos y pruebas confirmatorias. Lo que sí puedo mostrarte de tu expediente:</div>
+    <ul style="margin:0;padding-left:18px"><li>Glucosa en ayunas: <b>${fv(g,S('glu')[li])} mg/dL</b> (${STL[st(g,S('glu')[li])].toLowerCase()}; referencia ${rtOf(g)}).</li><li>Hemoglobina glucosilada: <b>${fv(a,S('a1c')[li])} %</b> (${STL[st(a,S('a1c')[li])].toLowerCase()}; referencia ${rtOf(a)}).</li></ul>
+    <div>${cite(li)}</div><div class="ft">Si quieres, preparo un resumen con esto para tu próxima consulta (pestaña Consulta).</div>`}
+  return `<div><b>No encontré ese dato en tu expediente.</b> Revisé ${DATES.length} estudios de laboratorio y las notas de consulta cargadas, y ninguno registra presión arterial de 2023.</div>
+    <div class="ft">Si tienes una nota de consulta o un registro de presión de ese año, súbelo en Documentos y podré usarlo. Prefiero decirte que no lo tengo antes que inventarlo.</div>`;
+}
+function renderChat(){
+  const ask=(k,q)=>{chat.push({r:'u',h:q});chat.push({r:'t'});renderChat();
+    setTimeout(()=>{chat.pop();chat.push({r:'a',h:k?answer(k):`<div>En esta maqueta solo respondo las preguntas sugeridas. En la aplicación real respondo con cualquier dato de tu expediente y siempre cito el documento de origen.</div>`});renderChat()},700)};
+  $('vAsi').innerHTML=`<section class="card chat"><div><h2 style="margin:0;font-size:20px">Pregunta a tu expediente</h2><p class="ft" style="margin:2px 0 0">Responde solo con los datos de ${PEOPLE[who].name} y cita el documento de origen. Al modelo de IA solo llega texto sin datos personales.</p></div>
+   <div class="msgs" id="msgs" aria-live="polite">${chat.length?chat.map(m=>m.r==='u'?`<div class="mb u"></div>`:m.r==='t'?`<div class="mb a typing"><span><i></i><i></i><i></i></span></div>`:`<div class="mb a">${m.h}</div>`).join(''):'<p class="ft">Prueba con una de las preguntas sugeridas.</p>'}</div>
+   <div class="chips">${QS.map(q=>`<button class="chip" data-k="${q[0]}">${q[1]}</button>`).join('')}</div>
+   <form class="ask" id="askf"><input id="askq" placeholder="Escribe tu pregunta" aria-label="Pregunta"><button class="btn">Enviar</button></form></section>`;
+  const users=$('msgs').querySelectorAll('.mb.u');let ui=0;chat.forEach(m=>{if(m.r==='u'){users[ui++].textContent=m.h}});
+  $('vAsi').querySelectorAll('.chip').forEach(c=>c.onclick=()=>ask(c.dataset.k,QS.find(q=>q[0]===c.dataset.k)[1]));
+  $('askf').onsubmit=e=>{e.preventDefault();const v=$('askq').value.trim();if(v)ask(null,v)};
+  const m=$('msgs');m.scrollTop=m.scrollHeight;
+}
+
+/* ---------- Resumen para consulta ---------- */
+let conGen=false,conSpec='Medicina interna',conMot='Chequeo anual',shareOn=false;
+const SPEC={'Medicina interna':null,'Cardiología':['ldl','hdl','tg','pcr','glu','crea'],'Endocrinología':['glu','a1c','tsh','vd','tg'],'Ginecología':['fer','hb','tsh','vd']};
+function conData(){
+  const {at,vi}=analyze(),sp=SPEC[conSpec],li=DATES.length-1,p=PEOPLE[who];
+  const ids=sp||[...at.map(r=>r.b.id),...vi.map(r=>r.b.id)].slice(0,8);
+  const rel=BM.filter(b=>ids.includes(b.id));
+  const flagged=[...at,...vi].filter(r=>!sp||sp.includes(r.b.id));
+  const qs=flagged.slice(0,4).map(r=>`Mi ${r.b.n} está en ${fv(r.b,r.l)} ${r.b.u} (${r.f===r.l?'sin cambio':r.l<r.f?'bajó':'subió'} desde ${r.y0}). ¿Qué meta es razonable para mí y cada cuánto lo repetimos?`);
+  qs.push('¿Hay algún estudio o vacuna pendiente que deba programar?');
+  return {rel,flagged,qs:qs.slice(0,5),li,p};
+}
+function conText(){
+  const {rel,qs,li,p}=conData(),x=X[who];
+  return `RESUMEN PARA CONSULTA · ${p.name}\nEspecialidad: ${conSpec}. Motivo: ${conMot}.\nAlergias: ${x.alergias.join(', ')||'ninguna conocida'}.\nProblemas: ${x.problemas.map(r=>r[0]+' ('+r[2]+')').join('; ')}.\nMedicamentos: ${x.meds.map(r=>r[0]+' '+r[1]).join('; ')}.\nResultados:\n${rel.map(b=>{const v=p.s[b.id];return `- ${b.n}: ${v.slice(-3).map(q=>fv(b,q)).join(' > ')} ${b.u} (ref ${rtOf(b)})`}).join('\n')}\nPreguntas:\n${qs.map(q=>'- '+q).join('\n')}`;
+}
+function renderCon(){
+  const opts=Object.keys(SPEC).map(k=>`<option ${k===conSpec?'selected':''}>${k}</option>`).join('');
+  let sheet='';
+  if(conGen){
+    const {rel,qs,li,p}=conData(),x=X[who];
+    sheet=`<div class="sheet"><div><h3>Resumen para consulta</h3><h2>${p.name} · ${p.age}</h2><div class="ft">${conSpec} · Motivo: ${conMot} · Preparado el 28 sep 2026</div></div>
+     <div><h3>Alergias</h3>${x.alergias.join(', ')||'Ninguna conocida'}</div>
+     <div><h3>Problemas de salud</h3><ul>${x.problemas.map(r=>`<li>${r[0]} · ${r[2]}, desde ${r[3]}</li>`).join('')}</ul></div>
+     <div><h3>Medicamentos actuales</h3><ul>${x.meds.map(r=>`<li>${r[0]}, ${r[1]} (${r[2]})</li>`).join('')}</ul></div>
+     <div><h3>Resultados relevantes</h3><div class="tblwrap"><table><thead><tr><th>Marcador</th><th>Últimos 3 (${DATES.slice(-3).map(d=>d.slice(0,4)).join(', ')})</th><th>Referencia</th><th>Estado</th></tr></thead><tbody>${rel.map(b=>{const v=p.s[b.id];return `<tr><td>${b.n}</td><td>${v.slice(-3).map(q=>fv(b,q)).join(' → ')} ${b.u}</td><td>${rtOf(b)}</td><td>${STL[st(b,v[li])]}</td></tr>`}).join('')}</tbody></table></div></div>
+     <div><h3>Preguntas sugeridas</h3><ul>${qs.map(q=>`<li>${q}</li>`).join('')}</ul></div>
+     <div class="ft">Generado por House a partir de los documentos del expediente. Informativo; no sustituye una valoración médica.</div></div>
+     <div class="acts"><button class="btn" id="cpy">Copiar resumen</button><button class="btn ghost" id="shr">${shareOn?'Revocar enlace':'Compartir con enlace temporal'}</button><span class="ft" id="cpyMsg"></span></div>
+     ${shareOn?`<div class="okb">Enlace de solo lectura, vence en 7 días: house.local/c/k9x2…f41. Puedes revocarlo cuando quieras.</div>`:''}`;
+  }
+  $('vCon').innerHTML=`<section class="card docs"><div><h2 style="margin:0;font-size:20px">Preparar consulta</h2><p class="ft" style="margin:2px 0 0">Un resumen de una o dos páginas para llevar al médico.</p></div>
+   <div class="fm2"><label>Especialidad<select id="cSp">${opts}</select></label><label>Motivo de la consulta<input id="cMo" value="${conMot}"></label><button class="btn" id="cGen">Generar resumen</button></div></section>${sheet}`;
+  $('cSp').onchange=e=>{conSpec=e.target.value};$('cMo').onchange=e=>{conMot=e.target.value};
+  $('cGen').onclick=()=>{conSpec=$('cSp').value;conMot=$('cMo').value||'Consulta';conGen=true;shareOn=false;renderCon()};
+  const c=$('cpy');if(c){c.onclick=()=>{const m=$('cpyMsg');const t=conText();
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{m.textContent='Copiado.'}).catch(()=>{m.textContent='No se pudo copiar aquí; en la app real se descarga como PDF.'})};
+    $('shr').onclick=()=>{shareOn=!shareOn;renderCon()}}
+}
+
+/* ---------- Familia (solo admin) ---------- */
+let delAsk=null;
+function renderFam(){
+  const w0=who,info=Object.keys(PEOPLE).map(k=>{who=k;const a=analyze();return {k,p:PEOPLE[k],at:a.at.length,vi:a.vi.length,me:a.me.length}});who=w0;
+  const last={eduardo:'27 ago 2026',eugenia:'27 ago 2026',beatriz:'27 ago 2026'};
+  const cards=info.map(i=>`<section class="card pc"><div class="bar"><h3>${i.p.name}</h3><span class="ft">${i.p.age}</span></div>
+    <div class="kp"><div><b>${i.at}</b><small>Atención</small></div><div><b>${i.vi}</b><small>Vigilar</small></div><div><b>${i.me}</b><small>Mejoraron</small></div></div>
+    <div class="ft">Último estudio: ${last[i.k]} · ${X[i.k].meds.length} medicamento${X[i.k].meds.length===1?'':'s'} activo${X[i.k].meds.length===1?'':'s'}</div></section>`).join('');
+  const PEND=[['Beatriz','Resurtir losartán','en 5 días','Medicamento'],['Beatriz','Densitometría anual','vencida desde jul 2023','Prevención'],['Beatriz','Cardiología, control','octubre 2026','Consulta'],['Eugenia','Repetir ferritina','en 3 meses','Seguimiento'],['Eduardo','Vacuna de influenza','octubre 2026','Prevención']];
+  const acc=info.map(i=>`<tr><td><b>${i.p.name}</b></td><td><span class="sp r">Aceptó</span> <span class="lc">desde ene 2026</span></td><td>${i.k==='eduardo'?'hoy':'hace 2 días'}</td><td>
+    ${delAsk===i.k?`<span class="warnb" style="display:inline-block">¿Borrar todo el perfil de ${i.p.name}? </span> <button class="mini dn" data-yes="${i.k}">Sí, borrar</button> <button class="mini" data-no="1">Cancelar</button>`:`<div class="acts"><button class="mini">Exportar</button><button class="mini dn" data-del="${i.k}">Borrar perfil</button></div>`}</td></tr>`).join('');
+  $('vFam').innerHTML=`<div><h2 style="margin:0;font-size:22px">Familia</h2><p class="ft" style="margin:2px 0 0">Vista de administrador. Cada persona ve solo su propio perfil.</p></div>
+   <div class="fg3">${cards}</div>
+   <section class="card docs"><h2>Pendientes de la familia</h2><ul class="xl">${PEND.map(r=>`<li><span><b>${r[0]}</b> · ${r[1]}<br><span class="s">${r[3]}</span></span><span class="sp ${r[2].includes('vencida')?'a':'c'}">${r[2]}</span></li>`).join('')}</ul></section>
+   <section class="card docs"><h2>Acceso y consentimiento</h2><div class="tblwrap"><table><thead><tr><th>Perfil</th><th>Consentimiento para el admin</th><th>Último acceso</th><th>Datos</th></tr></thead><tbody>${acc}</tbody></table></div>
+   ${delAsk==='done'?'<div class="okb">En la aplicación real, el perfil se borra de forma permanente, con sus documentos y respaldos.</div>':''}</section>
+   <section class="card docs"><h2>Datos y privacidad</h2><ul class="xl"><li><span>Último respaldo cifrado</span><span class="s">26 sep 2026, disco externo</span></li><li><span>Enviado a la IA este mes</span><span class="s">14 documentos, solo texto sin datos personales</span></li><li style="display:grid"><span>Uso de IA este mes: <b>3.20 USD</b> de 15 USD</span><div class="meter"><i style="width:21%"></i></div></li></ul></section>`;
+  $('vFam').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{delAsk=b.dataset.del;renderFam()});
+  $('vFam').querySelectorAll('[data-no]').forEach(b=>b.onclick=()=>{delAsk=null;renderFam()});
+  $('vFam').querySelectorAll('[data-yes]').forEach(b=>b.onclick=()=>{delAsk='done';renderFam()});
+}
+
+function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();renderChat();renderCon();renderFam();renderUp();$('navFam').hidden=!PEOPLE[who].admin;hideTip()}
 renderAll();
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(view==='g'&&vw==='res')renderDetail()},120)});
 </script>
