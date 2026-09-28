@@ -752,7 +752,7 @@ function renderUp(){
   on('sim1',()=>{upErr='ilegible';upMsg='';upState=4;renderUp()});on('sim2',()=>{upErr='offline';upMsg='';upState=4;renderUp()});
   if(upState===4){
     on('e1',()=>{if(upErr==='ilegible'){upState=0;renderUp()}else startUp()});
-    on('e2',()=>{if(upErr==='ilegible')startUp();else{upMsg='Procesando con el modelo local. Puede tardar más y requerir más revisión.';renderUp()}});
+    on('e2',()=>startUp());
     on('e3',()=>{upMsg=upErr==='ilegible'?'Se abriría un formulario para capturar los valores a mano.':'En cola. Se procesará cuando haya conexión.';renderUp()});
   }
   on('upDemo',startUp);on('upNew',()=>{upState=0;renderUp()});on('upDisc',()=>{upState=0;upOpen=false;renderUp()});
@@ -823,18 +823,20 @@ function renderFam(){
 function toast(t){const d=document.createElement('div');d.className='tg';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
 
 /* ---------- Primer uso ---------- */
-let onbStep=0,onbOnly=false,onbErr='',onbPin={a:'',b:''},onbMode='hib',
-    onbFam=[{n:'Eugenia',rel:'Pareja',acc:'Cuenta propia'},{n:'Beatriz',rel:'Madre',acc:'Cuenta propia'}];
+let onbStep=0,onbOnly=false,onbErr='',onbPin={a:'',b:''},
+    onbFam=[{n:'Eugenia',rel:'Pareja',acc:'Cuenta propia',pin:'••••'},{n:'Beatriz',rel:'Madre',acc:'Cuenta propia',pin:'••••'}];
 const ONB_N=6;
+let onbDraft={n:'',rel:'Pareja',acc:'Cuenta propia',pin:''};
 function openOnb(step,only){onbStep=step||0;onbOnly=!!only;onbErr='';$('onb').hidden=false;renderOnb()}
 function renderOnb(){
   const i=onbStep;let body='',nav='';
   if(i===0){body=`<h1>Bienvenido a House</h1><p>El expediente de salud de tu familia, en un solo lugar y solo tuyo.</p>
    <ul class="bul"><li><i>1</i><div><b>Todo junto.</b> Laboratorios, imágenes, recetas y expediente de cada persona.</div></li>
    <li><i>2</i><div><b>Se queda en tu equipo.</b> Tus documentos viven cifrados en esta computadora.</div></li>
-   <li><i>3</i><div><b>IA sin tus datos personales.</b> Antes de usar la IA se quitan nombres, folios y fechas de nacimiento.</div></li></ul>`;
+   <li><i>3</i><div><b>IA sin tus datos personales.</b> Antes de usar la IA se quitan nombres, folios y fechas de nacimiento.</div></li></ul>
+   <p class="ft">Tú configuras todo, incluidos los perfiles y el acceso de tu familia. Las demás personas solo entran con su PIN.</p>`;
    nav=`<button class="btn" data-n="next">Empezar</button>`}
-  else if(i===1){body=`<h1>Crea tu PIN</h1><p>Lo usarás para entrar y para cambiar de perfil. Elige 4 dígitos que recuerdes.</p>
+  else if(i===1){body=`<h1>Crea tu PIN de administrador</h1><p>Lo usarás para entrar y para cambiar de perfil. Elige 4 dígitos que recuerdes.</p>
    <div class="fg2"><label>PIN<input id="p1" type="password" inputmode="numeric" maxlength="4" autocomplete="off" value="${onbPin.a}"></label>
    <label>Repite el PIN<input id="p2" type="password" inputmode="numeric" maxlength="4" autocomplete="off" value="${onbPin.b}"></label>
    <label class="opt" style="grid-template-columns:auto 1fr;color:var(--ink);font-weight:500"><input type="checkbox" id="pk" checked><span><b>Activar passkey</b> (Face ID o Touch ID) para entrar más rápido</span></label>
@@ -846,33 +848,37 @@ function renderOnb(){
    <label>Sexo al nacer<select id="sx"><option>Masculino</option><option>Femenino</option></select></label>
    <p class="ft">Los rangos de algunos marcadores (hemoglobina, creatinina, ALT) dependen del sexo y de la edad.</p></div>`;
    nav=`<button class="btn ghost" data-n="back">Atrás</button><button class="btn" data-n="next">Continuar</button>`}
-  else if(i===3){body=`<h1>Tu familia</h1><p>Agrega a las personas que quieres cuidar. Quien tiene cuenta propia solo ve su perfil; tú, como administrador, ves todos.</p>
-   <div class="fg2">${onbFam.map((f,k)=>`<div class="prof"><span><b>${f.n}</b> · ${f.rel}<br><span class="ft">${f.acc}</span></span><button class="mini" data-rm="${k}">Quitar</button></div>`).join('')}
+  else if(i===3){body=`<h1>Tu familia</h1><p>Tú creas el perfil de cada persona y le asignas su PIN inicial, que le entregas después. Quien tiene cuenta propia solo ve su perfil; tú, como administrador, ves todos.</p>
+   <div class="fg2">${onbFam.map((f,k)=>`<div class="prof"><span><b>${f.n}</b> · ${f.rel}<br><span class="ft">${f.acc}${f.acc==='Cuenta propia'?' · PIN '+f.pin:''}</span></span><button class="mini" data-rm="${k}">Quitar</button></div>`).join('')}
    <div class="card" style="padding:14px;display:grid;gap:10px"><b>Agregar persona</b>
     <div class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"><label>Nombre<input id="fn"></label>
     <label>Parentesco<select id="fr"><option>Pareja</option><option>Madre</option><option>Padre</option><option>Hijo o hija</option><option>Otro</option></select></label>
     <label>Fecha de nacimiento<input id="fb" type="date"></label>
-    <label>Acceso<select id="fa"><option>Cuenta propia</option><option>Solo lo administro yo</option></select></label></div>
+    <label>Acceso<select id="fa"><option>Cuenta propia</option><option>Solo lo administro yo</option></select></label>
+    <label>PIN inicial (4 dígitos)<input id="fp" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>
     ${onbErr?`<div class="err">${onbErr}</div>`:''}<button class="btn ghost" data-n="add" style="justify-self:start">Agregar</button></div></div>`;
    nav=onbOnly?`<button class="btn ghost" data-n="close">Cerrar</button><button class="btn" data-n="close">Guardar</button>`:`<button class="btn ghost" data-n="back">Atrás</button><button class="btn" data-n="next">Continuar</button>`}
-  else if(i===4){body=`<h1>IA y privacidad</h1><p>Tú decides qué se procesa dónde. Puedes cambiarlo después en Configuración.</p>
-   <div class="fg2"><div class="opt ${onbMode==='hib'?'on':''}" data-m="hib"><input type="radio" ${onbMode==='hib'?'checked':''} aria-label="Híbrido"><div><b>Híbrido (recomendado)</b><br><span class="ft">La lectura y la limpieza de datos personales ocurren en tu Mac. A la IA solo llega texto anonimizado.</span></div></div>
-   <div class="opt ${onbMode==='loc'?'on':''}" data-m="loc"><input type="radio" ${onbMode==='loc'?'checked':''} aria-label="Solo local"><div><b>Solo local</b><br><span class="ft">Nada sale de tu equipo. Es más lento y menos preciso con documentos difíciles.</span></div></div>
-   <label>Proveedor de IA para interpretar<select id="pv"><option>Claude (Anthropic)</option><option>GPT (OpenAI)</option><option>Gemini (Google)</option></select></label>
+  else if(i===4){body=`<h1>IA y privacidad</h1><p>House funciona siempre en modo híbrido. Puedes cambiar el proveedor de IA cuando quieras en Configuración.</p>
+   <div class="okb" style="font-weight:500"><b>Cómo se protegen tus datos.</b> La lectura de documentos y la limpieza de datos personales ocurren en tu Mac. A la IA solo llega texto sin nombres, folios ni fechas de nacimiento.</div>
+   <div class="fg2"><label>Proveedor de IA para interpretar<select id="pv"><option>Claude (Anthropic)</option><option>GPT (OpenAI)</option><option>Gemini (Google)</option></select></label>
    <label>Tope mensual de gasto en IA (USD)<input id="cp" type="number" value="15" min="0"></label></div>`;
    nav=`<button class="btn ghost" data-n="back">Atrás</button><button class="btn" data-n="next">Continuar</button>`}
   else{body=`<h1>Todo listo</h1><p>Creamos el perfil de Eduardo y ${onbFam.length} más. El siguiente paso es subir tu primer estudio.</p>
-   <ul class="bul"><li><i>✓</i><div>PIN creado${'' }</div></li><li><i>✓</i><div>Perfiles: Eduardo${onbFam.map(f=>', '+f.n).join('')}</div></li><li><i>✓</i><div>Modo: ${onbMode==='hib'?'Híbrido':'Solo local'}, tope de 15 USD al mes</div></li></ul>`;
+   <ul class="bul"><li><i>✓</i><div>Tu PIN de administrador</div></li><li><i>✓</i><div>Perfiles: Eduardo${onbFam.map(f=>', '+f.n).join('')}</div></li><li><i>✓</i><div>IA en modo híbrido, tope de 15 USD al mes</div></li></ul>`;
    nav=`<button class="btn ghost" data-n="fin1">Ir al resumen</button><button class="btn" data-n="fin2">Subir mi primer documento</button>`}
   $('onb').innerHTML=`<div class="onbw"><div class="bar"><span class="ft">${onbOnly?'Agregar perfil':`Paso ${i+1} de ${ONB_N}`}</span><button class="mini" data-n="close">Cerrar</button></div>
    ${onbOnly?'':`<div class="prog"><i style="width:${(i+1)/ONB_N*100}%"></i></div>`}${body}<div class="bar" style="justify-content:flex-end">${nav}</div></div>`;
   const R=$('onb');
+  if(i===3){$('fn').value=onbDraft.n;$('fr').value=onbDraft.rel;$('fa').value=onbDraft.acc;$('fp').value=onbDraft.pin}
   R.querySelectorAll('[data-n]').forEach(b=>b.onclick=()=>{
     const a=b.dataset.n;onbErr='';
     if(a==='close'){R.hidden=true;if(onbOnly)renderFam();return}
     if(a==='back'){onbStep--;return renderOnb()}
-    if(a==='add'){const n=$('fn').value.trim();if(!n){onbErr='Escribe un nombre.';return renderOnb()}
-      onbFam.push({n,rel:$('fr').value,acc:$('fa').value});return renderOnb()}
+    if(a==='add'){const n=$('fn').value.trim(),ac=$('fa').value,pn=$('fp').value;
+      onbDraft={n,rel:$('fr').value,acc:ac,pin:pn};
+      if(!n){onbErr='Escribe un nombre.';return renderOnb()}
+      if(ac==='Cuenta propia'&&!/^\d{4}$/.test(pn)){onbErr='Asigna un PIN de 4 dígitos, o elige "Solo lo administro yo".';return renderOnb()}
+      onbFam.push({n,rel:$('fr').value,acc:ac,pin:pn});onbDraft={n:'',rel:'Pareja',acc:'Cuenta propia',pin:''};return renderOnb()}
     if(a==='next'){
       if(i===1){const x=$('p1').value,y=$('p2').value;onbPin={a:x,b:y};
         if(!/^\d{4}$/.test(x)){onbErr='El PIN debe tener 4 dígitos.';return renderOnb()}
@@ -881,8 +887,7 @@ function renderOnb(){
     if(a==='fin1'||a==='fin2'){R.hidden=true;setView(a==='fin2'?'doc':'res');if(a==='fin2'){upOpen=true;upState=0;renderUp()}}
   });
   R.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{onbFam.splice(+b.dataset.rm,1);renderOnb()});
-  R.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{onbMode=b.dataset.m;renderOnb()});
-}
+  }
 
 /* ---------- Alta manual ---------- */
 const MEDS=['Losartán','Atorvastatina','Metformina','Levotiroxina','Omeprazol','Vitamina D3','Sulfato ferroso','Ácido acetilsalicílico'];
@@ -965,14 +970,14 @@ function renderImg(){
 
 /* ---------- Configuración ---------- */
 let cfgTab='gen',CFG={mode:'hib',ext:'Claude (Anthropic)',int:'Claude (Anthropic)',ver:'GPT (OpenAI)',cap:15,lock:'5 minutos',bk:'Disco externo',fr:'Cada semana',ia2:false};
-const PROV=['Claude (Anthropic)','GPT (OpenAI)','Gemini (Google)','Modelo local (en tu Mac)'];
+const PROV=['Claude (Anthropic)','GPT (OpenAI)','Gemini (Google)'];
 const selH=(id,opts,v)=>`<select id="${id}">${opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
 function renderCfg(){
   const tabs=`<div class="tabs" style="width:max-content;max-width:100%"><button data-t="gen" aria-pressed="${cfgTab==='gen'}">General</button><button data-t="est" aria-pressed="${cfgTab==='est'}">Estados y avisos</button></div>`;
   let h='';
   if(cfgTab==='gen'){
    h=`<section class="card cfg"><h2>Inteligencia artificial</h2>
-    <div class="row2"><span><b>Modo de privacidad</b><br><span class="ft">Híbrido: a la IA solo llega texto anonimizado.</span></span>${selH('cm',['Híbrido (recomendado)','Solo local'],CFG.mode==='hib'?'Híbrido (recomendado)':'Solo local')}</div>
+    <div class="row2"><span><b>Modo híbrido</b><br><span class="ft">A la IA solo llega texto anonimizado. La lectura y la limpieza ocurren en tu Mac.</span></span><span class="sp r">Siempre activo</span></div>
     <div class="row2"><span><b>Proveedor por tarea</b><br><span class="ft">Puedes usar uno distinto para cada paso y cambiarlo cuando quieras.</span></span></div>
     <div class="row2"><span>Extraer datos del documento</span>${selH('c1',PROV,CFG.ext)}</div>
     <div class="row2"><span>Interpretar y responder en el chat</span>${selH('c2',PROV,CFG.int)}</div>
@@ -985,7 +990,7 @@ function renderCfg(){
     <div class="row2"><span>Lectura de texto (OCR de Apple)</span><span class="sp r">Instalado</span></div>
     <div class="row2"><span>Anonimizador de datos personales</span><span class="sp r">Instalado</span></div>
     <div class="row2"><span>Modelo de visión local (4B)</span><span class="sp r">Instalado · 2.6 GB</span></div>
-    <div class="row2"><span>Modelo de lenguaje local (7B)</span><span class="sp a">No instalado · 4.4 GB</span><button class="mini" id="cd">Descargar</button></div></section>
+    </section>
    <section class="card cfg"><h2>Respaldo</h2>
     <div class="row2"><span>Destino</span>${selH('cb',['Disco externo','Carpeta en la nube (cifrada)'],CFG.bk)}</div>
     <div class="row2"><span>Frecuencia</span>${selH('cf',['Cada día','Cada semana','Cada mes'],CFG.fr)}</div>
@@ -995,6 +1000,7 @@ function renderCfg(){
    <section class="card cfg"><h2>Seguridad</h2>
     <div class="row2"><span>Bloqueo automático por inactividad</span>${selH('cl',['1 minuto','5 minutos','15 minutos'],CFG.lock)}</div>
     <div class="row2"><span>Passkeys registradas</span><span>Eduardo, Eugenia</span></div>
+    <div class="row2"><span>PIN de cada persona</span><span class="acts"><button class="mini" data-pin="Eugenia">Restablecer el de Eugenia</button><button class="mini" data-pin="Beatriz">Restablecer el de Beatriz</button></span></div>
     <div class="row2"><span>Rangos de referencia</span><span>Versión 2026.09 · por sexo y edad</span></div>
     <div class="acts"><button class="btn ghost" id="ce">Exportar todos los datos</button></div></section>`;
   }else{
@@ -1004,19 +1010,19 @@ function renderCfg(){
     <div class="st"><h3>Perfil nuevo, sin datos</h3><p>Aún no hay resultados de Mateo. Sube su primer estudio y aquí verás su resumen, sus marcadores y su historial.</p><div class="acts"><button class="btn">Subir primer estudio</button></div></div>
     <div class="st warn"><h3>Documento duplicado</h3><p>Ya subiste este informe (Química sanguínea, 22 sep 2026). ¿Qué quieres hacer?</p><div class="acts"><button class="btn ghost">Conservar ambos</button><button class="btn ghost">Reemplazar</button><button class="btn ghost">Descartar el nuevo</button></div></div>
     <div class="st warn"><h3>Respaldo atrasado</h3><p>Hace 14 días que no respaldas tus datos. Si pierdes o dañas tu Mac, podrías perderlos.</p><div class="acts"><button class="btn">Respaldar ahora</button></div></div>
-    <div class="st warn"><h3>Falta un modelo local</h3><p>El modelo de lenguaje local no está instalado. Mientras tanto, la lectura usa solo el OCR de Apple y la extracción difícil se hace con el proveedor de IA.</p><div class="acts"><button class="btn ghost">Instalar (4.4 GB)</button></div></div>
-    <div class="st"><h3>Tope de gasto alcanzado</h3><p>Llegaste al tope de 15 USD este mes. Los documentos nuevos se guardan y se procesan el mes siguiente, o con el modelo local si lo prefieres.</p><div class="acts"><button class="btn ghost">Subir el tope</button><button class="btn ghost">Usar modelo local</button></div></div>
+    <div class="st warn"><h3>Falta un componente en tu Mac</h3><p>El modelo de visión local no está instalado. Los escaneos difíciles no se podrán leer hasta instalarlo.</p><div class="acts"><button class="btn ghost">Instalar (2.6 GB)</button></div></div>
+    <div class="st"><h3>Tope de gasto alcanzado</h3><p>Llegaste al tope de 15 USD este mes. Los documentos nuevos se guardan y se procesan el mes siguiente, o antes si subes el tope.</p><div class="acts"><button class="btn ghost">Subir el tope</button></div></div>
    </div>`;
   }
   $('vCfg').innerHTML=`<div><h2 style="margin:0;font-size:22px">Configuración</h2></div>${tabs}${h}`;
   $('vCfg').querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{cfgTab=b.dataset.t;renderCfg()});
   if(cfgTab==='gen'){
    const on=(id,ev,f)=>{const x=$(id);if(x)x[ev]=f};
-   on('cm','onchange',e=>{CFG.mode=e.target.value.startsWith('Híb')?'hib':'loc';toast('Modo actualizado')});
    on('c1','onchange',e=>{CFG.ext=e.target.value;toast('Proveedor actualizado')});on('c2','onchange',e=>{CFG.int=e.target.value;toast('Proveedor actualizado')});on('c3','onchange',e=>{CFG.ver=e.target.value;toast('Proveedor actualizado')});
    on('cc','onchange',e=>{CFG.cap=+e.target.value||0;renderCfg()});on('ci','onchange',e=>{CFG.ia2=e.target.checked});
    on('cb','onchange',e=>{CFG.bk=e.target.value});on('cf','onchange',e=>{CFG.fr=e.target.value});on('cl','onchange',e=>{CFG.lock=e.target.value});
-   on('ct','onclick',()=>toast('Conexión correcta con '+CFG.int));on('cd','onclick',()=>toast('Descarga iniciada (maqueta)'));
+   $('vCfg').querySelectorAll('[data-pin]').forEach(b=>b.onclick=()=>toast('Se pediría un PIN nuevo para '+b.dataset.pin));
+   on('ct','onclick',()=>toast('Conexión correcta con '+CFG.int));
    on('cr','onclick',()=>toast('Respaldo cifrado completado (maqueta)'));on('ck','onclick',()=>toast('Se pediría tu PIN antes de mostrarla'));on('ce','onclick',()=>toast('Exportación completa (maqueta)'));
   }
 }
@@ -1028,7 +1034,7 @@ function errCard(){
    <ul style="margin:0;padding-left:18px;font-size:14px;color:var(--muted)"><li>Toma la foto con buena luz y de frente.</li><li>Si es un PDF de un portal, descárgalo directo en vez de escanearlo.</li></ul>
    <div class="acts"><button class="btn" id="e1">Subir otro archivo</button><button class="btn ghost" id="e2">Reintentar con lectura reforzada</button><button class="btn ghost" id="e3">Capturar los valores a mano</button></div>${upMsg?`<div class="okb">${upMsg}</div>`:''}</div></section>`;
   return `<section class="card docs"><div class="st warn"><h3>▲ Sin conexión con el proveedor de IA</h3><p>No se pudo contactar a ${CFG.ext}. No se envió nada y tus datos siguen en tu Mac.</p>
-   <div class="acts"><button class="btn" id="e1">Reintentar</button><button class="btn ghost" id="e2">Procesar con el modelo local (menos preciso)</button><button class="btn ghost" id="e3">Guardar en cola y procesar después</button></div>${upMsg?`<div class="okb">${upMsg}</div>`:''}</div></section>`;
+   <div class="acts"><button class="btn" id="e1">Reintentar</button><button class="btn ghost" id="e3">Guardar en cola y procesar después</button></div>${upMsg?`<div class="okb">${upMsg}</div>`:''}</div></section>`;
 }
 
 document.addEventListener('click',e=>{

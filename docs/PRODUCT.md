@@ -8,15 +8,15 @@
 |---|---|
 | País y proveedores | México; estudios de Chopo y otros laboratorios privados (en su mayoría PDFs digitales) |
 | Perfiles iniciales | Eduardo, Eugenia (esposa), Beatriz (mamá); perfiles adicionales ilimitados. Consentimiento explícito de cada adulto |
-| Usuarios y permisos | Eduardo, Eugenia y Beatriz usan la app con cuenta propia. Cada una ve solo su perfil; solo Eduardo (admin) administra y ve todos. Las dos aceptan de forma explícita que el admin vea sus datos, y pueden exportar o pedir borrar su perfil |
+| Usuarios y permisos | **Todo el onboarding lo hace solo Eduardo:** crea los perfiles y asigna el PIN inicial de cada persona; nadie hace onboarding por sí mismo. Eduardo, Eugenia y Beatriz usan la app con cuenta propia (PIN). Cada una ve solo su perfil; solo Eduardo (admin) administra y ve todos. Las dos aceptan de forma explícita que el admin vea sus datos, y pueden exportar o pedir borrar su perfil |
 | Nombre | House (nombre definitivo del producto y del repo) |
 | Corpus inicial | ~30 documentos históricos, casi todos PDF y algunos DICOM; sirven de banco de pruebas |
 | Plataformas | MVP: aplicación web local en la laptop. Después: acceso desde otros equipos y PWA móvil con cámara para recetas; app nativa más adelante |
 | Hardware | MacBook Air M5, 16 GB: desarrollo y procesamiento local; no es servidor 24/7 |
-| Privacidad de IA | **Híbrido (B):** OCR, anonimización y DICOM en local (modelos de ~4B a 7B cuantizados); a la API solo va texto anonimizado, con proveedor sin entrenamiento y retención mínima |
+| Privacidad de IA | **Único modo: híbrido** (no existe un modo "solo local").  OCR, anonimización y DICOM en local (modelos de ~4B a 7B cuantizados); a la API solo va texto anonimizado, con proveedor sin entrenamiento y retención mínima |
 | Alojamiento MVP | Local-first en el Mac, cifrado (FileVault más cifrado de la app); acceso móvil por Tailscale; respaldo cifrado con llave propia |
 | Evolución | Mini-PC o Mac mini dedicado, o VPS cifrado, cuando se necesite acceso 24/7 |
-| Abstracción de modelos | **Agnóstico al modelo:** la interpretación médica pasa por una capa de proveedor intercambiable (varios proveedores de API y modelos locales). La elección se decide con un banco de pruebas propio (exactitud de extracción, calidad de explicación, alucinaciones) y no por reputación |
+| Abstracción de modelos | **Agnóstico al modelo:** la interpretación médica pasa por una capa de proveedor intercambiable (varios proveedores de API, elegibles por tarea). La elección se decide con un banco de pruebas propio (exactitud de extracción, calidad de explicación, alucinaciones) y no por reputación |
 | Reglas clínicas | Rangos, banderas rojas y cálculos son deterministas y auditables; el modelo interpreta y explica, no decide |
 
 | Confirmado | Arquitectura híbrida (B) y local-first |
@@ -57,15 +57,15 @@ Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mocku
 
 **Familia (solo admin):** tarjeta por persona (atención, vigilar, mejoraron), pendientes de toda la familia (resurtidos, prevención, citas), y panel de datos y privacidad (último respaldo, documentos enviados a la IA, uso mensual de IA frente al tope).
 
-**Primer uso:** asistente de 6 pasos: bienvenida, PIN (con passkey opcional), perfil propio (fecha de nacimiento y sexo, que determinan los rangos), familia (parentesco y tipo de acceso: cuenta propia o solo administrado por Eduardo), IA y privacidad (híbrido o solo local, proveedor y tope mensual) y resumen final con acceso directo a subir el primer documento. El paso de familia se reutiliza para "Agregar perfil".
+**Primer uso:** asistente de 6 pasos que **solo hace el admin**: bienvenida, su PIN de administrador (con passkey opcional), su perfil (fecha de nacimiento y sexo, que determinan los rangos), familia (por cada persona: parentesco, tipo de acceso, cuenta propia con PIN inicial que él asigna y entrega, o solo administrado por Eduardo), IA y privacidad (siempre híbrido; proveedor y tope mensual) y resumen final con acceso directo a subir el primer documento. El paso de familia se reutiliza para "Agregar perfil".
 
 **Alta manual en el expediente:** botón "Agregar" en alergias, problemas de salud, medicamentos (con sugerencias de catálogo), antecedentes familiares y cirugías.
 
 **Imagen:** lista de estudios por persona y visor con brillo, contraste, zoom y corte (imágenes ilustrativas en la maqueta), reporte del radiólogo, hallazgos extraídos, seguimiento indicado y explicación en palabras sencillas. Los metadatos personales del DICOM se eliminan en local. La segunda lectura con IA es experimental y está desactivada por defecto. Desde el historial cronológico, cada estudio de imagen enlaza a su visor.
 
-**Errores y estados:** archivo ilegible (reintentar con lectura reforzada, capturar a mano), sin conexión con el proveedor de IA (reintentar, modelo local, cola), valor crítico (aviso rojo con lenguaje sin diagnóstico), perfil nuevo sin datos, documento duplicado, respaldo atrasado, modelo local faltante y tope de gasto alcanzado.
+**Errores y estados:** archivo ilegible (reintentar con lectura reforzada, capturar a mano), sin conexión con el proveedor de IA (reintentar o guardar en cola), valor crítico (aviso rojo con lenguaje sin diagnóstico), perfil nuevo sin datos, documento duplicado, respaldo atrasado, componente local faltante y tope de gasto alcanzado.
 
-**Configuración (solo admin):** modo de privacidad, **proveedor de IA elegible por tarea** (extracción, interpretación y chat, verificación), tope mensual y uso, activación de la segunda lectura de imágenes, modelos instalados en la Mac, respaldo (destino, frecuencia, clave de recuperación), seguridad (bloqueo por inactividad, passkeys) y exportación total.
+**Configuración (solo admin):** **proveedor de IA elegible por tarea** (extracción, interpretación y chat, verificación), tope mensual y uso, activación de la segunda lectura de imágenes, modelos instalados en la Mac, respaldo (destino, frecuencia, clave de recuperación), seguridad (bloqueo por inactividad, passkeys y restablecimiento del PIN de cada persona) y exportación total.
 
 **Pendiente de diseñar:** recordatorios y notificaciones y versión móvil con cámara (ambos para fases posteriores).
 
@@ -97,7 +97,7 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 ## 4. Usuarios y perfiles
 
 - **Admin (Eduardo):** el único que ve todos los perfiles. Sube, revisa y configura.
-- **Miembro adulto (Eugenia, Beatriz):** usa la app con su propia cuenta y ve solo su propio perfil; nunca ve los de otros. El admin puede ver el suyo, con su consentimiento explícito.
+- **Miembro adulto (Eugenia, Beatriz):** solo entra con el PIN que le asignó el admin; no hace configuración ni onboarding. Usa la app con su propia cuenta y ve solo su propio perfil; nunca ve los de otros. El admin puede ver el suyo, con su consentimiento explícito.
 - **Dependiente (hijos, adultos mayores):** perfil administrado por un adulto. Los rangos de referencia cambian por edad y sexo, y los pediátricos son distintos.
 - Permisos por perfil. Compartir con un médico queda fuera de alcance por ahora.
 
@@ -185,7 +185,7 @@ Diagnóstico, prescripción, telemedicina, venta de suplementos, pedir estudios 
 
 - Datos de salud = máxima sensibilidad. Cifrado en tránsito y en reposo, con cifrado a nivel de campo para identificadores.
 - **Opciones de despliegue** (decisión pendiente, ver §12): (a) autoalojado en casa o VPS propio, (b) nube privada propia con región elegida.
-- Proveedores de IA solo con **retención cero y sin entrenamiento** sobre nuestros datos; posibilidad de modo 100 % local con modelos abiertos.
+- Proveedores de IA solo con **retención cero y sin entrenamiento** sobre nuestros datos; el modo es siempre híbrido: lo que puede procesarse en la Mac (lectura, limpieza de datos personales, DICOM) se queda ahí.
 - Minimizar lo que sale del entorno: eliminar o seudonimizar datos personales antes de enviarlos a una API cuando sea viable.
 - Autenticación fuerte (passkeys), bitácora de accesos, respaldos cifrados y exportación total en todo momento.
 - El repositorio de código es privado y **jamás** contiene datos de salud reales.
@@ -224,7 +224,7 @@ Diagnóstico, prescripción, telemedicina, venta de suplementos, pedir estudios 
 1. País y sistema de salud (define terminologías, laboratorios y normativa como LFPDPPP)?
 2. ¿Quiénes son los perfiles iniciales (edades, condiciones conocidas)?
 3. ¿Despliegue: autoalojado en casa, VPS propio o nube privada?
-4. ¿Toleras que el contenido de los documentos se procese con una API de un proveedor de IA (con retención cero), o exiges 100 % local?
+4. ¿Toleras que el contenido de los documentos se procese con una API de un proveedor de IA (con retención cero), o exiges 100 % local? *(Resuelta: siempre híbrido.)*
 5. ¿Cuántos documentos históricos tienes y en qué formatos?
 6. ¿Qué dispositivos y wearables usan?
 7. ¿Solo web, o también app móvil para fotografiar recetas?
