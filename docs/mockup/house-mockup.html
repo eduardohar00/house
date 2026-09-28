@@ -594,7 +594,7 @@ function drawPin(){$('dots').innerHTML=[0,1,2,3].map(i=>`<i class="${i<pin.lengt
 function openLock(k){pend=k;pin='';$('lockName').textContent=PEOPLE[k].name;drawPin();$('lock').hidden=false}
 function keyPin(d){if(d==='x')pin=pin.slice(0,-1);else if(pin.length<4)pin+=d;drawPin();if(pin.length===4)setTimeout(unlock,150)}
 function unlock(){
-  $('lock').hidden=true;who=pend;chat=[];upState=0;evf='Todo';delAsk=null;
+  $('lock').hidden=true;who=pend;chat=[];upState=0;evf='Todo';
   if(!PEOPLE[who].admin&&vw==='fam')vw='res';
   renderAll();setView(vw);
 }
@@ -748,7 +748,6 @@ function renderChat(){
 }
 
 /* ---------- Familia (solo admin) ---------- */
-let delAsk=null;
 function renderFam(){
   const w0=who,info=Object.keys(PEOPLE).map(k=>{who=k;const a=analyze();return {k,p:PEOPLE[k],at:a.at.length,vi:a.vi.length,me:a.me.length}});who=w0;
   const last={eduardo:'27 ago 2026',eugenia:'27 ago 2026',beatriz:'27 ago 2026'};
@@ -756,17 +755,10 @@ function renderFam(){
     <div class="kp"><div><b>${i.at}</b><small>Atención</small></div><div><b>${i.vi}</b><small>Vigilar</small></div><div><b>${i.me}</b><small>Mejoraron</small></div></div>
     <div class="ft">Último estudio: ${last[i.k]} · ${X[i.k].meds.length} medicamento${X[i.k].meds.length===1?'':'s'} activo${X[i.k].meds.length===1?'':'s'}</div></section>`).join('');
   const PEND=[['Beatriz','Resurtir losartán','en 5 días','Medicamento'],['Beatriz','Densitometría anual','vencida desde jul 2023','Prevención'],['Beatriz','Cardiología, control','octubre 2026','Consulta'],['Eugenia','Repetir ferritina','en 3 meses','Seguimiento'],['Eduardo','Vacuna de influenza','octubre 2026','Prevención']];
-  const acc=info.map(i=>`<tr><td><b>${i.p.name}</b></td><td><span class="sp r">Aceptó</span> <span class="lc">desde ene 2026</span></td><td>${i.k==='eduardo'?'hoy':'hace 2 días'}</td><td>
-    ${delAsk===i.k?`<span class="warnb" style="display:inline-block">¿Borrar todo el perfil de ${i.p.name}? </span> <button class="mini dn" data-yes="${i.k}">Sí, borrar</button> <button class="mini" data-no="1">Cancelar</button>`:`<div class="acts"><button class="mini">Exportar</button><button class="mini dn" data-del="${i.k}">Borrar perfil</button></div>`}</td></tr>`).join('');
   $('vFam').innerHTML=`<div><h2 style="margin:0;font-size:22px">Familia</h2><p class="ft" style="margin:2px 0 0">Vista de administrador. Cada persona ve solo su propio perfil.</p></div>
    <div class="fg3">${cards}</div>
    <section class="card docs"><h2>Pendientes de la familia</h2><ul class="xl">${PEND.map(r=>`<li><span><b>${r[0]}</b> · ${r[1]}<br><span class="s">${r[3]}</span></span><span class="sp ${r[2].includes('vencida')?'a':'c'}">${r[2]}</span></li>`).join('')}</ul></section>
-   <section class="card docs"><h2>Acceso y consentimiento</h2><div class="tblwrap"><table><thead><tr><th>Perfil</th><th>Consentimiento para el admin</th><th>Último acceso</th><th>Datos</th></tr></thead><tbody>${acc}</tbody></table></div>
-   ${delAsk==='done'?'<div class="okb">En la aplicación real, el perfil se borra de forma permanente, con sus documentos y respaldos.</div>':''}</section>
    <section class="card docs"><h2>Datos y privacidad</h2><ul class="xl"><li><span>Último respaldo cifrado</span><span class="s">26 sep 2026, disco externo</span></li><li><span>Enviado a la IA este mes</span><span class="s">14 documentos, solo texto sin datos personales</span></li><li style="display:grid"><span>Uso de IA este mes: <b>3.20 USD</b> de 15 USD</span><div class="meter"><i style="width:21%"></i></div></li></ul></section>`;
-  $('vFam').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{delAsk=b.dataset.del;renderFam()});
-  $('vFam').querySelectorAll('[data-no]').forEach(b=>b.onclick=()=>{delAsk=null;renderFam()});
-  $('vFam').querySelectorAll('[data-yes]').forEach(b=>b.onclick=()=>{delAsk='done';renderFam()});
 }
 
 function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();renderChat();renderFam();renderUp();$('navFam').hidden=!PEOPLE[who].admin;hideTip()}

@@ -55,7 +55,7 @@ Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mocku
 - Ante un dato que no existe (presión arterial de 2023) responde que no lo encontró y qué documento ayudaría; no inventa.
 - Preguntas sugeridas como punto de partida.
 
-**Familia (solo admin):** tarjeta por persona (atención, vigilar, mejoraron), pendientes de toda la familia (resurtidos, prevención, citas), estado del consentimiento y último acceso, exportar o borrar un perfil (con confirmación), y panel de datos y privacidad (último respaldo, documentos enviados a la IA, uso mensual de IA frente al tope).
+**Familia (solo admin):** tarjeta por persona (atención, vigilar, mejoraron), pendientes de toda la familia (resurtidos, prevención, citas), y panel de datos y privacidad (último respaldo, documentos enviados a la IA, uso mensual de IA frente al tope).
 
 **Pendiente de diseñar:** onboarding y creación de perfiles, alta manual de medicamentos y antecedentes, DICOM y estudios de imagen (visor y reporte), recordatorios y notificaciones, configuración (proveedor de IA, presupuesto, respaldos), versión móvil con cámara y estados de error o vacío.
 
