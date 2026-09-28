@@ -1,0 +1,18 @@
+LABORATORIO CLÍNICO EJEMPLO (documento sintético, no real)
+Paciente: EDUARDO EJEMPLO GARCÍA        Sexo: M
+Fecha de nacimiento: 12/04/1983
+CURP: GAEE830412HDFRJD09      Teléfono: 55 1234 5678
+Folio: A-20260922-0417        Fecha de toma de muestra: 22/09/2026
+Médico solicitante: Dr. Ramos
+Domicilio: Calle Ejemplo 123, Col. Centro
+
+QUÍMICA CLÍNICA
+Glucosa                          92 mg/dL      70 - 99
+Colesterol total                189 mg/dL      < 200
+Colesterol LDL (calculado)      108 mg/dL      < 100
+Colesterol HDL                   51 mg/dL      > 40
+Triglicéridos                   131 mg/dL      < 150
+Creatinina                     1.01 mg/dL      0.70 - 1.30
+TGP (ALT)                        31 U/L        hasta 41
+Ferritina                       132 ng/mL      30 - 400
+Vitamina D 25-OH                 92 nmol/L     75 - 250

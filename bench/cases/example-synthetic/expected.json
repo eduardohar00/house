@@ -1,0 +1,14 @@
+{
+  "collected_on": "2026-09-22",
+  "results": [
+    {"key": "glucose", "value": 92, "unit": "mg/dL"},
+    {"key": "chol_total", "value": 189, "unit": "mg/dL"},
+    {"key": "ldl", "value": 108, "unit": "mg/dL"},
+    {"key": "hdl", "value": 51, "unit": "mg/dL"},
+    {"key": "triglycerides", "value": 131, "unit": "mg/dL"},
+    {"key": "creatinine", "value": 1.01, "unit": "mg/dL"},
+    {"key": "alt", "value": 31, "unit": "U/L"},
+    {"key": "ferritin", "value": 132, "unit": "ng/mL"},
+    {"key": "vitamin_d", "value": 36.86, "unit": "ng/mL"}
+  ]
+}

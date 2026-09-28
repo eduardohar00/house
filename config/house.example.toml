@@ -1,0 +1,31 @@
+# Copia este archivo a config/house.toml (está en .gitignore) y ajústalo.
+# Las claves de API van en variables de entorno, nunca en este archivo.
+# Los precios son por millón de tokens; verifícalos con la tarifa vigente de cada proveedor.
+
+[budget]
+monthly_usd = 15
+
+# Qué proveedor hace cada tarea. Cámbialo por configuración, sin tocar código.
+[tasks]
+extract   = "claude"
+interpret = "claude"
+verify    = "claude"     # idealmente otro proveedor, para una segunda opinión independiente
+
+[providers.claude]
+kind = "anthropic"
+model = "claude-opus-5-5"
+effort = "medium"
+input_per_mtok = 4.0
+output_per_mtok = 20.0
+
+# Ejemplos para comparar en el banco de pruebas. Completa 'model' con un ID vigente.
+[providers.gpt]
+kind = "openai"
+model = ""
+
+[providers.gemini]
+kind = "gemini"
+model = ""
+
+[providers.baseline-regex]
+kind = "mock"

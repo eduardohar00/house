@@ -5,3 +5,15 @@
 .env
 .env.*
 !.env.example
+
+# Configuración local y datos reales del banco de pruebas: nunca al repositorio
+/config/house.toml
+/bench/private/
+/bench/results/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+*.sqlite
+*.sqlite3
