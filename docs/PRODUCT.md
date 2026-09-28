@@ -2,6 +2,22 @@
 
 > Documento de producto v0.1. Uso personal y familiar, no comercial. Autor: PM (Claude) con Eduardo como usuario y stakeholder único.
 
+## 0. Decisiones tomadas (v0.2)
+
+| Tema | Decisión |
+|---|---|
+| País y proveedores | México; estudios de Chopo y otros laboratorios privados (en su mayoría PDFs digitales) |
+| Perfiles iniciales | Eduardo, Eugenia (esposa), Beatriz (mamá); perfiles adicionales ilimitados. Consentimiento explícito de cada adulto |
+| Corpus inicial | ~30 documentos históricos, casi todos PDF y algunos DICOM; sirven de banco de pruebas |
+| Plataformas | Web instalable (PWA) con cámara para móvil; app nativa queda para después |
+| Hardware | MacBook Air M5, 16 GB: desarrollo y procesamiento local; no es servidor 24/7 |
+| Privacidad de IA | **Híbrido (B):** OCR, anonimización y DICOM en local (modelos de ~4B a 7B cuantizados); a la API solo va texto anonimizado, con proveedor sin entrenamiento y retención mínima |
+| Alojamiento MVP | Local-first en el Mac, cifrado (FileVault más cifrado de la app); acceso móvil por Tailscale; respaldo cifrado con llave propia |
+| Evolución | Mini-PC o Mac mini dedicado, o VPS cifrado, cuando se necesite acceso 24/7 |
+| Abstracción de modelos | Proveedor de IA intercambiable por configuración (API o local) para poder migrar a 100 % local |
+
+Pendiente de confirmar por Eduardo: opción B y alojamiento local-first (recomendación del PM).
+
 ## 1. Visión
 
 Un lugar privado donde toda la información médica de la familia (laboratorios, imágenes, recetas, expediente clínico, wearables) se convierte en una **línea de tiempo estructurada por persona**. Sobre ella, agentes de IA explican qué cambió, qué importa, qué preguntar al médico y qué falta por hacer.
