@@ -20,7 +20,7 @@
 | Confirmado | Arquitectura híbrida (B) y local-first |
 | Revisión humana | Obligatoria al inicio; se relaja solo a lo marcado cuando la precisión lo justifique |
 | Alcance | Histórico, insights y tips; sin venta de paneles ni planes de optimización |
-| Acceso | MVP: Mac + Tailscale. Siguiente paso: equipo dedicado en casa, o VPS cifrado si se necesita 24/7 |
+| Acceso (confirmado) | MVP: Mac + Tailscale. Siguiente paso: equipo dedicado en casa, o VPS cifrado si se necesita 24/7 |
 
 ## 1. Visión
 
