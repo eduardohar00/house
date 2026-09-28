@@ -17,7 +17,10 @@
 | Abstracción de modelos | **Agnóstico al modelo:** la interpretación médica pasa por una capa de proveedor intercambiable (varios proveedores de API y modelos locales). La elección se decide con un banco de pruebas propio (exactitud de extracción, calidad de explicación, alucinaciones) y no por reputación |
 | Reglas clínicas | Rangos, banderas rojas y cálculos son deterministas y auditables; el modelo interpreta y explica, no decide |
 
-Pendiente de confirmar por Eduardo: opción B y alojamiento local-first (recomendación del PM).
+| Confirmado | Arquitectura híbrida (B) y local-first |
+| Revisión humana | Obligatoria al inicio; se relaja solo a lo marcado cuando la precisión lo justifique |
+| Alcance | Histórico, insights y tips; sin venta de paneles ni planes de optimización |
+| Acceso | MVP: Mac + Tailscale. Siguiente paso: equipo dedicado en casa, o VPS cifrado si se necesita 24/7 |
 
 ## 1. Visión
 
@@ -46,8 +49,8 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 
 ## 4. Usuarios y perfiles
 
-- **Admin (Eduardo):** sube, revisa, configura. Ve todo.
-- **Miembro adulto:** ve solo su perfil, si lo desea.
+- **Admin (Eduardo):** el único que ve todos los perfiles. Sube, revisa y configura.
+- **Miembro adulto (Eugenia, Beatriz):** ve solo su propio perfil.
 - **Dependiente (hijos, adultos mayores):** perfil administrado por un adulto. Los rangos de referencia cambian por edad y sexo, y los pediátricos son distintos.
 - Permisos por perfil y compartición temporal con un médico mediante un enlace de solo lectura con expiración.
 
@@ -63,6 +66,11 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 
 ## 6. Alcance funcional
 
+### 6.0 Expediente clínico por persona (P0)
+- Historial completo de cada perfil en un solo lugar: antecedentes personales y familiares, alergias, diagnósticos, consultas y notas, cirugías, hospitalizaciones, vacunas y medicamentos actuales y pasados.
+- Todos los documentos originales en orden cronológico, vinculados a los datos estructurados que se extrajeron de ellos.
+- Alcance del producto: **histórico, insights y tips**. No se venden paneles de laboratorio ni planes de optimización.
+
 ### 6.1 Ingesta (P0)
 - Subir PDF, foto de recetas y reportes, capturas de pantalla, y correos reenviados.
 - Clasificación automática: laboratorio, imagen, receta, nota clínica, vacunas, otro.
@@ -72,6 +80,7 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 
 ### 6.2 Línea de tiempo y biomarcadores (P0)
 - Vista por persona: eventos, documentos, medicamentos, diagnósticos.
+- Selector de biomarcadores: elegir cualquiera (colesterol, glucosa, ferritina, etc.) y ver su evolución completa, aunque provenga de laboratorios distintos.
 - Gráficas por biomarcador con rango de referencia del laboratorio **y** rango clínico por edad y sexo; el "rango óptimo" de longevidad se etiqueta aparte como opinión, no como norma.
 - Detección de tendencias y cambios significativos (cambio de referencia más variabilidad biológica).
 - Conversión de unidades transparente.
