@@ -185,16 +185,7 @@ header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 @keyframes bl{50%{opacity:.25}}
 .ask{display:flex;gap:8px}
-.ask input,.fm2 input,.fm2 select,.fm2 textarea{font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);min-width:0}
-.ask input{flex:1}
-.fm2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end}
-.fm2 label{display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:600}
-.sheet{background:#fff;color:#1c2529;border:1px solid var(--line);border-radius:12px;padding:24px;display:grid;gap:14px;max-width:820px;box-shadow:var(--shadow);font-size:14px}
-.sheet h3{margin:0;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:#5b6a71}
-.sheet h2{margin:0;font-size:22px}
-.sheet table th,.sheet table td{border-color:#e3e9ec;padding:6px 8px;font-size:13px}
-.sheet ul{margin:0;padding-left:18px;display:grid;gap:4px}
-.sheet .ft{color:#6b7a81}
+.ask input,.ask input{flex:1}
 .fg3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .pc{padding:18px;display:grid;gap:10px}
 .pc h3{margin:0;font-size:18px}
@@ -238,7 +229,6 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
     <button role="tab" data-v="exp" aria-selected="false">Expediente clínico</button>
     <button role="tab" data-v="doc" aria-selected="false">Documentos</button>
     <button role="tab" data-v="asi" aria-selected="false">Asistente</button>
-    <button role="tab" data-v="con" aria-selected="false">Consulta</button>
     <button role="tab" data-v="fam" aria-selected="false" id="navFam">Familia</button>
   </nav>
 
@@ -275,7 +265,6 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
   <div class="col" id="vExp" hidden></div>
 
   <div class="col" id="vAsi" hidden></div>
-  <div class="col" id="vCon" hidden></div>
   <div class="col" id="vFam" hidden></div>
 
   <div class="col" id="vDoc" hidden>
@@ -593,7 +582,7 @@ function renderDocsTab(){
 let vw='res';
 function setView(v){
   vw=v;
-  ['res','exp','doc','asi','con','fam'].forEach(k=>$('v'+k[0].toUpperCase()+k.slice(1)).hidden=k!==v);
+  ['res','exp','doc','asi','fam'].forEach(k=>$('v'+k[0].toUpperCase()+k.slice(1)).hidden=k!==v);
   $('nav').querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.v===v));
   if(v==='res')renderDetail();
 }
@@ -605,7 +594,7 @@ function drawPin(){$('dots').innerHTML=[0,1,2,3].map(i=>`<i class="${i<pin.lengt
 function openLock(k){pend=k;pin='';$('lockName').textContent=PEOPLE[k].name;drawPin();$('lock').hidden=false}
 function keyPin(d){if(d==='x')pin=pin.slice(0,-1);else if(pin.length<4)pin+=d;drawPin();if(pin.length===4)setTimeout(unlock,150)}
 function unlock(){
-  $('lock').hidden=true;who=pend;chat=[];conGen=false;upState=0;evf='Todo';shareOn=false;delAsk=null;
+  $('lock').hidden=true;who=pend;chat=[];upState=0;evf='Todo';delAsk=null;
   if(!PEOPLE[who].admin&&vw==='fam')vw='res';
   renderAll();setView(vw);
 }
@@ -741,7 +730,7 @@ function answer(k){
   if(k==='dm'){const g=bmx('glu'),a=bmx('a1c');
     return `<div><b>No puedo diagnosticar.</b> Ese diagnóstico lo hace tu médico con criterios clínicos y pruebas confirmatorias. Lo que sí puedo mostrarte de tu expediente:</div>
     <ul style="margin:0;padding-left:18px"><li>Glucosa en ayunas: <b>${fv(g,S('glu')[li])} mg/dL</b> (${STL[st(g,S('glu')[li])].toLowerCase()}; referencia ${rtOf(g)}).</li><li>Hemoglobina glucosilada: <b>${fv(a,S('a1c')[li])} %</b> (${STL[st(a,S('a1c')[li])].toLowerCase()}; referencia ${rtOf(a)}).</li></ul>
-    <div>${cite(li)}</div><div class="ft">Si quieres, preparo un resumen con esto para tu próxima consulta (pestaña Consulta).</div>`}
+    <div>${cite(li)}</div><div class="ft">Lleva estos datos a tu médico para que los valore.</div>`}
   return `<div><b>No encontré ese dato en tu expediente.</b> Revisé ${DATES.length} estudios de laboratorio y las notas de consulta cargadas, y ninguno registra presión arterial de 2023.</div>
     <div class="ft">Si tienes una nota de consulta o un registro de presión de ese año, súbelo en Documentos y podré usarlo. Prefiero decirte que no lo tengo antes que inventarlo.</div>`;
 }
@@ -756,46 +745,6 @@ function renderChat(){
   $('vAsi').querySelectorAll('.chip').forEach(c=>c.onclick=()=>ask(c.dataset.k,QS.find(q=>q[0]===c.dataset.k)[1]));
   $('askf').onsubmit=e=>{e.preventDefault();const v=$('askq').value.trim();if(v)ask(null,v)};
   const m=$('msgs');m.scrollTop=m.scrollHeight;
-}
-
-/* ---------- Resumen para consulta ---------- */
-let conGen=false,conSpec='Medicina interna',conMot='Chequeo anual',shareOn=false;
-const SPEC={'Medicina interna':null,'Cardiología':['ldl','hdl','tg','pcr','glu','crea'],'Endocrinología':['glu','a1c','tsh','vd','tg'],'Ginecología':['fer','hb','tsh','vd']};
-function conData(){
-  const {at,vi}=analyze(),sp=SPEC[conSpec],li=DATES.length-1,p=PEOPLE[who];
-  const ids=sp||[...at.map(r=>r.b.id),...vi.map(r=>r.b.id)].slice(0,8);
-  const rel=BM.filter(b=>ids.includes(b.id));
-  const flagged=[...at,...vi].filter(r=>!sp||sp.includes(r.b.id));
-  const qs=flagged.slice(0,4).map(r=>`Mi ${r.b.n} está en ${fv(r.b,r.l)} ${r.b.u} (${r.f===r.l?'sin cambio':r.l<r.f?'bajó':'subió'} desde ${r.y0}). ¿Qué meta es razonable para mí y cada cuánto lo repetimos?`);
-  qs.push('¿Hay algún estudio o vacuna pendiente que deba programar?');
-  return {rel,flagged,qs:qs.slice(0,5),li,p};
-}
-function conText(){
-  const {rel,qs,li,p}=conData(),x=X[who];
-  return `RESUMEN PARA CONSULTA · ${p.name}\nEspecialidad: ${conSpec}. Motivo: ${conMot}.\nAlergias: ${x.alergias.join(', ')||'ninguna conocida'}.\nProblemas: ${x.problemas.map(r=>r[0]+' ('+r[2]+')').join('; ')}.\nMedicamentos: ${x.meds.map(r=>r[0]+' '+r[1]).join('; ')}.\nResultados:\n${rel.map(b=>{const v=p.s[b.id];return `- ${b.n}: ${v.slice(-3).map(q=>fv(b,q)).join(' > ')} ${b.u} (ref ${rtOf(b)})`}).join('\n')}\nPreguntas:\n${qs.map(q=>'- '+q).join('\n')}`;
-}
-function renderCon(){
-  const opts=Object.keys(SPEC).map(k=>`<option ${k===conSpec?'selected':''}>${k}</option>`).join('');
-  let sheet='';
-  if(conGen){
-    const {rel,qs,li,p}=conData(),x=X[who];
-    sheet=`<div class="sheet"><div><h3>Resumen para consulta</h3><h2>${p.name} · ${p.age}</h2><div class="ft">${conSpec} · Motivo: ${conMot} · Preparado el 28 sep 2026</div></div>
-     <div><h3>Alergias</h3>${x.alergias.join(', ')||'Ninguna conocida'}</div>
-     <div><h3>Problemas de salud</h3><ul>${x.problemas.map(r=>`<li>${r[0]} · ${r[2]}, desde ${r[3]}</li>`).join('')}</ul></div>
-     <div><h3>Medicamentos actuales</h3><ul>${x.meds.map(r=>`<li>${r[0]}, ${r[1]} (${r[2]})</li>`).join('')}</ul></div>
-     <div><h3>Resultados relevantes</h3><div class="tblwrap"><table><thead><tr><th>Marcador</th><th>Últimos 3 (${DATES.slice(-3).map(d=>d.slice(0,4)).join(', ')})</th><th>Referencia</th><th>Estado</th></tr></thead><tbody>${rel.map(b=>{const v=p.s[b.id];return `<tr><td>${b.n}</td><td>${v.slice(-3).map(q=>fv(b,q)).join(' → ')} ${b.u}</td><td>${rtOf(b)}</td><td>${STL[st(b,v[li])]}</td></tr>`}).join('')}</tbody></table></div></div>
-     <div><h3>Preguntas sugeridas</h3><ul>${qs.map(q=>`<li>${q}</li>`).join('')}</ul></div>
-     <div class="ft">Generado por House a partir de los documentos del expediente. Informativo; no sustituye una valoración médica.</div></div>
-     <div class="acts"><button class="btn" id="cpy">Copiar resumen</button><button class="btn ghost" id="shr">${shareOn?'Revocar enlace':'Compartir con enlace temporal'}</button><span class="ft" id="cpyMsg"></span></div>
-     ${shareOn?`<div class="okb">Enlace de solo lectura, vence en 7 días: house.local/c/k9x2…f41. Puedes revocarlo cuando quieras.</div>`:''}`;
-  }
-  $('vCon').innerHTML=`<section class="card docs"><div><h2 style="margin:0;font-size:20px">Preparar consulta</h2><p class="ft" style="margin:2px 0 0">Un resumen de una o dos páginas para llevar al médico.</p></div>
-   <div class="fm2"><label>Especialidad<select id="cSp">${opts}</select></label><label>Motivo de la consulta<input id="cMo" value="${conMot}"></label><button class="btn" id="cGen">Generar resumen</button></div></section>${sheet}`;
-  $('cSp').onchange=e=>{conSpec=e.target.value};$('cMo').onchange=e=>{conMot=e.target.value};
-  $('cGen').onclick=()=>{conSpec=$('cSp').value;conMot=$('cMo').value||'Consulta';conGen=true;shareOn=false;renderCon()};
-  const c=$('cpy');if(c){c.onclick=()=>{const m=$('cpyMsg');const t=conText();
-    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{m.textContent='Copiado.'}).catch(()=>{m.textContent='No se pudo copiar aquí; en la app real se descarga como PDF.'})};
-    $('shr').onclick=()=>{shareOn=!shareOn;renderCon()}}
 }
 
 /* ---------- Familia (solo admin) ---------- */
@@ -820,7 +769,7 @@ function renderFam(){
   $('vFam').querySelectorAll('[data-yes]').forEach(b=>b.onclick=()=>{delAsk='done';renderFam()});
 }
 
-function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();renderChat();renderCon();renderFam();renderUp();$('navFam').hidden=!PEOPLE[who].admin;hideTip()}
+function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();renderChat();renderFam();renderUp();$('navFam').hidden=!PEOPLE[who].admin;hideTip()}
 renderAll();
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(view==='g'&&vw==='res')renderDetail()},120)});
 </script>

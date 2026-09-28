@@ -28,7 +28,7 @@
 
 Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mockup/house-mockup.html) (se abre en el navegador). Es dirección de diseño, no código de producción.
 
-**Estructura de la app:** selector de perfil arriba (con PIN o passkey para cambiar de persona) y seis secciones: **Resumen**, **Expediente clínico**, **Documentos**, **Asistente**, **Consulta** y **Familia** (esta última solo para el admin).
+**Estructura de la app:** selector de perfil arriba (con PIN o passkey para cambiar de persona) y cinco secciones: **Resumen**, **Expediente clínico**, **Documentos**, **Asistente** y **Familia** (esta última solo para el admin).
 
 **Resumen**
 - Los marcadores se agrupan por sistema, en este orden: metabolismo de la glucosa, lípidos y riesgo cardiovascular, hígado, riñón, sangre y hierro, tiroides, vitaminas. Cada grupo muestra cuántos de sus marcadores están en rango.
@@ -54,8 +54,6 @@ Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mocku
 - Ante "¿Tengo diabetes?" no diagnostica: muestra los datos y remite al médico.
 - Ante un dato que no existe (presión arterial de 2023) responde que no lo encontró y qué documento ayudaría; no inventa.
 - Preguntas sugeridas como punto de partida.
-
-**Consulta:** eliges especialidad y motivo, y se genera un resumen de una hoja (alergias, problemas, medicamentos, resultados relevantes con últimos 3 valores y estado, preguntas sugeridas). Se puede copiar o compartir con un enlace de solo lectura que vence en 7 días y se puede revocar.
 
 **Familia (solo admin):** tarjeta por persona (atención, vigilar, mejoraron), pendientes de toda la familia (resurtidos, prevención, citas), estado del consentimiento y último acceso, exportar o borrar un perfil (con confirmación), y panel de datos y privacidad (último respaldo, documentos enviados a la IA, uso mensual de IA frente al tope).
 
@@ -91,17 +89,16 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 - **Admin (Eduardo):** el único que ve todos los perfiles. Sube, revisa y configura.
 - **Miembro adulto (Eugenia, Beatriz):** usa la app con su propia cuenta y ve solo su propio perfil; nunca ve los de otros. El admin puede ver el suyo, con su consentimiento explícito.
 - **Dependiente (hijos, adultos mayores):** perfil administrado por un adulto. Los rangos de referencia cambian por edad y sexo, y los pediátricos son distintos.
-- Permisos por perfil y compartición temporal con un médico mediante un enlace de solo lectura con expiración.
+- Permisos por perfil. Compartir con un médico queda fuera de alcance por ahora.
 
 ## 5. Jobs to be done
 
 1. "Guardé este estudio, no quiero perderlo ni volver a capturarlo."
 2. "¿Cómo va mi colesterol, glucosa o ferritina en los últimos 5 años, aunque me los haya hecho en 3 laboratorios?"
 3. "¿Qué cambió desde el último chequeo y debería preocuparme?"
-4. "Voy a consulta: dame un resumen de una hoja con lo relevante y mis preguntas."
-5. "¿Qué medicamentos toma mi mamá y hay interacciones?"
-6. "¿Qué chequeos o vacunas me tocan por edad y antecedentes?"
-7. "Explícame este reporte de resonancia en lenguaje sencillo."
+4. "¿Qué medicamentos toma mi mamá y hay interacciones?"
+5. "¿Qué chequeos o vacunas me tocan por edad y antecedentes?"
+6. "Explícame este reporte de resonancia en lenguaje sencillo."
 
 ## 6. Alcance funcional
 
@@ -135,10 +132,7 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 
 ### 6.5 Asistente "Pregunta a tu expediente" (P0)
 - Chat con recuperación sobre los datos de la persona elegida. **Toda respuesta cita el documento y el dato de origen.**
-- Preguntas de ejemplo: "¿Cuándo fue mi última HbA1c?", "Compara mis lípidos 2021 contra hoy", "Prepara mi consulta con cardiología".
-
-### 6.6 Preparación de consulta y resumen (P1)
-- PDF de 1 a 2 páginas: problemas activos, medicamentos, últimos resultados relevantes, tendencias y preguntas sugeridas.
+- Preguntas de ejemplo: "¿Cuándo fue mi última HbA1c?", "Compara mis lípidos 2021 contra hoy".
 
 ### 6.7 Prevención y seguimiento (P2)
 - Chequeos, tamizajes y vacunas recomendadas según edad, sexo y antecedentes, con guías citadas.
@@ -148,6 +142,7 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 - Apple Health, Google Health Connect, Whoop u Oura (exportaciones o APIs), FHIR y exportación completa (PDF y JSON).
 
 ### Fuera de alcance (v1)
+Resumen o preparación de consulta para el médico y compartir el expediente con terceros (decisión de Eduardo).
 Diagnóstico, prescripción, telemedicina, venta de suplementos, pedir estudios (no somos laboratorio), red social.
 
 ## 7. Arquitectura de IA
@@ -167,7 +162,6 @@ Diagnóstico, prescripción, telemedicina, venta de suplementos, pedir estudios 
 | **Seguridad de medicamentos** | Interacciones, duplicidades, dosis | Base de conocimiento de fármacos más LLM para explicar |
 | **Evidencia** | Busca guías y literatura (PubMed, guías) y cita | RAG sobre fuentes curadas |
 | **Imagen (P2)** | Segunda lectura informativa sobre estudios | Modelo médico especializado (evaluar MedGemma u otros) |
-| **Redactor de consulta** | Genera el resumen para el médico | Modelo de frontera |
 
 **Modelos de salud especializados:** evaluar modelos abiertos médicos (por ejemplo la familia MedGemma) para ejecución **local** en imagen y texto sensible, contra modelos de frontera por API. Decidir con un banco de pruebas propio (ver §11), no por reputación.
 
@@ -200,7 +194,7 @@ Diagnóstico, prescripción, telemedicina, venta de suplementos, pedir estudios 
 |---|---|---|
 | **0. Fundamentos** | Repo, modelo de datos, esquema de seguridad, banco de pruebas con 20 a 30 documentos propios | Decisiones técnicas validadas |
 | **1. MVP (laboratorios)** | Perfiles, ingesta de PDF de laboratorio, revisión, línea de tiempo, gráficas, chat con citas | Reemplaza la carpeta de PDFs |
-| **2. Expediente completo** | Recetas y medicamentos, notas clínicas, reportes de imagen, resumen de consulta | Un solo expediente |
+| **2. Expediente completo** | Recetas y medicamentos, notas clínicas, reportes de imagen | Un solo expediente |
 | **3. Inteligencia** | Prevención, evidencia, interacciones, integración con wearables | Recomendaciones con fuentes |
 | **4. Imagen avanzada** | Visor DICOM y modelos de imagen (segunda lectura) | Experimental |
 
