@@ -28,7 +28,7 @@
 
 Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mockup/house-mockup.html) (se abre en el navegador). Es dirección de diseño, no código de producción.
 
-**Estructura de la app:** selector de perfil arriba (con PIN o passkey para cambiar de persona) y cinco secciones: **Resumen**, **Expediente clínico**, **Documentos**, **Asistente** y **Familia** (esta última solo para el admin).
+**Estructura de la app:** selector de perfil arriba (con PIN o passkey para cambiar de persona) y siete secciones: **Resumen**, **Expediente clínico**, **Documentos**, **Imagen**, **Asistente**, **Familia** y **Configuración** (las dos últimas solo para el admin).
 
 **Resumen**
 - Los marcadores se agrupan por sistema, en este orden: metabolismo de la glucosa, lípidos y riesgo cardiovascular, hígado, riñón, sangre y hierro, tiroides, vitaminas. Cada grupo muestra cuántos de sus marcadores están en rango.
@@ -57,7 +57,17 @@ Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mocku
 
 **Familia (solo admin):** tarjeta por persona (atención, vigilar, mejoraron), pendientes de toda la familia (resurtidos, prevención, citas), y panel de datos y privacidad (último respaldo, documentos enviados a la IA, uso mensual de IA frente al tope).
 
-**Pendiente de diseñar:** onboarding y creación de perfiles, alta manual de medicamentos y antecedentes, DICOM y estudios de imagen (visor y reporte), recordatorios y notificaciones, configuración (proveedor de IA, presupuesto, respaldos), versión móvil con cámara y estados de error o vacío.
+**Primer uso:** asistente de 6 pasos: bienvenida, PIN (con passkey opcional), perfil propio (fecha de nacimiento y sexo, que determinan los rangos), familia (parentesco y tipo de acceso: cuenta propia o solo administrado por Eduardo), IA y privacidad (híbrido o solo local, proveedor y tope mensual) y resumen final con acceso directo a subir el primer documento. El paso de familia se reutiliza para "Agregar perfil".
+
+**Alta manual en el expediente:** botón "Agregar" en alergias, problemas de salud, medicamentos (con sugerencias de catálogo), antecedentes familiares y cirugías.
+
+**Imagen:** lista de estudios por persona y visor con brillo, contraste, zoom y corte (imágenes ilustrativas en la maqueta), reporte del radiólogo, hallazgos extraídos, seguimiento indicado y explicación en palabras sencillas. Los metadatos personales del DICOM se eliminan en local. La segunda lectura con IA es experimental y está desactivada por defecto. Desde el historial cronológico, cada estudio de imagen enlaza a su visor.
+
+**Errores y estados:** archivo ilegible (reintentar con lectura reforzada, capturar a mano), sin conexión con el proveedor de IA (reintentar, modelo local, cola), valor crítico (aviso rojo con lenguaje sin diagnóstico), perfil nuevo sin datos, documento duplicado, respaldo atrasado, modelo local faltante y tope de gasto alcanzado.
+
+**Configuración (solo admin):** modo de privacidad, **proveedor de IA elegible por tarea** (extracción, interpretación y chat, verificación), tope mensual y uso, activación de la segunda lectura de imágenes, modelos instalados en la Mac, respaldo (destino, frecuencia, clave de recuperación), seguridad (bloqueo por inactividad, passkeys) y exportación total.
+
+**Pendiente de diseñar:** recordatorios y notificaciones y versión móvil con cámara (ambos para fases posteriores).
 
 ## 1. Visión
 

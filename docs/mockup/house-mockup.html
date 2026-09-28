@@ -6,7 +6,7 @@
 :root{
   --bg:#F2F6F7; --surface:#FFFFFF; --ink:#12232B; --muted:#5A6B73; --line:#DCE3E6;
   --accent:#0F6E75; --accent-soft:#DFF0F1; --band:#E3F1EA; --band-line:#B9DCC9;
-  --good:#1E7A4D; --good-bg:#E1F2E9; --warn:#A85A08; --warn-bg:#FBEBD6;
+  --good:#1E7A4D; --good-bg:#E1F2E9; --crit:#B3261E; --crit-bg:#FBE4E2; --warn:#A85A08; --warn-bg:#FBEBD6;
   --shadow:0 1px 2px rgba(18,35,43,.06),0 4px 16px rgba(18,35,43,.04);
   --font:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
 }
@@ -14,12 +14,12 @@
   --bg:#0D171B; --surface:#152329; --ink:#E6EEF0; --muted:#95A7AE; --line:#263840;
   --accent:#4FC1C8; --accent-soft:#173A3E; --band:#173328; --band-line:#2C5A44;
   --good:#5CCB92; --good-bg:#173A2A; --warn:#F0A24F; --warn-bg:#3A2B14;
-  --shadow:none; color-scheme:dark;}}
+  --shadow:none;--crit:#FF8A80;--crit-bg:#3F1D1B; color-scheme:dark;}}
 :root[data-theme="dark"]{
   --bg:#0D171B; --surface:#152329; --ink:#E6EEF0; --muted:#95A7AE; --line:#263840;
   --accent:#4FC1C8; --accent-soft:#173A3E; --band:#173328; --band-line:#2C5A44;
   --good:#5CCB92; --good-bg:#173A2A; --warn:#F0A24F; --warn-bg:#3A2B14;
-  --shadow:none; color-scheme:dark;}
+  --shadow:none;--crit:#FF8A80;--crit-bg:#3F1D1B; color-scheme:dark;}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5;
   padding-inline:16px;padding-block:20px 48px;font-variant-numeric:tabular-nums}
@@ -196,6 +196,51 @@ header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
 .acts{display:flex;flex-wrap:wrap;gap:6px}
 .mini{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:4px 10px;font-size:13px;font-weight:600}
 .mini.dn{border-color:var(--warn);color:var(--warn)}
+.onb{position:fixed;inset:0;background:var(--bg);z-index:60;overflow-y:auto;padding:16px}
+.onb[hidden]{display:none}
+.onbw{max-width:640px;margin:0 auto;display:grid;gap:18px;padding-block:24px}
+.prog{height:6px;border-radius:3px;background:var(--line);overflow:hidden}.prog i{display:block;height:100%;background:var(--accent);transition:width .2s}
+@media (prefers-reduced-motion:reduce){.prog i{transition:none}}
+.onbw h1{margin:0;font-size:28px;letter-spacing:-.02em;text-wrap:balance}
+.onbw p{margin:0;color:var(--muted)}
+.bul{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.bul li{display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start}
+.bul i{width:32px;height:32px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-style:normal;font-weight:700}
+.fg2{display:grid;gap:12px}
+.fg2 label,.fmodal label{display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:600}
+.fg2 input,.fg2 select,.fmodal input,.fmodal select,.cfg select,.cfg input[type=number]{font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);min-width:0}
+.err{color:var(--crit);font-size:13px;font-weight:600}
+.opt{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;align-items:start}
+.opt.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.prof{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.fmodal{position:fixed;inset:0;background:rgba(10,20,25,.6);display:grid;place-items:center;z-index:55;padding:16px}
+.fmodal[hidden]{display:none}
+.fbox{background:var(--surface);border-radius:18px;padding:22px;width:min(420px,100%);display:grid;gap:12px}
+.fbox h2{margin:0;font-size:20px}
+.add-x{margin-left:8px;text-transform:none;letter-spacing:0;font-size:12px;padding:2px 8px}
+.sugs{display:flex;flex-wrap:wrap;gap:6px}
+.img2{display:grid;grid-template-columns:minmax(0,280px) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:900px){.img2{grid-template-columns:1fr}}
+.stl{display:grid;gap:8px}
+.stb{text-align:left;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);display:grid;gap:2px}
+.stb[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.vw{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:760px){.vw{grid-template-columns:1fr}}
+.cvbox{background:#000;border-radius:12px;overflow:hidden;position:relative;aspect-ratio:1;width:100%}
+.cvbox canvas{width:100%;height:100%;display:block}
+.cvbox span{position:absolute;left:8px;bottom:6px;color:#9fb0b6;font-size:11px}
+.ctl{display:grid;gap:6px;margin-top:10px}
+.ctl label{display:grid;grid-template-columns:70px 1fr;gap:8px;font-size:13px;color:var(--muted);align-items:center}
+.cfg{padding:20px;display:grid;gap:12px}
+.cfg h2{margin:0;font-size:17px}
+.row2{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 16px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.row2:first-of-type{border-top:0}
+.gal{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.st{border-radius:14px;padding:16px;display:grid;gap:8px;border:1px solid var(--line);background:var(--surface);align-content:start}
+.st h3{margin:0;font-size:15px}.st p{margin:0;font-size:14px;color:var(--muted)}
+.st.crit{background:var(--crit-bg);border-color:var(--crit)}.st.crit h3{color:var(--crit)}.st.crit p{color:var(--ink)}
+.st.warn{background:var(--warn-bg);border-color:var(--warn)}.st.warn h3{color:var(--warn)}.st.warn p{color:var(--ink)}
+.tg{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;z-index:70;font-size:14px;max-width:90%}
 .tblwrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -212,7 +257,7 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
 </style>
 
 <div class="wrap">
-  <div class="notice">Maqueta de diseño con datos ficticios. No es la aplicación final y no contiene datos reales.</div>
+  <div class="notice">Maqueta de diseño con datos ficticios. No es la aplicación final y no contiene datos reales. <button class="mini" id="onbBtn">Ver primer uso</button></div>
 
   <header>
     <div class="brand"><i><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></i>House</div>
@@ -228,8 +273,10 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
     <button role="tab" data-v="res" aria-selected="true">Resumen</button>
     <button role="tab" data-v="exp" aria-selected="false">Expediente clínico</button>
     <button role="tab" data-v="doc" aria-selected="false">Documentos</button>
+    <button role="tab" data-v="img" aria-selected="false">Imagen</button>
     <button role="tab" data-v="asi" aria-selected="false">Asistente</button>
     <button role="tab" data-v="fam" aria-selected="false" id="navFam">Familia</button>
+    <button role="tab" data-v="cfg" aria-selected="false" id="navCfg">Configuración</button>
   </nav>
 
   <div class="col" id="vRes">
@@ -264,7 +311,9 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
 
   <div class="col" id="vExp" hidden></div>
 
+  <div class="col" id="vImg" hidden></div>
   <div class="col" id="vAsi" hidden></div>
+  <div class="col" id="vCfg" hidden></div>
   <div class="col" id="vFam" hidden></div>
 
   <div class="col" id="vDoc" hidden>
@@ -277,6 +326,8 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
   </div>
 </div>
 
+<div class="onb" id="onb" hidden></div>
+<div class="fmodal" id="fmodal" hidden></div>
 <div class="lock" id="lock" hidden><div class="lockbox" role="dialog" aria-modal="true" aria-label="Ingresar PIN">
   <h2>Hola, <span id="lockName"></span></h2><p>Ingresa tu PIN de 4 dígitos</p>
   <div class="dots" id="dots"></div><div class="pad" id="pad"></div>
@@ -564,13 +615,13 @@ function renderExp(){
   const evs=allEvents().filter(e=>evf==='Todo'||e.t===evf);
   $('vExp').innerHTML=`
    <div class="xg">
-    <section class="card xc"><h3>Alergias</h3>${alg}<h3 style="margin-top:6px">Problemas de salud</h3><ul class="xl">${prob}</ul></section>
-    <section class="card xc"><h3>Medicamentos actuales</h3><ul class="xl">${meds}</ul></section>
-    <section class="card xc"><h3>Antecedentes familiares</h3><ul class="xl">${fam}</ul><h3 style="margin-top:6px">Cirugías</h3><ul class="xl">${cir}</ul></section>
+    <section class="card xc"><h3>Alergias<button class="mini add-x" data-f="alergia">Agregar</button></h3>${alg}<h3 style="margin-top:6px">Problemas de salud<button class="mini add-x" data-f="problema">Agregar</button></h3><ul class="xl">${prob}</ul></section>
+    <section class="card xc"><h3>Medicamentos actuales<button class="mini add-x" data-f="med">Agregar</button></h3><ul class="xl">${meds}</ul></section>
+    <section class="card xc"><h3>Antecedentes familiares<button class="mini add-x" data-f="fam">Agregar</button></h3><ul class="xl">${fam}</ul><h3 style="margin-top:6px">Cirugías<button class="mini add-x" data-f="cir">Agregar</button></h3><ul class="xl">${cir}</ul></section>
    </div>
    <section class="card xc"><h3>Historial cronológico</h3>
     <div class="chips" role="group" aria-label="Filtrar por tipo">${types.map(t=>`<button class="chip" data-t="${t}" aria-pressed="${t===evf}">${t}</button>`).join('')}</div>
-    <div class="tl">${evs.map(e=>`<div class="ev"><div class="dt">${fd(e.d)}</div><div><div class="tt"><span class="ty">${e.t}</span>${e.title}</div><div class="sb">${e.src}</div></div></div>`).join('')}</div>
+    <div class="tl">${evs.map(e=>`<div class="ev"><div class="dt">${fd(e.d)}</div><div><div class="tt"><span class="ty">${e.t}</span>${e.title}</div><div class="sb">${e.src}${e.t==='Imagen'?` <button class="mini" data-st="${e.d}">Ver estudio</button>`:''}</div></div></div>`).join('')}</div>
    </section>`;
   $('vExp').querySelectorAll('.chip').forEach(c=>c.onclick=()=>{evf=c.dataset.t;renderExp()});
 }
@@ -582,7 +633,7 @@ function renderDocsTab(){
 let vw='res';
 function setView(v){
   vw=v;
-  ['res','exp','doc','asi','fam'].forEach(k=>$('v'+k[0].toUpperCase()+k.slice(1)).hidden=k!==v);
+  ['res','exp','doc','img','asi','fam','cfg'].forEach(k=>$('v'+k[0].toUpperCase()+k.slice(1)).hidden=k!==v);
   $('nav').querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.v===v));
   if(v==='res')renderDetail();
 }
@@ -595,7 +646,7 @@ function openLock(k){pend=k;pin='';$('lockName').textContent=PEOPLE[k].name;draw
 function keyPin(d){if(d==='x')pin=pin.slice(0,-1);else if(pin.length<4)pin+=d;drawPin();if(pin.length===4)setTimeout(unlock,150)}
 function unlock(){
   $('lock').hidden=true;who=pend;chat=[];upState=0;evf='Todo';
-  if(!PEOPLE[who].admin&&vw==='fam')vw='res';
+  imgSel=0;imgSlice=0;if(!PEOPLE[who].admin&&(vw==='fam'||vw==='cfg'))vw='res';
   renderAll();setView(vw);
 }
 $('pad').innerHTML=[1,2,3,4,5,6,7,8,9,'',0,'x'].map(k=>k===''?'<span></span>':`<button data-k="${k}" aria-label="${k==='x'?'Borrar':k}">${k==='x'?'⌫':k}</button>`).join('');
@@ -662,6 +713,7 @@ function renderUp(){
     <div class="drop"><b>Arrastra el archivo aquí</b><span class="ft">o</span>
     <label class="btn" style="cursor:pointer">Elegir archivo<input type="file" id="upfile" hidden></label>
     <button class="btn ghost" id="upDemo">Usar documento de ejemplo</button>
+    <span class="acts"><button class="mini" id="sim1">Simular archivo ilegible</button><button class="mini" id="sim2">Simular sin conexión a la IA</button></span>
     <span class="ft">Se lee y se limpia en tu Mac. A la IA solo llega texto sin tus datos personales.</span></div></section>`;
   }else if(upState===1){
     const n=window._stp?window._stp():0;
@@ -686,6 +738,7 @@ function renderUp(){
     `<div class="rv"><div>${docPage()}</div><div class="tblwrap"><table class="rt"><thead><tr><th>En el documento</th><th>Se guardará como</th><th>Valor</th><th>Referencia</th><th>Confianza</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`}
     <div class="bar"><span class="${pend?'':'ft'}" style="${pend?'color:var(--warn);font-weight:600':''}">${pend?pend+' por revisar':'Todo revisado'}</span>
       <div class="acts"><button class="btn ghost" id="upDisc">Descartar</button><button class="btn" id="upOk" ${pend||wrong?'disabled':''}>Confirmar y guardar</button></div></div></section>`;
+  }else if(upState===4){h=errCard()
   }else{
     const ch=REV.filter(r=>r.flag).map(r=>`<li>${r.std}: <b>${r.v} ${r.u}</b> (confirmado)</li>`).join('');
     h=`<section class="card docs"><div class="okb">Guardado: 9 resultados agregados al perfil de Eduardo.</div>
@@ -696,6 +749,12 @@ function renderUp(){
   el.innerHTML=h;
   const on=(id,f)=>{const x=$(id);if(x)x.onclick=f};
   on('upX',()=>{upOpen=false;upState=0;renderUp()});
+  on('sim1',()=>{upErr='ilegible';upMsg='';upState=4;renderUp()});on('sim2',()=>{upErr='offline';upMsg='';upState=4;renderUp()});
+  if(upState===4){
+    on('e1',()=>{if(upErr==='ilegible'){upState=0;renderUp()}else startUp()});
+    on('e2',()=>{if(upErr==='ilegible')startUp();else{upMsg='Procesando con el modelo local. Puede tardar más y requerir más revisión.';renderUp()}});
+    on('e3',()=>{upMsg=upErr==='ilegible'?'Se abriría un formulario para capturar los valores a mano.':'En cola. Se procesará cuando haya conexión.';renderUp()});
+  }
   on('upDemo',startUp);on('upNew',()=>{upState=0;renderUp()});on('upDisc',()=>{upState=0;upOpen=false;renderUp()});
   const f=$('upfile');if(f)f.onchange=()=>startUp();
   on('vDoc1',()=>{anonView=false;renderUp()});on('vAn',()=>{anonView=true;renderUp()});
@@ -755,13 +814,232 @@ function renderFam(){
     <div class="kp"><div><b>${i.at}</b><small>Atención</small></div><div><b>${i.vi}</b><small>Vigilar</small></div><div><b>${i.me}</b><small>Mejoraron</small></div></div>
     <div class="ft">Último estudio: ${last[i.k]} · ${X[i.k].meds.length} medicamento${X[i.k].meds.length===1?'':'s'} activo${X[i.k].meds.length===1?'':'s'}</div></section>`).join('');
   const PEND=[['Beatriz','Resurtir losartán','en 5 días','Medicamento'],['Beatriz','Densitometría anual','vencida desde jul 2023','Prevención'],['Beatriz','Cardiología, control','octubre 2026','Consulta'],['Eugenia','Repetir ferritina','en 3 meses','Seguimiento'],['Eduardo','Vacuna de influenza','octubre 2026','Prevención']];
-  $('vFam').innerHTML=`<div><h2 style="margin:0;font-size:22px">Familia</h2><p class="ft" style="margin:2px 0 0">Vista de administrador. Cada persona ve solo su propio perfil.</p></div>
+  $('vFam').innerHTML=`<div class="bar"><div><h2 style="margin:0;font-size:22px">Familia</h2><p class="ft" style="margin:2px 0 0">Vista de administrador. Cada persona ve solo su propio perfil.</p></div><button class="btn ghost" id="addP">Agregar perfil</button></div>
    <div class="fg3">${cards}</div>
    <section class="card docs"><h2>Pendientes de la familia</h2><ul class="xl">${PEND.map(r=>`<li><span><b>${r[0]}</b> · ${r[1]}<br><span class="s">${r[3]}</span></span><span class="sp ${r[2].includes('vencida')?'a':'c'}">${r[2]}</span></li>`).join('')}</ul></section>
    <section class="card docs"><h2>Datos y privacidad</h2><ul class="xl"><li><span>Último respaldo cifrado</span><span class="s">26 sep 2026, disco externo</span></li><li><span>Enviado a la IA este mes</span><span class="s">14 documentos, solo texto sin datos personales</span></li><li style="display:grid"><span>Uso de IA este mes: <b>3.20 USD</b> de 15 USD</span><div class="meter"><i style="width:21%"></i></div></li></ul></section>`;
 }
+/* ---------- aviso breve ---------- */
+function toast(t){const d=document.createElement('div');d.className='tg';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
 
-function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();renderChat();renderFam();renderUp();$('navFam').hidden=!PEOPLE[who].admin;hideTip()}
+/* ---------- Primer uso ---------- */
+let onbStep=0,onbOnly=false,onbErr='',onbPin={a:'',b:''},onbMode='hib',
+    onbFam=[{n:'Eugenia',rel:'Pareja',acc:'Cuenta propia'},{n:'Beatriz',rel:'Madre',acc:'Cuenta propia'}];
+const ONB_N=6;
+function openOnb(step,only){onbStep=step||0;onbOnly=!!only;onbErr='';$('onb').hidden=false;renderOnb()}
+function renderOnb(){
+  const i=onbStep;let body='',nav='';
+  if(i===0){body=`<h1>Bienvenido a House</h1><p>El expediente de salud de tu familia, en un solo lugar y solo tuyo.</p>
+   <ul class="bul"><li><i>1</i><div><b>Todo junto.</b> Laboratorios, imágenes, recetas y expediente de cada persona.</div></li>
+   <li><i>2</i><div><b>Se queda en tu equipo.</b> Tus documentos viven cifrados en esta computadora.</div></li>
+   <li><i>3</i><div><b>IA sin tus datos personales.</b> Antes de usar la IA se quitan nombres, folios y fechas de nacimiento.</div></li></ul>`;
+   nav=`<button class="btn" data-n="next">Empezar</button>`}
+  else if(i===1){body=`<h1>Crea tu PIN</h1><p>Lo usarás para entrar y para cambiar de perfil. Elige 4 dígitos que recuerdes.</p>
+   <div class="fg2"><label>PIN<input id="p1" type="password" inputmode="numeric" maxlength="4" autocomplete="off" value="${onbPin.a}"></label>
+   <label>Repite el PIN<input id="p2" type="password" inputmode="numeric" maxlength="4" autocomplete="off" value="${onbPin.b}"></label>
+   <label class="opt" style="grid-template-columns:auto 1fr;color:var(--ink);font-weight:500"><input type="checkbox" id="pk" checked><span><b>Activar passkey</b> (Face ID o Touch ID) para entrar más rápido</span></label>
+   ${onbErr?`<div class="err">${onbErr}</div>`:''}</div>`;
+   nav=`<button class="btn ghost" data-n="back">Atrás</button><button class="btn" data-n="next">Continuar</button>`}
+  else if(i===2){body=`<h1>Tu perfil</h1><p>Con estos datos elegimos los rangos de referencia que te corresponden.</p>
+   <div class="fg2"><label>Nombre<input id="nm" value="Eduardo"></label>
+   <label>Fecha de nacimiento<input id="db" type="date" value="1983-04-12"></label>
+   <label>Sexo al nacer<select id="sx"><option>Masculino</option><option>Femenino</option></select></label>
+   <p class="ft">Los rangos de algunos marcadores (hemoglobina, creatinina, ALT) dependen del sexo y de la edad.</p></div>`;
+   nav=`<button class="btn ghost" data-n="back">Atrás</button><button class="btn" data-n="next">Continuar</button>`}
+  else if(i===3){body=`<h1>Tu familia</h1><p>Agrega a las personas que quieres cuidar. Quien tiene cuenta propia solo ve su perfil; tú, como administrador, ves todos.</p>
+   <div class="fg2">${onbFam.map((f,k)=>`<div class="prof"><span><b>${f.n}</b> · ${f.rel}<br><span class="ft">${f.acc}</span></span><button class="mini" data-rm="${k}">Quitar</button></div>`).join('')}
+   <div class="card" style="padding:14px;display:grid;gap:10px"><b>Agregar persona</b>
+    <div class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"><label>Nombre<input id="fn"></label>
+    <label>Parentesco<select id="fr"><option>Pareja</option><option>Madre</option><option>Padre</option><option>Hijo o hija</option><option>Otro</option></select></label>
+    <label>Fecha de nacimiento<input id="fb" type="date"></label>
+    <label>Acceso<select id="fa"><option>Cuenta propia</option><option>Solo lo administro yo</option></select></label></div>
+    ${onbErr?`<div class="err">${onbErr}</div>`:''}<button class="btn ghost" data-n="add" style="justify-self:start">Agregar</button></div></div>`;
+   nav=onbOnly?`<button class="btn ghost" data-n="close">Cerrar</button><button class="btn" data-n="close">Guardar</button>`:`<button class="btn ghost" data-n="back">Atrás</button><button class="btn" data-n="next">Continuar</button>`}
+  else if(i===4){body=`<h1>IA y privacidad</h1><p>Tú decides qué se procesa dónde. Puedes cambiarlo después en Configuración.</p>
+   <div class="fg2"><div class="opt ${onbMode==='hib'?'on':''}" data-m="hib"><input type="radio" ${onbMode==='hib'?'checked':''} aria-label="Híbrido"><div><b>Híbrido (recomendado)</b><br><span class="ft">La lectura y la limpieza de datos personales ocurren en tu Mac. A la IA solo llega texto anonimizado.</span></div></div>
+   <div class="opt ${onbMode==='loc'?'on':''}" data-m="loc"><input type="radio" ${onbMode==='loc'?'checked':''} aria-label="Solo local"><div><b>Solo local</b><br><span class="ft">Nada sale de tu equipo. Es más lento y menos preciso con documentos difíciles.</span></div></div>
+   <label>Proveedor de IA para interpretar<select id="pv"><option>Claude (Anthropic)</option><option>GPT (OpenAI)</option><option>Gemini (Google)</option></select></label>
+   <label>Tope mensual de gasto en IA (USD)<input id="cp" type="number" value="15" min="0"></label></div>`;
+   nav=`<button class="btn ghost" data-n="back">Atrás</button><button class="btn" data-n="next">Continuar</button>`}
+  else{body=`<h1>Todo listo</h1><p>Creamos el perfil de Eduardo y ${onbFam.length} más. El siguiente paso es subir tu primer estudio.</p>
+   <ul class="bul"><li><i>✓</i><div>PIN creado${'' }</div></li><li><i>✓</i><div>Perfiles: Eduardo${onbFam.map(f=>', '+f.n).join('')}</div></li><li><i>✓</i><div>Modo: ${onbMode==='hib'?'Híbrido':'Solo local'}, tope de 15 USD al mes</div></li></ul>`;
+   nav=`<button class="btn ghost" data-n="fin1">Ir al resumen</button><button class="btn" data-n="fin2">Subir mi primer documento</button>`}
+  $('onb').innerHTML=`<div class="onbw"><div class="bar"><span class="ft">${onbOnly?'Agregar perfil':`Paso ${i+1} de ${ONB_N}`}</span><button class="mini" data-n="close">Cerrar</button></div>
+   ${onbOnly?'':`<div class="prog"><i style="width:${(i+1)/ONB_N*100}%"></i></div>`}${body}<div class="bar" style="justify-content:flex-end">${nav}</div></div>`;
+  const R=$('onb');
+  R.querySelectorAll('[data-n]').forEach(b=>b.onclick=()=>{
+    const a=b.dataset.n;onbErr='';
+    if(a==='close'){R.hidden=true;if(onbOnly)renderFam();return}
+    if(a==='back'){onbStep--;return renderOnb()}
+    if(a==='add'){const n=$('fn').value.trim();if(!n){onbErr='Escribe un nombre.';return renderOnb()}
+      onbFam.push({n,rel:$('fr').value,acc:$('fa').value});return renderOnb()}
+    if(a==='next'){
+      if(i===1){const x=$('p1').value,y=$('p2').value;onbPin={a:x,b:y};
+        if(!/^\d{4}$/.test(x)){onbErr='El PIN debe tener 4 dígitos.';return renderOnb()}
+        if(x!==y){onbErr='Los PIN no coinciden.';return renderOnb()}}
+      onbStep++;return renderOnb()}
+    if(a==='fin1'||a==='fin2'){R.hidden=true;setView(a==='fin2'?'doc':'res');if(a==='fin2'){upOpen=true;upState=0;renderUp()}}
+  });
+  R.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{onbFam.splice(+b.dataset.rm,1);renderOnb()});
+  R.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{onbMode=b.dataset.m;renderOnb()});
+}
+
+/* ---------- Alta manual ---------- */
+const MEDS=['Losartán','Atorvastatina','Metformina','Levotiroxina','Omeprazol','Vitamina D3','Sulfato ferroso','Ácido acetilsalicílico'];
+const CLS={'En control':'c','En tratamiento':'a','Seguimiento':'a','Resuelta':'r'};
+const FORMS={
+ alergia:{t:'Agregar alergia',f:[['sub','Sustancia','text'],['rx','Reacción (opcional)','text']],save:v=>X[who].alergias.push(v.sub+(v.rx?` (${v.rx})`:''))},
+ problema:{t:'Agregar problema de salud',f:[['n','Problema','text'],['st','Estado','select:En control|En tratamiento|Seguimiento|Resuelta'],['y','Desde (año)','text']],save:v=>X[who].problemas.push([v.n,CLS[v.st],v.st,v.y||'—'])},
+ med:{t:'Agregar medicamento',f:[['n','Medicamento','med'],['d','Dosis','text'],['m','Para qué','text'],['y','Desde (año)','text']],save:v=>X[who].meds.push([v.n,v.d||'—',v.m||'—',v.y||'—'])},
+ fam:{t:'Agregar antecedente familiar',f:[['p','Parentesco','select:Padre|Madre|Hermano o hermana|Abuelo o abuela'],['c','Condición','text']],save:v=>X[who].fam.push([v.p,v.c])},
+ cir:{t:'Agregar cirugía',f:[['n','Procedimiento','text'],['y','Año','text']],save:v=>X[who].cirugias.push([v.n,v.y||'—'])}
+};
+function openForm(k){
+  const F=FORMS[k];
+  const fields=F.f.map(([id,l,t])=>t.startsWith('select:')?`<label>${l}<select id="ff_${id}">${t.slice(7).split('|').map(o=>`<option>${o}</option>`).join('')}</select></label>`:
+    t==='med'?`<label>${l}<input id="ff_${id}" autocomplete="off"></label><div class="sugs" id="sg"><span class="ft">Sugerencias del catálogo:</span>${MEDS.slice(0,5).map(m=>`<button type="button" class="chip" data-s="${m}">${m}</button>`).join('')}</div>`:
+    `<label>${l}<input id="ff_${id}"></label>`).join('');
+  $('fmodal').innerHTML=`<div class="fbox" role="dialog" aria-modal="true"><h2>${F.t}</h2>${fields}<div class="err" id="fe"></div><div class="bar" style="justify-content:flex-end"><button class="btn ghost" id="fc">Cancelar</button><button class="btn" id="fs">Guardar</button></div></div>`;
+  $('fmodal').hidden=false;
+  $('fmodal').querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{$('ff_n').value=b.dataset.s});
+  $('fc').onclick=()=>{$('fmodal').hidden=true};
+  $('fs').onclick=()=>{const v={};F.f.forEach(([id])=>v[id]=$('ff_'+id).value.trim());
+    if(!v[F.f[0][0]]){$('fe').textContent='Completa el primer campo.';return}
+    F.save(v);$('fmodal').hidden=true;renderExp();renderChat();toast('Guardado en el expediente de '+PEOPLE[who].name)};
+}
+
+/* ---------- Imagen ---------- */
+const IMG={
+ eduardo:[
+  {d:'2024-06-11',title:'Ultrasonido abdominal',mod:'US',region:'Abdomen',n:1,src:'Reporte PDF',rep:'Hígado de tamaño y ecogenicidad normales. Vesícula biliar sin litos. Vías biliares no dilatadas. Riñones de tamaño normal, sin litiasis ni dilatación. Sin líquido libre.',find:['Hígado normal','Vesícula sin litos','Riñones sin litiasis'],fu:'El reporte no indica seguimiento específico.',plain:'El ultrasonido no mostró hallazgos que requieran atención. Los órganos revisados se ven normales.'},
+  {d:'2023-09-08',title:'Radiografía de tórax',mod:'RX',region:'Tórax',n:1,src:'Reporte PDF',rep:'Campos pulmonares limpios. Silueta cardiaca de tamaño normal. Senos costofrénicos libres. Sin alteraciones óseas evidentes.',find:['Pulmones limpios','Corazón de tamaño normal'],fu:'El reporte no indica seguimiento específico.',plain:'La radiografía de tórax es normal.'}],
+ eugenia:[
+  {d:'2025-02-18',title:'Mastografía',mod:'MG',region:'Mama',n:2,src:'Reporte PDF',rep:'Tejido fibroglandular disperso. Sin masas, calcificaciones sospechosas ni distorsión arquitectural. BI-RADS 1.',find:['Sin masas','Sin calcificaciones sospechosas','BI-RADS 1'],fu:'Repetir en 12 meses según edad y factores de riesgo.',plain:'La mastografía no muestra hallazgos sospechosos. Corresponde repetirla en un año.'}],
+ beatriz:[
+  {d:'2025-04-09',title:'Ecocardiograma',mod:'ETT',region:'Corazón',n:24,src:'Reporte PDF',rep:'Cavidades de tamaño normal. Función sistólica del ventrículo izquierdo conservada. Válvulas sin alteraciones significativas. Sin derrame pericárdico.',find:['Función sistólica conservada','Válvulas sin alteraciones significativas'],fu:'Control en 12 meses por cardiología.',plain:'El corazón bombea con normalidad y las válvulas se ven bien. Toca un control en un año.'},
+  {d:'2022-07-12',title:'Densitometría ósea',mod:'DXA',region:'Columna lumbar y cadera',n:1,src:'Reporte PDF',rep:'Columna lumbar L1-L4 con T-score de -1.6. Cadera total con T-score de -1.2. Compatible con osteopenia.',find:['Osteopenia leve','T-score lumbar -1.6'],fu:'Repetir en 2 años. Última densitometría hace más de 4 años.',plain:'Los huesos tienen algo menos de densidad de lo ideal, sin llegar a osteoporosis. Conviene repetir el estudio.'}]
+};
+let imgSel=0,imgSlice=0,imgB=100,imgC=100,imgZ=100;
+function seeded(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function drawImg(cv,s,slice){
+  const c=cv.getContext('2d'),W=cv.width,H=cv.height,rnd=seeded(7+slice);
+  c.fillStyle='#050708';c.fillRect(0,0,W,H);
+  const g=(x,y,r,a,b)=>{const q=c.createRadialGradient(x,y,0,x,y,r);q.addColorStop(0,a);q.addColorStop(1,b);c.fillStyle=q};
+  if(s.mod==='RX'){g(W/2,H/2,W*.6,'#8a9298','#1a1e20');c.fillRect(0,0,W,H);
+    [[.35],[.65]].forEach(([x])=>{g(W*x,H*.45,W*.22,'#1c2225','#4a5257');c.beginPath();c.ellipse(W*x,H*.45,W*.14,H*.28,0,0,7);c.fill()});
+    c.strokeStyle='rgba(220,225,228,.35)';c.lineWidth=3;for(let k=0;k<7;k++){c.beginPath();c.arc(W/2,H*.25+k*18,W*.36,.15*Math.PI,.85*Math.PI);c.stroke()}
+    c.fillStyle='rgba(230,235,238,.5)';c.fillRect(W/2-6,H*.1,12,H*.8)}
+  else if(s.mod==='MG'){g(W*.3,H*.5,W*.8,'#6e777c','#050708');c.beginPath();c.moveTo(0,H*.1);c.quadraticCurveTo(W*.9,H*.2,W*.85,H*.55);c.quadraticCurveTo(W*.7,H*.95,0,H*.9);c.fill()}
+  else if(s.mod==='DXA'){for(let k=0;k<4;k++){g(W/2,H*(.2+k*.2),W*.2,'#cfd6da','#6c757a');c.fillRect(W*.34,H*(.1+k*.2),W*.32,H*.15)}}
+  else{ // US y ETT: sector con moteado
+    c.save();c.beginPath();c.moveTo(W/2,10);c.arc(W/2,10,W*.9,.25*Math.PI,.75*Math.PI);c.closePath();c.clip();
+    g(W/2,H*.5,W*.6,'#3a4246','#0c0f10');c.fillRect(0,0,W,H);
+    const t=s.mod==='ETT'?[[.42,.5,.1],[.6,.5,.1],[.44,.72,.08],[.6,.72,.08]]:[[.5,.5,.16],[.35,.7,.09]];
+    t.forEach(([x,y,r])=>{const wob=slice*.004;g(W*x,H*(y+wob),W*r,'#000','#4b5458');c.beginPath();c.arc(W*x,H*(y+wob),W*r,0,7);c.fill()});
+    for(let k=0;k<2500;k++){c.fillStyle=`rgba(200,205,208,${rnd()*.25})`;c.fillRect(rnd()*W,rnd()*H,1.5,1.5)}
+    c.restore()}
+}
+function renderImg(){
+  const L=IMG[who]||[];
+  if(imgSel>=L.length)imgSel=0;
+  if(!L.length){$('vImg').innerHTML=`<section class="card docs"><h2>Imagen</h2><div class="st"><h3>Sin estudios de imagen</h3><p>Sube un reporte o una carpeta DICOM en Documentos y aparecerá aquí.</p></div></section>`;return}
+  const s=L[imgSel];
+  $('vImg').innerHTML=`<div class="img2"><div class="stl">${L.map((x,k)=>`<button class="stb" data-k="${k}" aria-pressed="${k===imgSel}"><b>${x.title}</b><span class="ft">${fd(x.d)} · ${x.mod} · ${x.region}</span></button>`).join('')}</div>
+  <section class="card docs"><div><h2 style="margin:0">${s.title}</h2><p class="ft" style="margin:2px 0 0">${fd(s.d)} · ${s.region} · ${s.src}</p></div>
+   <div class="vw"><div><div class="cvbox" id="cvb"><canvas id="cv" width="340" height="340" aria-label="Imagen ilustrativa del estudio"></canvas><span>Imagen ilustrativa, no es un estudio real</span></div>
+    <div class="ctl"><label>Brillo<input type="range" id="rb" min="50" max="160" value="${imgB}"></label><label>Contraste<input type="range" id="rc" min="50" max="200" value="${imgC}"></label><label>Zoom<input type="range" id="rz" min="100" max="250" value="${imgZ}"></label>
+     ${s.n>1?`<label>Corte ${imgSlice+1}/${s.n}<input type="range" id="rs" min="0" max="${s.n-1}" value="${imgSlice}"></label>`:''}<button class="mini" id="rr" style="justify-self:start">Restablecer</button></div></div>
+    <div style="display:grid;gap:12px;min-width:0">
+     <div><h3 class="ft" style="margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em">Reporte del radiólogo</h3><div style="font-size:14px">${s.rep}</div></div>
+     <div><h3 class="ft" style="margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em">Hallazgos extraídos</h3><div class="chips">${s.find.map(f=>`<span class="chip">${f}</span>`).join('')}</div></div>
+     <div><h3 class="ft" style="margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em">Seguimiento indicado</h3><div style="font-size:14px">${s.fu}</div></div>
+     <div class="okb" style="font-weight:500"><b>En palabras sencillas.</b> ${s.plain}</div>
+     <div class="ft">Metadatos personales del archivo DICOM eliminados en tu Mac. Segunda lectura con IA: experimental y desactivada; puede activarse en Configuración. La lectura válida es la del radiólogo.</div></div></div></section></div>`;
+  const cv=$('cv');drawImg(cv,s,imgSlice);
+  const ap=()=>{cv.style.filter=`brightness(${imgB}%) contrast(${imgC}%)`;cv.style.transform=`scale(${imgZ/100})`};ap();
+  $('rb').oninput=e=>{imgB=+e.target.value;ap()};$('rc').oninput=e=>{imgC=+e.target.value;ap()};$('rz').oninput=e=>{imgZ=+e.target.value;ap()};
+  const rs=$('rs');if(rs)rs.oninput=e=>{imgSlice=+e.target.value;drawImg(cv,s,imgSlice);rs.parentElement.firstChild.textContent=`Corte ${imgSlice+1}/${s.n}`};
+  $('rr').onclick=()=>{imgB=imgC=imgZ=100;renderImg()};
+  $('vImg').querySelectorAll('.stb').forEach(b=>b.onclick=()=>{imgSel=+b.dataset.k;imgSlice=0;imgB=imgC=imgZ=100;renderImg()});
+}
+
+/* ---------- Configuración ---------- */
+let cfgTab='gen',CFG={mode:'hib',ext:'Claude (Anthropic)',int:'Claude (Anthropic)',ver:'GPT (OpenAI)',cap:15,lock:'5 minutos',bk:'Disco externo',fr:'Cada semana',ia2:false};
+const PROV=['Claude (Anthropic)','GPT (OpenAI)','Gemini (Google)','Modelo local (en tu Mac)'];
+const selH=(id,opts,v)=>`<select id="${id}">${opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+function renderCfg(){
+  const tabs=`<div class="tabs" style="width:max-content;max-width:100%"><button data-t="gen" aria-pressed="${cfgTab==='gen'}">General</button><button data-t="est" aria-pressed="${cfgTab==='est'}">Estados y avisos</button></div>`;
+  let h='';
+  if(cfgTab==='gen'){
+   h=`<section class="card cfg"><h2>Inteligencia artificial</h2>
+    <div class="row2"><span><b>Modo de privacidad</b><br><span class="ft">Híbrido: a la IA solo llega texto anonimizado.</span></span>${selH('cm',['Híbrido (recomendado)','Solo local'],CFG.mode==='hib'?'Híbrido (recomendado)':'Solo local')}</div>
+    <div class="row2"><span><b>Proveedor por tarea</b><br><span class="ft">Puedes usar uno distinto para cada paso y cambiarlo cuando quieras.</span></span></div>
+    <div class="row2"><span>Extraer datos del documento</span>${selH('c1',PROV,CFG.ext)}</div>
+    <div class="row2"><span>Interpretar y responder en el chat</span>${selH('c2',PROV,CFG.int)}</div>
+    <div class="row2"><span>Verificar con una segunda pasada</span>${selH('c3',PROV,CFG.ver)}</div>
+    <div class="row2"><span>Tope mensual de gasto (USD)</span><input type="number" id="cc" value="${CFG.cap}" min="0" style="width:90px"></div>
+    <div class="row2"><span>Uso este mes</span><span><b>3.20 USD</b> de ${CFG.cap} USD</span></div>
+    <div class="row2"><span>Segunda lectura de imágenes con IA <span class="sp c">Experimental</span></span><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ci" ${CFG.ia2?'checked':''}> Activar</label></div>
+    <div class="acts"><button class="btn ghost" id="ct">Probar conexión</button></div></section>
+   <section class="card cfg"><h2>Modelos en tu Mac</h2>
+    <div class="row2"><span>Lectura de texto (OCR de Apple)</span><span class="sp r">Instalado</span></div>
+    <div class="row2"><span>Anonimizador de datos personales</span><span class="sp r">Instalado</span></div>
+    <div class="row2"><span>Modelo de visión local (4B)</span><span class="sp r">Instalado · 2.6 GB</span></div>
+    <div class="row2"><span>Modelo de lenguaje local (7B)</span><span class="sp a">No instalado · 4.4 GB</span><button class="mini" id="cd">Descargar</button></div></section>
+   <section class="card cfg"><h2>Respaldo</h2>
+    <div class="row2"><span>Destino</span>${selH('cb',['Disco externo','Carpeta en la nube (cifrada)'],CFG.bk)}</div>
+    <div class="row2"><span>Frecuencia</span>${selH('cf',['Cada día','Cada semana','Cada mes'],CFG.fr)}</div>
+    <div class="row2"><span>Último respaldo</span><span>26 sep 2026 · cifrado</span></div>
+    <div class="warnb">Guarda tu clave de recuperación en un lugar seguro. Sin ella, un respaldo no se puede abrir, y nadie puede recuperarla por ti.</div>
+    <div class="acts"><button class="btn ghost" id="cr">Respaldar ahora</button><button class="btn ghost" id="ck">Ver clave de recuperación</button></div></section>
+   <section class="card cfg"><h2>Seguridad</h2>
+    <div class="row2"><span>Bloqueo automático por inactividad</span>${selH('cl',['1 minuto','5 minutos','15 minutos'],CFG.lock)}</div>
+    <div class="row2"><span>Passkeys registradas</span><span>Eduardo, Eugenia</span></div>
+    <div class="row2"><span>Rangos de referencia</span><span>Versión 2026.09 · por sexo y edad</span></div>
+    <div class="acts"><button class="btn ghost" id="ce">Exportar todos los datos</button></div></section>`;
+  }else{
+   h=`<p class="ft" style="margin:0">Así se ven los avisos cuando ocurren. Las pantallas de error de subida están en Documentos, botón "Agregar documento".</p>
+   <div class="gal">
+    <div class="st crit"><h3>▲ Valor crítico</h3><p><b>Potasio 6.8 mmol/L</b> (referencia 3.5 a 5.1) en el estudio del 22 sep 2026.</p><p>Este valor puede requerir atención médica pronto. Comunícate hoy con tu médico o acude a urgencias si tienes síntomas. House no diagnostica.</p><div class="acts"><button class="btn">Ver resultado</button><button class="btn ghost">Entendido</button></div></div>
+    <div class="st"><h3>Perfil nuevo, sin datos</h3><p>Aún no hay resultados de Mateo. Sube su primer estudio y aquí verás su resumen, sus marcadores y su historial.</p><div class="acts"><button class="btn">Subir primer estudio</button></div></div>
+    <div class="st warn"><h3>Documento duplicado</h3><p>Ya subiste este informe (Química sanguínea, 22 sep 2026). ¿Qué quieres hacer?</p><div class="acts"><button class="btn ghost">Conservar ambos</button><button class="btn ghost">Reemplazar</button><button class="btn ghost">Descartar el nuevo</button></div></div>
+    <div class="st warn"><h3>Respaldo atrasado</h3><p>Hace 14 días que no respaldas tus datos. Si pierdes o dañas tu Mac, podrías perderlos.</p><div class="acts"><button class="btn">Respaldar ahora</button></div></div>
+    <div class="st warn"><h3>Falta un modelo local</h3><p>El modelo de lenguaje local no está instalado. Mientras tanto, la lectura usa solo el OCR de Apple y la extracción difícil se hace con el proveedor de IA.</p><div class="acts"><button class="btn ghost">Instalar (4.4 GB)</button></div></div>
+    <div class="st"><h3>Tope de gasto alcanzado</h3><p>Llegaste al tope de 15 USD este mes. Los documentos nuevos se guardan y se procesan el mes siguiente, o con el modelo local si lo prefieres.</p><div class="acts"><button class="btn ghost">Subir el tope</button><button class="btn ghost">Usar modelo local</button></div></div>
+   </div>`;
+  }
+  $('vCfg').innerHTML=`<div><h2 style="margin:0;font-size:22px">Configuración</h2></div>${tabs}${h}`;
+  $('vCfg').querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{cfgTab=b.dataset.t;renderCfg()});
+  if(cfgTab==='gen'){
+   const on=(id,ev,f)=>{const x=$(id);if(x)x[ev]=f};
+   on('cm','onchange',e=>{CFG.mode=e.target.value.startsWith('Híb')?'hib':'loc';toast('Modo actualizado')});
+   on('c1','onchange',e=>{CFG.ext=e.target.value;toast('Proveedor actualizado')});on('c2','onchange',e=>{CFG.int=e.target.value;toast('Proveedor actualizado')});on('c3','onchange',e=>{CFG.ver=e.target.value;toast('Proveedor actualizado')});
+   on('cc','onchange',e=>{CFG.cap=+e.target.value||0;renderCfg()});on('ci','onchange',e=>{CFG.ia2=e.target.checked});
+   on('cb','onchange',e=>{CFG.bk=e.target.value});on('cf','onchange',e=>{CFG.fr=e.target.value});on('cl','onchange',e=>{CFG.lock=e.target.value});
+   on('ct','onclick',()=>toast('Conexión correcta con '+CFG.int));on('cd','onclick',()=>toast('Descarga iniciada (maqueta)'));
+   on('cr','onclick',()=>toast('Respaldo cifrado completado (maqueta)'));on('ck','onclick',()=>toast('Se pediría tu PIN antes de mostrarla'));on('ce','onclick',()=>toast('Exportación completa (maqueta)'));
+  }
+}
+
+/* ---------- Errores de subida ---------- */
+let upErr=null,upMsg='';
+function errCard(){
+  if(upErr==='ilegible')return `<section class="card docs"><div class="st warn"><h3>▲ No pude leer este archivo</h3><p>Parece un escaneo borroso, girado o con poca luz. No se guardó nada.</p>
+   <ul style="margin:0;padding-left:18px;font-size:14px;color:var(--muted)"><li>Toma la foto con buena luz y de frente.</li><li>Si es un PDF de un portal, descárgalo directo en vez de escanearlo.</li></ul>
+   <div class="acts"><button class="btn" id="e1">Subir otro archivo</button><button class="btn ghost" id="e2">Reintentar con lectura reforzada</button><button class="btn ghost" id="e3">Capturar los valores a mano</button></div>${upMsg?`<div class="okb">${upMsg}</div>`:''}</div></section>`;
+  return `<section class="card docs"><div class="st warn"><h3>▲ Sin conexión con el proveedor de IA</h3><p>No se pudo contactar a ${CFG.ext}. No se envió nada y tus datos siguen en tu Mac.</p>
+   <div class="acts"><button class="btn" id="e1">Reintentar</button><button class="btn ghost" id="e2">Procesar con el modelo local (menos preciso)</button><button class="btn ghost" id="e3">Guardar en cola y procesar después</button></div>${upMsg?`<div class="okb">${upMsg}</div>`:''}</div></section>`;
+}
+
+document.addEventListener('click',e=>{
+  const t=e.target.closest('button');if(!t)return;
+  if(t.id==='addP')openOnb(3,true);
+  else if(t.id==='onbBtn')openOnb(0,false);
+  else if(t.classList.contains('add-x'))openForm(t.dataset.f);
+  else if(t.dataset.st){const L=IMG[who]||[];const k=L.findIndex(x=>x.d===t.dataset.st);if(k>=0){imgSel=k;imgSlice=0;renderImg();setView('img')}}
+});
+
+function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();renderChat();renderFam();renderUp();renderImg();renderCfg();$('navFam').hidden=!PEOPLE[who].admin;$('navCfg').hidden=!PEOPLE[who].admin;hideTip()}
 renderAll();
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(view==='g'&&vw==='res')renderDetail()},120)});
 </script>
