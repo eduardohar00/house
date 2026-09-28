@@ -1,7 +1,7 @@
 """Proveedor sin IA para pruebas y como línea base del banco de pruebas.
 
 Extrae filas con una expresión regular sobre líneas tipo:
-    Glucosa            92 mg/dL     70 - 99
+    Glucosa 92 mg/dL 70 - 99   (con uno o varios espacios entre columnas)
 Sirve para (1) correr todo sin red ni costo y (2) medir cuánto aporta un modelo real
 frente a una regla simple.
 """
@@ -13,9 +13,11 @@ import time
 
 from .base import LLMRequest, LLMResponse
 
+# Independiente del espaciado (los PDF suelen colapsar las columnas a un solo espacio).
+# Exige una unidad con "/" o "%" tras el valor, para no confundir números del nombre ("25-OH").
 _LINE = re.compile(
-    r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ][^\d\n]{2,60}?)\s{2,}(?P<value>\d+(?:[.,]\d+)?)\s*"
-    r"(?P<unit>[A-Za-zµ%/]+(?:/[A-Za-zµ]+)?)?\s*(?P<ref>[<>≤≥]?\s*\d[\d.,\s\-–a]*[A-Za-z/]*)?\s*$"
+    r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?P<value>\d+(?:[.,]\d+)?)\s*"
+    r"(?P<unit>[A-Za-zµμ]+/[A-Za-zµμ]+|%)(?:\s+(?P<ref>\S.*?))?\s*$"
 )
 _DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 

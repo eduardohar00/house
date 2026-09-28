@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -55,6 +56,11 @@ def run(
         )
         for case_dir in load_cases(cases_root):
             expected = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
+            if expected.get("verified") is False:
+                print(
+                    f"AVISO: se omite {case_dir.name}: expected.json aún no está verificado", file=sys.stderr
+                )
+                continue
             profile_path = case_dir / "profile.json"
             profile = json.loads(profile_path.read_text(encoding="utf-8")) if profile_path.exists() else {}
             anonymizer = Anonymizer(profile.get("names", []))

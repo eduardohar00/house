@@ -92,13 +92,23 @@ def test_pipeline_normalizes_and_classifies():
     assert "EDUARDO" not in out.sent_text and "GAEE830412" not in out.sent_text
 
 
-def test_baseline_is_honest_about_its_limits():
-    out = extract_document(
-        DOC, router_for(), anonymizer=Anonymizer(["Eduardo Ejemplo García"]), reference_date=date(2026, 9, 22)
-    )
-    keys = {r.key for r in out.rows if r.key}
-    assert {"glucose", "ldl", "creatinine"} <= keys
-    assert not {"alt", "vitamin_d"} & keys  # la regla simple no los lee: ahí aporta un modelo real
+def test_baseline_reads_clean_labs_even_with_collapsed_spacing():
+    squashed = re.sub(r"[ \t]+", " ", DOC)  # así suelen salir los PDF al extraer su texto
+    for text in (DOC, squashed):
+        out = extract_document(
+            text,
+            router_for(),
+            anonymizer=Anonymizer(["Eduardo Ejemplo García"]),
+            reference_date=date(2026, 9, 22),
+        )
+        keys = {r.key for r in out.rows if r.key}
+        assert len(keys) == 9 and {"alt", "vitamin_d"} <= keys
+
+
+def test_baseline_ignores_non_result_lines():
+    text = "Folio: A-1 Fecha de toma: 22/09/2026\nDomicilio: Calle Ejemplo 123, Col. Centro\nNota: valores 5 veces al año"
+    out = extract_document(text, router_for(), reference_date=date(2026, 9, 22))
+    assert out.rows == []
 
 
 def test_ungrounded_row_is_flagged():
@@ -147,7 +157,7 @@ def test_bench_scores_baseline_and_ideal():
     base, ideal = scores
     assert base.pii_leaks == ideal.pii_leaks == 0
     assert base.ungrounded == ideal.ungrounded == 0
-    assert (base.value_ok, base.expected) == (7, 9) and set(base.missing) == {"alt", "vitamin_d"}
+    assert (base.value_ok, base.expected) == (9, 9) and not base.missing
     assert ideal.value_ok == ideal.expected == 9 and ideal.date_ok
     report = markdown(scores)
     assert "baseline-regex" in report and "ideal" in report

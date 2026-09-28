@@ -80,7 +80,7 @@ No se orquestan agentes por moda. El flujo es una tubería con pasos determinist
 Límite conocido: el limpiador por reglas puede dejar pasar un nombre que no esté en la lista ni en un encabezado reconocible. Mitigaciones: lista de nombres de la familia, Presidio en Fase 1 y vista previa obligatoria las primeras semanas.
 
 ## 4. Banco de pruebas (implementado)
-`python -m house.bench` compara proveedores sobre los mismos casos (ver `bench/README.md`). Mide exactitud, faltantes, filas extra, filas sin respaldo, carga de revisión, fugas de datos personales, costo y latencia. Incluye una **línea base sin IA** (regex) para saber cuánto aporta un modelo. Sobre el caso sintético, la línea base acierta 7 de 9; un modelo real debe llegar a 9 de 9.
+`python -m house.bench` compara proveedores sobre los mismos casos (ver `bench/README.md`). Mide exactitud, faltantes, filas extra, filas sin respaldo, carga de revisión, fugas de datos personales, costo y latencia. Incluye una **línea base sin IA** (regex) para saber cuánto aporta un modelo. Sobre el caso sintético limpio, la línea base acierta 9 de 9 (y Claude también); la diferencia entre una regla y un modelo debe aparecer con documentos reales y desordenados. Los PDF colapsan los espacios entre columnas al extraer su texto, y la línea base ya lo tolera.
 
 **Lo que falta y solo puede hacer Eduardo:** armar 30 casos con `expected.json` a mano a partir de sus PDFs reales, en `bench/private/`, y correr el banco en su Mac con sus claves.
 
