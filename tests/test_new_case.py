@@ -39,3 +39,33 @@ def test_scaffold_from_collapsed_spacing(tmp_path):
 
     squashed = re.sub(r"[ \t]+", " ", DOC)
     assert scaffold(tmp_path / "c", squashed, [])["prefilled"] == 9
+
+
+def test_names_command_prints_no_values():
+    from house.bench.names import names_and_units
+
+    pairs = names_and_units(["Potasio 4.1 mmol/L 3.5 - 5.1", "Leucocitos 6.2 10^3/uL 4 - 11"])
+    assert ("Potasio", "mmol/L") in pairs
+    assert all(not any(ch.isdigit() for ch in name) for name, _ in pairs)
+
+
+def test_baseline_reads_hematology_units():
+    from house.bench.names import names_and_units
+
+    lines = [
+        "Leucocitos 6.2 10^3/uL 4.0 - 11.0",
+        "Eritrocitos 5.1 x10^6/µL 4.5 - 5.9",
+        "Volumen corpuscular medio 88 fL 80 - 100",
+        "Hemoglobina corpuscular media 29 pg 27 - 33",
+        "Hematocrito 45 % 40 - 52",
+        "Velocidad de sedimentación 5 mm/h 0 - 15",
+    ]
+    got = {n for n, _ in names_and_units(lines)}
+    assert got == {
+        "Leucocitos",
+        "Eritrocitos",
+        "Volumen corpuscular medio",
+        "Hemoglobina corpuscular media",
+        "Hematocrito",
+        "Velocidad de sedimentación",
+    }

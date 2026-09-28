@@ -17,7 +17,8 @@ from .base import LLMRequest, LLMResponse
 # Exige una unidad con "/" o "%" tras el valor, para no confundir números del nombre ("25-OH").
 _LINE = re.compile(
     r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?P<value>\d+(?:[.,]\d+)?)\s*"
-    r"(?P<unit>[A-Za-zµμ]+/[A-Za-zµμ]+|%)(?:\s+(?P<ref>\S.*?))?\s*$"
+    r"(?P<unit>x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ]+(?:/[A-Za-zµμ]+)?|%|fL|pg)"
+    r"(?:\s+(?P<ref>\S.*?))?\s*$"
 )
 _DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 
