@@ -11,7 +11,7 @@
 | Usuarios y permisos | Eduardo, Eugenia y Beatriz usan la app con cuenta propia. Cada una ve solo su perfil; solo Eduardo (admin) administra y ve todos. Las dos aceptan de forma explícita que el admin vea sus datos, y pueden exportar o pedir borrar su perfil |
 | Nombre | House (nombre definitivo del producto y del repo) |
 | Corpus inicial | ~30 documentos históricos, casi todos PDF y algunos DICOM; sirven de banco de pruebas |
-| Plataformas | Web instalable (PWA) con cámara para móvil; app nativa queda para después |
+| Plataformas | MVP: aplicación web local en la laptop. Después: acceso desde otros equipos y PWA móvil con cámara para recetas; app nativa más adelante |
 | Hardware | MacBook Air M5, 16 GB: desarrollo y procesamiento local; no es servidor 24/7 |
 | Privacidad de IA | **Híbrido (B):** OCR, anonimización y DICOM en local (modelos de ~4B a 7B cuantizados); a la API solo va texto anonimizado, con proveedor sin entrenamiento y retención mínima |
 | Alojamiento MVP | Local-first en el Mac, cifrado (FileVault más cifrado de la app); acceso móvil por Tailscale; respaldo cifrado con llave propia |
@@ -22,7 +22,7 @@
 | Confirmado | Arquitectura híbrida (B) y local-first |
 | Revisión humana | Obligatoria al inicio; se relaja solo a lo marcado cuando la precisión lo justifique |
 | Alcance | Histórico, insights y tips; sin venta de paneles ni planes de optimización |
-| Acceso (confirmado) | MVP: Mac + Tailscale. Siguiente paso: equipo dedicado en casa, o VPS cifrado si se necesita 24/7 |
+| Acceso (confirmado) | **MVP: una sola máquina, la laptop de Eduardo.** Eugenia y Beatriz usan la app en esa laptop, cada una con su propio acceso (PIN o passkey) y viendo solo su perfil. Acceso desde sus propios equipos y celulares queda para una fase posterior (Tailscale, equipo dedicado o VPS cifrado). Antes: Siguiente paso: equipo dedicado en casa, o VPS cifrado si se necesita 24/7 |
 
 ## 1. Visión
 
