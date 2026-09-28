@@ -24,6 +24,26 @@
 | Alcance | Histórico, insights y tips; sin venta de paneles ni planes de optimización |
 | Acceso (confirmado) | **MVP: una sola máquina, la laptop de Eduardo.** Eugenia y Beatriz usan la app en esa laptop, cada una con su propio acceso (PIN o passkey) y viendo solo su perfil. Acceso desde sus propios equipos y celulares queda para una fase posterior (Tailscale, equipo dedicado o VPS cifrado). Antes: Siguiente paso: equipo dedicado en casa, o VPS cifrado si se necesita 24/7 |
 
+## 0.1 Diseño de la experiencia (v0.3, maqueta aprobada)
+
+Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mockup/house-mockup.html) (se abre en el navegador). Es dirección de diseño, no código de producción.
+
+**Estructura de la app:** selector de perfil arriba y tres secciones: **Resumen**, **Expediente clínico** y **Documentos**.
+
+**Resumen**
+- Los marcadores se agrupan por sistema, en este orden: metabolismo de la glucosa, lípidos y riesgo cardiovascular, hígado, riñón, sangre y hierro, tiroides, vitaminas. Cada grupo muestra cuántos de sus marcadores están en rango.
+- Cada marcador es una tarjeta con valor, estado (con icono y texto, nunca solo color), tendencia y mini-gráfica.
+- Al pasar el cursor sobre una tarjeta aparece una explicación breve de qué mide el marcador y el último resultado de la persona. En celular la explicación está bajo el título de la gráfica.
+- Al elegir un marcador se ve su evolución completa con el rango de referencia, tooltip por punto (fecha, valor, estado, laboratorio) y vista de tabla.
+- **Resumen priorizado del estudio**, con tres niveles: *Atención* (fuera de rango, ordenado por distancia al rango, con tendencia), *Vigilar* (en rango pero acercándose al límite) y *Mejoró* (entró al rango). Cierra con una línea de lo estable.
+- Los rangos dependen de sexo (y, a futuro, de edad). Los umbrales de "Vigilar" y de tendencia son provisionales y **deben revisarse con un médico**.
+
+**Expediente clínico:** alergias, problemas de salud con estado, medicamentos actuales, antecedentes familiares, cirugías y un historial cronológico unificado (consultas, laboratorio, imagen, vacunas, cirugías) con filtros por tipo.
+
+**Documentos:** tabla de originales con tipo, origen y estado de revisión de la extracción; punto de entrada para agregar documentos.
+
+**Pendiente de diseñar:** subida y pantalla de revisión de extracciones, chat con el expediente, resumen para consulta, vista de familia del admin y cambio de perfil con PIN o passkey.
+
 ## 1. Visión
 
 Un lugar privado donde toda la información médica de la familia (laboratorios, imágenes, recetas, expediente clínico, wearables) se convierte en una **línea de tiempo estructurada por persona**. Sobre ella, agentes de IA explican qué cambió, qué importa, qué preguntar al médico y qué falta por hacer.

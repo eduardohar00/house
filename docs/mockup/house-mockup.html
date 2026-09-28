@@ -1,0 +1,510 @@
+<title>House Maqueta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Concepto: panel clínico sereno; primero el resumen, luego tarjetas por biomarcador y una vista de evolución. */
+:root{
+  --bg:#F2F6F7; --surface:#FFFFFF; --ink:#12232B; --muted:#5A6B73; --line:#DCE3E6;
+  --accent:#0F6E75; --accent-soft:#DFF0F1; --band:#E3F1EA; --band-line:#B9DCC9;
+  --good:#1E7A4D; --good-bg:#E1F2E9; --warn:#A85A08; --warn-bg:#FBEBD6;
+  --shadow:0 1px 2px rgba(18,35,43,.06),0 4px 16px rgba(18,35,43,.04);
+  --font:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D171B; --surface:#152329; --ink:#E6EEF0; --muted:#95A7AE; --line:#263840;
+  --accent:#4FC1C8; --accent-soft:#173A3E; --band:#173328; --band-line:#2C5A44;
+  --good:#5CCB92; --good-bg:#173A2A; --warn:#F0A24F; --warn-bg:#3A2B14;
+  --shadow:none; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0D171B; --surface:#152329; --ink:#E6EEF0; --muted:#95A7AE; --line:#263840;
+  --accent:#4FC1C8; --accent-soft:#173A3E; --band:#173328; --band-line:#2C5A44;
+  --good:#5CCB92; --good-bg:#173A2A; --warn:#F0A24F; --warn-bg:#3A2B14;
+  --shadow:none; color-scheme:dark;}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5;
+  padding-inline:16px;padding-block:20px 48px;font-variant-numeric:tabular-nums}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.notice{font-size:13px;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:8px 12px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}
+.brand{font-size:22px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.brand i{width:26px;height:26px;border-radius:8px;background:var(--accent);display:grid;place-items:center}
+.brand svg{width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.seg{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px;max-width:100%;overflow-x:auto}
+.seg button{border:0;background:none;border-radius:999px;padding:6px 14px 6px 6px;display:flex;align-items:center;gap:8px;font-weight:500;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--ink)}
+.av{width:28px;height:28px;border-radius:50%;background:var(--line);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--ink)}
+.seg button[aria-pressed="true"] .av{background:var(--accent);color:#fff}
+.who{display:flex;flex-direction:column;gap:2px}
+.who h1{margin:0;font-size:28px;line-height:1.15;letter-spacing:-.02em;text-wrap:balance}
+.who p{margin:0;color:var(--muted);font-size:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+.insight{padding:20px;display:grid;gap:12px}
+.insight h2{margin:0;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.insight .lead{font-size:19px;font-weight:600;line-height:1.35;text-wrap:balance;margin:0}
+.fl{display:grid;gap:8px}
+.fr{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:baseline;text-align:left;width:100%;background:none;border:0;border-top:1px solid var(--line);padding:10px 0 2px}
+.fr:hover .fm{text-decoration:underline}
+.tag{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.tag.at{background:var(--warn-bg);color:var(--warn)}
+.tag.vi{background:var(--accent-soft);color:var(--accent)}
+.tag.me{background:var(--good-bg);color:var(--good)}
+.fm{font-weight:600}
+.fs{grid-column:2;color:var(--muted);font-size:13px;padding-bottom:8px}
+.fq{border-top:1px solid var(--line);padding-top:10px;color:var(--muted);font-size:13px}
+.insight .tip{color:var(--muted);font-size:14px;margin:0}
+.grid{display:flex;flex-direction:column;gap:24px}
+.grp{display:grid;gap:10px}
+.gh{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px}
+.gh h3{margin:0;font-size:17px;letter-spacing:-.01em}
+.gh p{margin:0;color:var(--muted);font-size:13px}
+.gc{font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px}
+.gc.ok{background:var(--good-bg);color:var(--good)}
+.gc.out{background:var(--warn-bg);color:var(--warn)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.bm{text-align:left;padding:14px;display:grid;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:14px;min-width:0}
+.bm:hover{border-color:var(--accent)}
+.bm[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.bm .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.bm .nm{font-weight:600;font-size:14px}
+.pill{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.pill.ok{background:var(--good-bg);color:var(--good)}
+.pill.out{background:var(--warn-bg);color:var(--warn)}
+.bm .val{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.bm .val small{font-size:13px;font-weight:500;color:var(--muted);margin-left:4px;letter-spacing:0}
+.bm .row{display:flex;justify-content:space-between;align-items:end;gap:8px}
+.bm .delta{font-size:12px;color:var(--muted)}
+.spark{width:88px;height:32px;flex:none}
+.detail{padding:20px;display:grid;gap:14px}
+.dh{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:start}
+.dh h2{margin:0;font-size:22px;letter-spacing:-.01em}
+.dh p{margin:2px 0 0;color:var(--muted);font-size:14px}
+.tabs{display:flex;gap:4px;border:1px solid var(--line);border-radius:10px;padding:3px}
+.tabs button{border:0;background:none;padding:4px 12px;border-radius:7px;color:var(--muted);font-weight:500}
+.tabs button[aria-pressed="true"]{background:var(--accent-soft);color:var(--ink)}
+.chartbox{position:relative;width:100%}
+.chartbox svg{display:block;width:100%;height:auto;overflow:visible}
+.tip-box{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:10px;padding:8px 10px;font-size:13px;line-height:1.4;min-width:150px;max-width:230px;z-index:2;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.tip-box b{font-size:16px}
+.tip-box span{display:block;opacity:.8}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;vertical-align:-2px;margin-right:6px}
+.lg-line{width:18px;height:0;border-top:2px solid var(--accent)}
+.lg-band{width:18px;height:10px;background:var(--band);border:1px solid var(--band-line);border-radius:3px}
+.htip{position:fixed;z-index:20;pointer-events:none;max-width:280px;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.htip b{display:block;font-size:14px;margin-bottom:2px}
+.htip .me{display:block;margin-top:6px;padding-top:6px;border-top:1px solid rgba(128,128,128,.4)}
+.dwhat{margin:8px 0 0;font-size:14px;color:var(--ink);max-width:62ch}
+.col{display:flex;flex-direction:column;gap:20px}
+.col[hidden]{display:none}
+.nav{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto}
+.nav button{border:0;background:none;padding:10px 14px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.add{border:1px solid var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:10px;padding:7px 14px;font-weight:600}
+.addhint{margin:0;color:var(--muted);font-size:14px;background:var(--accent-soft);border-radius:10px;padding:10px 12px}
+.xg{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.xc{padding:18px;display:grid;gap:10px;align-content:start;min-width:0}
+.xc h3{margin:0;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.xl{display:grid;gap:0;margin:0;padding:0;list-style:none}
+.xl li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;padding:8px 0;border-top:1px solid var(--line)}
+.xl li:first-child{border-top:0}
+.xl b{font-weight:600}
+.xl span.s{color:var(--muted);font-size:13px}
+.alg{background:var(--warn-bg);color:var(--warn);font-weight:600;border-radius:10px;padding:8px 12px}
+.alg.none{background:var(--good-bg);color:var(--good)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:500;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.tl{display:grid;gap:0}
+.ev{display:grid;grid-template-columns:96px 1fr;gap:4px 14px;padding:12px 0;border-top:1px solid var(--line)}
+.ev:first-child{border-top:0}
+.ev .dt{color:var(--muted);font-size:13px;padding-top:2px}
+.ev .tt{font-weight:600}
+.ev .sb{color:var(--muted);font-size:14px}
+.ty{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin-right:8px;white-space:nowrap}
+.sp{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
+.sp.a{background:var(--warn-bg);color:var(--warn)}.sp.c{background:var(--accent-soft);color:var(--accent)}.sp.r{background:var(--good-bg);color:var(--good)}
+@media (max-width:520px){.ev{grid-template-columns:1fr}}
+.tblwrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.docs{padding:20px;display:grid;gap:4px}
+.docs h2{margin:0 0 8px;font-size:16px}
+.doc{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding:10px 0;border-top:1px solid var(--line)}
+.doc:first-of-type{border-top:0}
+.doc b{font-weight:600}
+.doc span{color:var(--muted);font-size:14px}
+.role{font-size:13px;color:var(--muted)}
+.ax{fill:var(--muted);font-family:var(--font);font-size:12px}
+@media (max-width:520px){.who h1{font-size:24px}.insight .lead{font-size:17px}}
+</style>
+
+<div class="wrap">
+  <div class="notice">Maqueta de diseño con datos ficticios. No es la aplicación final y no contiene datos reales.</div>
+
+  <header>
+    <div class="brand"><i><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></i>House</div>
+    <div class="seg" id="profiles" role="group" aria-label="Perfil"></div>
+  </header>
+
+  <div class="who">
+    <h1 id="title"></h1>
+    <p id="sub"></p>
+  </div>
+
+  <nav class="nav" id="nav" role="tablist" aria-label="Secciones">
+    <button role="tab" data-v="res" aria-selected="true">Resumen</button>
+    <button role="tab" data-v="exp" aria-selected="false">Expediente clínico</button>
+    <button role="tab" data-v="doc" aria-selected="false">Documentos</button>
+  </nav>
+
+  <div class="col" id="vRes">
+  <section class="card insight" aria-live="polite">
+    <h2>Resumen del estudio</h2>
+    <p class="lead" id="lead"></p>
+    <div class="fl" id="points"></div>
+    <p class="tip">Para comentar con tu médico. Esto es informativo y no sustituye una valoración médica.</p>
+  </section>
+
+  <section>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="card detail">
+    <div class="dh">
+      <div><h2 id="dname"></h2><p id="dsub"></p><p class="dwhat" id="dwhat"></p></div>
+      <div class="tabs" role="group" aria-label="Vista">
+        <button id="tGraf" aria-pressed="true">Gráfica</button>
+        <button id="tTab" aria-pressed="false">Tabla</button>
+      </div>
+    </div>
+    <div class="chartbox" id="chartbox"></div>
+    <div class="tblwrap" id="tblwrap" hidden></div>
+    <div class="legend">
+      <span><i class="lg-line"></i>Tus resultados</span>
+      <span><i class="lg-band"></i><span id="refTxt"></span></span>
+    </div>
+  </section>
+
+  </div>
+
+  <div class="col" id="vExp" hidden></div>
+
+  <div class="col" id="vDoc" hidden>
+    <section class="card docs">
+      <div class="dh"><div><h2>Documentos</h2><p id="docsub"></p></div><button class="add" id="addDoc">Agregar documento</button></div>
+      <p class="addhint" id="addhint" hidden>En la aplicación real: subes un PDF, una foto o una carpeta DICOM, y revisas lo que se extrajo antes de confirmarlo.</p>
+      <div class="tblwrap" id="docs"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const DATES=['2021-03-14','2022-05-09','2023-04-18','2024-06-11','2025-05-20','2026-08-27'];
+const LABS=['Chopo','Chopo','Lab. privado','Chopo','Lab. privado','Chopo'];
+const GROUPS=[
+ {id:'glu',n:'Metabolismo de la glucosa',d:'Cómo maneja tu cuerpo el azúcar'},
+ {id:'lip',n:'Lípidos y riesgo cardiovascular',d:'Grasas en sangre e inflamación vascular'},
+ {id:'hep',n:'Hígado',d:'Función hepática'},
+ {id:'ren',n:'Riñón',d:'Función renal'},
+ {id:'hem',n:'Sangre y hierro',d:'Oxigenación y reservas de hierro'},
+ {id:'thy',n:'Tiroides',d:'Metabolismo y energía'},
+ {id:'vit',n:'Vitaminas',d:'Reservas de micronutrientes'}
+];
+const W=['eugenia','beatriz'];
+const BM=[
+ {id:'glu',g:'glu',n:'Glucosa en ayunas',u:'mg/dL',ref:[70,99],d:0,rt:'70 a 99 mg/dL'},
+ {id:'a1c',g:'glu',n:'Hemoglobina glucosilada',u:'%',ref:[4,5.6],d:1,rt:'4.0 a 5.6 %'},
+ {id:'ldl',g:'lip',n:'Colesterol LDL',u:'mg/dL',ref:[null,100],d:0,rt:'menor a 100 mg/dL'},
+ {id:'hdl',g:'lip',n:'Colesterol HDL',u:'mg/dL',ref:[40,null],d:0,rt:'40 mg/dL o más'},
+ {id:'tg',g:'lip',n:'Triglicéridos',u:'mg/dL',ref:[null,150],d:0,rt:'menor a 150 mg/dL'},
+ {id:'pcr',g:'lip',n:'Proteína C reactiva ultrasensible',u:'mg/L',ref:[null,3],d:1,rt:'menor a 3.0 mg/L'},
+ {id:'alt',g:'hep',n:'ALT (TGP)',u:'U/L',ref:[null,41],d:0,rt:'hasta 41 U/L',by:{w:{ref:[null,33],rt:'hasta 33 U/L'}}},
+ {id:'crea',g:'ren',n:'Creatinina',u:'mg/dL',ref:[0.7,1.3],d:2,rt:'0.70 a 1.30 mg/dL',by:{w:{ref:[0.5,1.1],rt:'0.50 a 1.10 mg/dL'}}},
+ {id:'hb',g:'hem',n:'Hemoglobina',u:'g/dL',ref:[13.5,17.5],d:1,rt:'13.5 a 17.5 g/dL',by:{w:{ref:[12,15.5],rt:'12.0 a 15.5 g/dL'}}},
+ {id:'fer',g:'hem',n:'Ferritina',u:'ng/mL',ref:[30,400],d:0,rt:'30 a 400 ng/mL'},
+ {id:'tsh',g:'thy',n:'TSH',u:'mIU/L',ref:[0.4,4.0],d:1,rt:'0.4 a 4.0 mIU/L'},
+ {id:'vd',g:'vit',n:'Vitamina D',u:'ng/mL',ref:[30,100],d:0,rt:'30 a 100 ng/mL'}
+];
+const WHAT={"glu": "Azúcar en sangre después de ayuno. Valores altos sostenidos indican que el cuerpo regula peor la glucosa.", "a1c": "Promedio de tu glucosa en los últimos 2 a 3 meses.", "ldl": "Colesterol “malo”: se acumula en las arterias. Menos es mejor.", "hdl": "Colesterol “bueno”: ayuda a retirar grasa de las arterias. Más es mejor.", "tg": "Grasa en sangre; sube con exceso de azúcares, harinas y alcohol.", "pcr": "Señal de inflamación general del cuerpo; se usa para valorar riesgo cardiovascular.", "alt": "Enzima del hígado. Sube cuando las células del hígado se irritan o dañan.", "crea": "Desecho muscular que filtran los riñones. Sube si el riñón filtra menos.", "hb": "Proteína de los glóbulos rojos que lleva oxígeno. Baja en la anemia.", "fer": "Reserva de hierro del cuerpo. Baja antes que la hemoglobina cuando falta hierro.", "tsh": "Hormona que regula la tiroides. Alta suele indicar tiroides lenta; baja, acelerada.", "vd": "Vitamina clave para huesos y defensas. Depende del sol y de la alimentación."};
+const refOf=b=>(b.by&&b.by.w&&W.includes(who))?b.by.w.ref:b.ref;
+const rtOf=b=>(b.by&&b.by.w&&W.includes(who))?b.by.w.rt:b.rt;
+const PEOPLE={
+ eduardo:{name:'Eduardo',ini:'E',admin:true,age:'Adulto',
+  s:{ldl:[142,138,131,126,118,112],hdl:[42,44,45,47,48,50],tg:[180,165,150,140,132,128],glu:[96,98,101,99,97,95],a1c:[5.4,5.5,5.6,5.7,5.6,5.5],fer:[120,110,135,128,140,132],vd:[22,25,28,33,36,38],tsh:[2.1,2.4,2.2,2.8,2.6,2.5],alt:[34,38,42,39,36,33],crea:[0.9,0.95,1.0,0.98,1.0,1.02],hb:[15.1,15.3,15.0,15.4,15.2,15.3],pcr:[1.8,1.5,1.2,1.4,0.9,0.8]}},
+ eugenia:{name:'Eugenia',ini:'E',admin:false,age:'Adulta',
+  s:{ldl:[118,112,120,108,104,99],hdl:[58,60,57,61,62,63],tg:[95,102,98,90,88,92],glu:[88,90,86,91,89,87],a1c:[5.1,5.2,5.1,5.3,5.2,5.2],fer:[18,14,16,22,26,29],vd:[28,31,30,34,36,35],tsh:[1.8,2.0,1.9,2.2,2.1,2.0],alt:[18,20,17,19,21,18],crea:[0.7,0.72,0.7,0.75,0.74,0.72],hb:[12.6,12.2,12.0,12.4,12.8,13.0],pcr:[0.6,0.9,0.5,0.7,0.6,0.4]}},
+ beatriz:{name:'Beatriz',ini:'B',admin:false,age:'Adulta mayor',
+  s:{ldl:[168,160,155,149,141,135],hdl:[46,47,45,48,47,49],tg:[210,195,185,170,162,158],glu:[108,112,110,115,109,107],a1c:[5.9,6.0,6.1,6.0,5.9,5.9],fer:[85,90,80,88,92,95],vd:[18,20,24,26,29,31],tsh:[3.4,3.8,4.1,4.5,4.2,3.9],alt:[24,26,28,25,27,26],crea:[0.85,0.9,0.95,1.0,1.05,1.08],hb:[13.2,13.0,12.8,13.1,13.0,13.2],pcr:[3.8,3.4,3.9,3.1,2.8,2.6]}}
+};
+let who='eduardo', sel='ldl', view='g';
+const $=id=>document.getElementById(id);
+const ts=d=>Date.parse(d+'T00:00:00Z');
+const fd=(d,long)=>new Date(ts(d)).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
+const fv=(b,v)=>Number(v).toFixed(b.d);
+function st(b,v){const r=refOf(b);if(r[0]!=null&&v<r[0])return 'low';if(r[1]!=null&&v>r[1])return 'high';return 'ok'}
+const STL={ok:'En rango',low:'Por debajo',high:'Por encima'};
+function pill(s){return s==='ok'?`<span class="pill ok"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>${STL[s]}</span>`:
+ `<span class="pill out"><svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="${s==='high'?'M6 2l4.5 8h-9z':'M6 10L1.5 2h9z'}"/></svg>${STL[s]}</span>`}
+function pct(a,b){return Math.round(Math.abs((b-a)/a)*100)}
+
+function spark(vals,c){
+  const w=88,h=32,p=3,mn=Math.min(...vals),mx=Math.max(...vals),r=(mx-mn)||1;
+  const pts=vals.map((v,i)=>[p+i*(w-2*p)/(vals.length-1),h-p-((v-mn)/r)*(h-2*p)]);
+  const last=pts[pts.length-1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts.map(q=>q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/></svg>`;
+}
+
+function renderProfiles(){
+  $('profiles').innerHTML=Object.entries(PEOPLE).map(([k,p])=>`<button data-k="${k}" aria-pressed="${k===who}"><span class="av">${p.ini}</span>${p.name}</button>`).join('');
+  $('profiles').querySelectorAll('button').forEach(b=>b.onclick=()=>{who=b.dataset.k;renderAll()});
+}
+function renderHead(){
+  const p=PEOPLE[who];
+  $('title').textContent='Perfil de '+p.name;
+  $('sub').textContent=p.admin?'Administrador: puedes ver todos los perfiles de la familia.':'Solo ves tu propio perfil. Eduardo, como administrador, puede verlo con tu consentimiento.';
+}
+function dist(b,v){const r=refOf(b);if(r[1]!=null&&v>r[1])return (v-r[1])/r[1];if(r[0]!=null&&v<r[0])return (r[0]-v)/r[0];return 0}
+function margin(b,v){ // qué tan lejos está del límite más cercano (0 = en el límite)
+  const r=refOf(b),m=[];
+  if(r[1]!=null)m.push({d:(r[1]-v)/(r[0]!=null?r[1]-r[0]:r[1]),dir:1});
+  if(r[0]!=null)m.push({d:(v-r[0])/(r[1]!=null?r[1]-r[0]:r[0]),dir:-1});
+  return m.sort((x,y)=>x.d-y.d)[0]}
+const gname=b=>GROUPS.find(g=>g.id===b.g).n;
+function analyze(){
+  const p=PEOPLE[who],li=DATES.length-1,y0=DATES[0].slice(0,4),at=[],vi=[],me=[],est=[];
+  BM.forEach(b=>{
+    const v=p.s[b.id],f=v[0],l=v[li],x=st(b,l),df=dist(b,f),dl=dist(b,l),ch=pct(f,l);
+    const base={b,l,f,x,ch,y0,up:l>f};
+    if(x!=='ok'){
+      const tr=dl<df*0.8?'mejorando':(dl>df*1.2||df===0?'empeorando':'estable');
+      at.push({...base,dl,tr});
+    }else if(st(b,f)!=='ok'){me.push({...base,why:'entró al rango'})}
+    else{
+      const m=margin(b,l),toward=(m.dir===1&&l>f)||(m.dir===-1&&l<f);
+      if(toward&&((m.d<0.15&&ch>=2)||ch>=20)&&m.d<0.3)vi.push({...base,m});else est.push(b);
+    }
+  });
+  at.sort((a,b)=>b.dl-a.dl);
+  return {at,vi,me,est,li};
+}
+function renderInsight(){
+  const {at,vi,me,est,li}=analyze(),n=BM.length;
+  const parts=[];
+  if(at.length){const w=at.filter(z=>z.tr==='empeorando').length,m=at.filter(z=>z.tr==='mejorando').length;
+    parts.push(`${at.length} fuera de rango`+(m&&!w?(m===at.length?', todos en mejoría':`, ${m} en mejoría`):(w?`, ${w} empeorando`:'')))}
+  if(vi.length)parts.push(`${vi.length} a vigilar`);
+  if(me.length)parts.push(`${me.length} ${me.length>1?'entraron':'entró'} al rango`);
+  $('lead').textContent=(parts.length?parts.join(' · '):'Todo dentro de rango y estable')+`. Estudio del ${fd(DATES[li])}, ${n} marcadores.`;
+  const ic={at:'<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1l5.5 10h-11z"/></svg>',vi:'<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="4"/></svg>',me:'<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>'};
+  const row=(k,label,r,sub)=>`<button class="fr" data-id="${r.b.id}"><span class="tag ${k}">${ic[k]}${label}</span><span class="fm">${r.b.n} · ${fv(r.b,r.l)} ${r.b.u}</span><span class="fs">${gname(r.b)}. ${sub}</span></button>`;
+  const rows=[];
+  at.slice(0,4).forEach(r=>{
+    const lim=r.x==='high'?'por encima':'por debajo';
+    rows.push(row('at','Atención',r,`${Math.round(dist(r.b,r.l)*100)} % ${lim} del rango (${rtOf(r.b)}). ${r.tr==='mejorando'?'Mejorando':r.tr==='empeorando'?'Empeorando':'Estable'}: ${fv(r.b,r.f)} en ${r.y0} a ${fv(r.b,r.l)} hoy.`))});
+  if(at.length>4)rows.push(`<div class="fs" style="grid-column:auto">y ${at.length-4} más fuera de rango, en el detalle por sistema.</div>`);
+  vi.forEach(r=>rows.push(row('vi','Vigilar',r,`Dentro de rango, pero ${r.up?'sube':'baja'} hacia el límite (${rtOf(r.b)}): ${fv(r.b,r.f)} en ${r.y0} a ${fv(r.b,r.l)} hoy.`)));
+  me.slice(0,2).forEach(r=>rows.push(row('me','Mejoró',r,`Ya está en rango (${rtOf(r.b)}). Antes: ${fv(r.b,r.f)} en ${r.y0}.`)));
+  $('points').innerHTML=rows.join('')+(est.length?`<div class="fq">Sin cambios relevantes: ${est.length} marcadores (${[...new Set(est.map(gname))].join(', ')}).</div>`:'');
+  $('points').querySelectorAll('.fr').forEach(x=>x.onclick=()=>{sel=x.dataset.id;renderGrid();renderDetail();$('dname').scrollIntoView({behavior:'smooth',block:'nearest'})});
+}
+function card(b,p,li){
+  const v=p.s[b.id],l=v[li],sx=st(b,l),dl=l===v[0]?'sin cambio':(l<v[0]?'▼ ':'▲ ')+pct(v[0],l)+' % desde '+DATES[0].slice(0,4);
+  return `<button class="bm" data-id="${b.id}" aria-pressed="${b.id===sel}">
+      <div class="top"><span class="nm">${b.n}</span></div>
+      <div>${pill(sx)}</div>
+      <div class="row"><div><div class="val">${fv(b,l)}<small>${b.u}</small></div><div class="delta">${dl}</div></div>${spark(v)}</div></button>`}
+function renderGrid(){
+  const p=PEOPLE[who],li=DATES.length-1;
+  $('grid').innerHTML=GROUPS.map(g=>{
+    const items=BM.filter(b=>b.g===g.id),ok=items.filter(b=>st(b,p.s[b.id][li])==='ok').length;
+    return `<section class="grp"><div class="gh"><div><h3>${g.n}</h3><p>${g.d}</p></div><span class="gc ${ok===items.length?'ok':'out'}">${ok} de ${items.length} en rango</span></div><div class="cards">${items.map(b=>card(b,p,li)).join('')}</div></section>`}).join('');
+  bindTips();
+  $('grid').querySelectorAll('.bm').forEach(x=>x.onclick=()=>{sel=x.dataset.id;renderGrid();renderDetail();$('dname').scrollIntoView({behavior:'smooth',block:'nearest'})});
+}
+function niceStep(range,n){const raw=range/n,m=Math.pow(10,Math.floor(Math.log10(raw))),f=raw/m;return (f<1.5?1:f<3?2:f<7?5:10)*m}
+
+function renderDetail(){
+  const b=BM.find(x=>x.id===sel),p=PEOPLE[who],vals=p.s[b.id],li=vals.length-1;
+  $('dname').textContent=b.n;
+  $('dsub').textContent=`${b.u} · ${vals.length} resultados de ${new Set(LABS).size} laboratorios, ${DATES[0].slice(0,4)} a ${DATES[li].slice(0,4)}`;
+  $('dwhat').textContent='Qué significa: '+WHAT[b.id];
+  $('refTxt').textContent='Rango de referencia: '+rtOf(b);
+  const tb=$('tblwrap');
+  tb.innerHTML=`<table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Laboratorio</th></tr></thead><tbody>${[...vals.keys()].reverse().map(i=>`<tr><td>${fd(DATES[i])}</td><td><b>${fv(b,vals[i])}</b> ${b.u}</td><td>${pill(st(b,vals[i]))}</td><td>${LABS[i]}</td></tr>`).join('')}</tbody></table>`;
+  $('chartbox').hidden=view!=='g';tb.hidden=view!=='t';
+  if(view==='g')drawChart(b,vals);
+}
+
+function drawChart(b,vals){
+  const box=$('chartbox');box.innerHTML='';
+  const W=Math.max(box.clientWidth,280),H=W<520?250:320;
+  const m={l:W<520?38:46,r:W<520?52:64,t:14,b:30};
+  const iw=W-m.l-m.r,ih=H-m.t-m.b;
+  const t0=ts('2021-01-01'),t1=ts('2026-12-31');
+  const lo0=refOf(b)[0],hi0=refOf(b)[1];
+  const lims=[lo0,hi0].filter(v=>v!=null);let mn=Math.min(...vals,...lims),mx=Math.max(...vals,...lims);
+  const pad=(mx-mn)*.18||1;mn-=pad;mx+=pad;
+  const step=niceStep(mx-mn,4);
+  mn=Math.floor(mn/step)*step;mx=Math.ceil(mx/step)*step;if(mn<0&&Math.min(...vals)>=0)mn=0;
+  const X=t=>m.l+(t-t0)/(t1-t0)*iw,Y=v=>m.t+(1-(v-mn)/(mx-mn))*ih;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de ${b.n}">`;
+  const bandTop=Y(hi0??mx),bandBot=Y(lo0??mn);
+  s+=`<rect x="${m.l}" y="${bandTop}" width="${iw}" height="${Math.max(0,bandBot-bandTop)}" fill="var(--band)" stroke="var(--band-line)" stroke-dasharray="3 3"/>`;
+  for(let v=mn;v<=mx+1e-9;v+=step){
+    s+=`<line x1="${m.l}" x2="${m.l+iw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1" opacity=".7"/><text class="ax" x="${m.l-8}" y="${Y(v)+4}" text-anchor="end">${Number(v.toFixed(2))}</text>`}
+  for(let y=2021;y<=2026;y++){const x=X(ts(y+'-07-01'));s+=`<text class="ax" x="${x}" y="${H-8}" text-anchor="middle">${y}</text>`}
+  const pts=vals.map((v,i)=>[X(ts(DATES[i])),Y(v)]);
+  s+=`<polyline points="${pts.map(q=>q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  pts.forEach((q,i)=>{s+=`<circle class="pt" data-i="${i}" cx="${q[0]}" cy="${q[1]}" r="${i===pts.length-1?5:4}" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>`});
+  const lp=pts[pts.length-1];
+  s+=`<text x="${lp[0]+10}" y="${lp[1]+4}" fill="var(--ink)" style="font:600 13px var(--font)">${fv(b,vals[vals.length-1])}</text>`;
+  s+=`<line id="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t+ih}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>`;
+  s+=`<rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip-box" id="tip" hidden></div>`;
+  box.innerHTML=s;
+  const svg=box.querySelector('svg'),tip=$('tip'),xh=$('xh');
+  function show(clientX){
+    const r=svg.getBoundingClientRect(),x=(clientX-r.left)*(W/r.width);
+    let bi=0,bd=1e9;pts.forEach((q,i)=>{const d=Math.abs(q[0]-x);if(d<bd){bd=d;bi=i}});
+    const q=pts[bi],sc=r.width/W;
+    xh.setAttribute('x1',q[0]);xh.setAttribute('x2',q[0]);xh.style.display='';
+    box.querySelectorAll('.pt').forEach((c,i)=>c.setAttribute('r',i===bi?7:(i===pts.length-1?5:4)));
+    tip.hidden=false;
+    tip.innerHTML=`<span>${fd(DATES[bi])}</span><b>${fv(b,vals[bi])} ${b.u}</b><span>${STL[st(b,vals[bi])]} · ${LABS[bi]}</span>`;
+    const tw=tip.offsetWidth;let left=q[0]*sc+14;if(left+tw>r.width)left=q[0]*sc-tw-14;
+    tip.style.left=Math.max(0,left)+'px';tip.style.top=Math.max(0,q[1]*sc-30)+'px';
+  }
+  function hide(){tip.hidden=true;xh.style.display='none';box.querySelectorAll('.pt').forEach((c,i)=>c.setAttribute('r',i===pts.length-1?5:4))}
+  const hit=$('hit');
+  hit.addEventListener('pointermove',e=>show(e.clientX));
+  hit.addEventListener('pointerdown',e=>show(e.clientX));
+  hit.addEventListener('pointerleave',hide);
+}
+
+function mine(b){
+  const p=PEOPLE[who],v=p.s[b.id],l=v[v.length-1],x=st(b,l);
+  const est=x==='ok'?'en rango':(x==='high'?'por encima del rango':'por debajo del rango');
+  const ch=l===v[0]?'sin cambio':(l<v[0]?'ha bajado ':'ha subido ')+pct(v[0],l)+' % desde '+DATES[0].slice(0,4);
+  return `Tu último resultado: ${fv(b,l)} ${b.u}, ${est} (${rtOf(b)}). ${ch.charAt(0).toUpperCase()+ch.slice(1)}.`;
+}
+let htip=null;
+function showTip(el){
+  const b=BM.find(z=>z.id===el.dataset.id);
+  if(!htip){htip=document.createElement('div');htip.className='htip';htip.setAttribute('role','tooltip');document.body.appendChild(htip)}
+  htip.innerHTML='';
+  const t=document.createElement('b');t.textContent=b.n;
+  const w=document.createElement('span');w.textContent=WHAT[b.id];
+  const m=document.createElement('span');m.className='me';m.textContent=mine(b);
+  htip.append(t,w,m);htip.hidden=false;
+  const r=el.getBoundingClientRect(),tw=htip.offsetWidth,th=htip.offsetHeight;
+  let top=r.bottom+8;if(top+th>innerHeight-8)top=Math.max(8,r.top-th-8);
+  let left=Math.min(Math.max(8,r.left),innerWidth-tw-8);
+  htip.style.top=top+'px';htip.style.left=left+'px';
+}
+function hideTip(){if(htip)htip.hidden=true}
+function bindTips(){
+  $('grid').querySelectorAll('.bm').forEach(el=>{
+    el.addEventListener('pointerenter',e=>{if(e.pointerType!=='touch')showTip(el)});
+    el.addEventListener('pointerleave',hideTip);
+    el.addEventListener('focus',()=>showTip(el));
+    el.addEventListener('blur',hideTip);
+    el.addEventListener('click',hideTip);
+  });
+}
+addEventListener('scroll',hideTip,{passive:true});
+$('tGraf').onclick=()=>{view='g';$('tGraf').setAttribute('aria-pressed','true');$('tTab').setAttribute('aria-pressed','false');renderDetail()};
+$('tTab').onclick=()=>{view='t';$('tTab').setAttribute('aria-pressed','true');$('tGraf').setAttribute('aria-pressed','false');renderDetail()};
+
+const X={
+ eduardo:{
+  alergias:['Penicilina (reacción en la piel)'],
+  problemas:[['Dislipidemia','c','En control','2021'],['Deficiencia de vitamina D','r','Resuelta','2022']],
+  meds:[['Vitamina D3','2,000 UI al día','Deficiencia de vitamina D','2022']],
+  fam:[['Padre','Hipertensión y diabetes tipo 2'],['Madre','Dislipidemia']],
+  cirugias:[['Apendicectomía','2009']],
+  eventos:[
+   ['2026-08-27','Consulta','Chequeo anual · Medicina interna','Dr. Ramos'],
+   ['2025-10-15','Vacuna','Influenza estacional','Farmacia'],
+   ['2025-05-20','Consulta','Seguimiento de lípidos · Cardiología','Dra. Peña'],
+   ['2024-06-11','Imagen','Ultrasonido abdominal: sin hallazgos relevantes','Reporte PDF'],
+   ['2024-03-02','Vacuna','Refuerzo COVID-19','Centro de salud'],
+   ['2023-09-08','Imagen','Radiografía de tórax: normal','Reporte PDF'],
+   ['2022-11-20','Vacuna','Tétanos','Centro de salud'],
+   ['2009-06-14','Cirugía','Apendicectomía','Hospital']]},
+ eugenia:{
+  alergias:[],
+  problemas:[['Deficiencia de hierro','a','En tratamiento','2022']],
+  meds:[['Sulfato ferroso','325 mg al día','Deficiencia de hierro','2022']],
+  fam:[['Madre','Hipotiroidismo']],
+  cirugias:[['Cesárea','2016']],
+  eventos:[
+   ['2026-08-27','Consulta','Chequeo y seguimiento de hierro · Medicina general','Dra. Salas'],
+   ['2026-03-10','Consulta','Revisión anual · Ginecología','Dra. Ortiz'],
+   ['2025-10-15','Vacuna','Influenza estacional','Farmacia'],
+   ['2025-02-18','Imagen','Mastografía: sin hallazgos relevantes','Reporte PDF'],
+   ['2023-05-04','Vacuna','Tdap','Centro de salud'],
+   ['2016-08-22','Cirugía','Cesárea','Hospital']]},
+ beatriz:{
+  alergias:['Sulfonamidas (sulfas)'],
+  problemas:[['Hipertensión arterial','c','En control','2015'],['Dislipidemia','a','Seguimiento','2019'],['Prediabetes','a','Seguimiento','2023'],['Osteopenia','c','En control','2022']],
+  meds:[['Losartán','50 mg al día','Hipertensión','2015'],['Atorvastatina','20 mg al día','Dislipidemia','2019'],['Calcio con vitamina D','1 tableta al día','Osteopenia','2022']],
+  fam:[['Madre','Diabetes tipo 2'],['Padre','Infarto a los 68 años']],
+  cirugias:[['Colecistectomía','2012'],['Histerectomía','2008']],
+  eventos:[
+   ['2026-08-27','Consulta','Revisión de resultados · Medicina interna','Dr. Ramos'],
+   ['2026-06-03','Consulta','Control de presión y lípidos · Cardiología','Dra. Peña'],
+   ['2026-01-19','Consulta','Seguimiento de glucosa · Endocrinología','Dr. Vela'],
+   ['2025-10-15','Vacuna','Influenza estacional','Farmacia'],
+   ['2025-04-09','Imagen','Ecocardiograma: sin hallazgos relevantes','Reporte PDF'],
+   ['2024-11-05','Vacuna','Neumococo','Centro de salud'],
+   ['2022-07-12','Imagen','Densitometría ósea: osteopenia leve','Reporte PDF'],
+   ['2012-03-30','Cirugía','Colecistectomía','Hospital'],
+   ['2008-09-15','Cirugía','Histerectomía','Hospital']]}
+};
+function allEvents(){
+  const ev=X[who].eventos.map(e=>({d:e[0],t:e[1],title:e[2],src:e[3]}));
+  DATES.forEach((d,i)=>ev.push({d,t:'Laboratorio',title:i%2?'Química sanguínea completa':'Perfil de lípidos y glucosa',src:LABS[i]}));
+  return ev.sort((a,b)=>b.d.localeCompare(a.d));
+}
+let evf='Todo';
+function renderExp(){
+  const x=X[who];
+  const alg=x.alergias.length?`<div class="alg">${x.alergias.join(' · ')}</div>`:'<div class="alg none">Sin alergias conocidas</div>';
+  const prob=x.problemas.map(r=>`<li><span><b>${r[0]}</b> <span class="s">desde ${r[3]}</span></span><span class="sp ${r[1]}">${r[2]}</span></li>`).join('');
+  const meds=x.meds.length?x.meds.map(r=>`<li><span><b>${r[0]}</b> · ${r[1]}<br><span class="s">${r[2]}, desde ${r[3]}</span></span></li>`).join(''):'<li><span class="s">Sin medicamentos registrados</span></li>';
+  const fam=x.fam.map(r=>`<li><b>${r[0]}</b><span class="s">${r[1]}</span></li>`).join('');
+  const cir=x.cirugias.map(r=>`<li><b>${r[0]}</b><span class="s">${r[1]}</span></li>`).join('');
+  const types=['Todo','Consulta','Laboratorio','Imagen','Vacuna','Cirugía'];
+  const evs=allEvents().filter(e=>evf==='Todo'||e.t===evf);
+  $('vExp').innerHTML=`
+   <div class="xg">
+    <section class="card xc"><h3>Alergias</h3>${alg}<h3 style="margin-top:6px">Problemas de salud</h3><ul class="xl">${prob}</ul></section>
+    <section class="card xc"><h3>Medicamentos actuales</h3><ul class="xl">${meds}</ul></section>
+    <section class="card xc"><h3>Antecedentes familiares</h3><ul class="xl">${fam}</ul><h3 style="margin-top:6px">Cirugías</h3><ul class="xl">${cir}</ul></section>
+   </div>
+   <section class="card xc"><h3>Historial cronológico</h3>
+    <div class="chips" role="group" aria-label="Filtrar por tipo">${types.map(t=>`<button class="chip" data-t="${t}" aria-pressed="${t===evf}">${t}</button>`).join('')}</div>
+    <div class="tl">${evs.map(e=>`<div class="ev"><div class="dt">${fd(e.d)}</div><div><div class="tt"><span class="ty">${e.t}</span>${e.title}</div><div class="sb">${e.src}</div></div></div>`).join('')}</div>
+   </section>`;
+  $('vExp').querySelectorAll('.chip').forEach(c=>c.onclick=()=>{evf=c.dataset.t;renderExp()});
+}
+function renderDocsTab(){
+  const ev=allEvents().filter(e=>e.t!=='Vacuna'&&e.t!=='Cirugía');
+  $('docsub').textContent=`${ev.length} documentos de ${PEOPLE[who].name}. Cada dato extraído enlaza al documento original.`;
+  $('docs').innerHTML=`<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Documento</th><th>Origen</th><th>Extracción</th></tr></thead><tbody>${ev.map(e=>`<tr><td>${fd(e.d)}</td><td>${e.t}</td><td>${e.title}</td><td>${e.src}</td><td><span class="sp r">Revisada</span></td></tr>`).join('')}</tbody></table>`;
+}
+let vw='res';
+function setView(v){
+  vw=v;
+  ['res','exp','doc'].forEach(k=>$('v'+k[0].toUpperCase()+k.slice(1)).hidden=k!==v);
+  $('nav').querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.v===v));
+  if(v==='res')renderDetail();
+}
+$('nav').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+$('addDoc').onclick=()=>{$('addhint').hidden=!$('addhint').hidden};
+function renderAll(){renderProfiles();renderHead();renderInsight();renderGrid();renderDetail();renderExp();renderDocsTab();hideTip()}
+renderAll();
+let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(view==='g'&&vw==='res')renderDetail()},120)});
+</script>
