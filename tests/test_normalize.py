@@ -49,4 +49,4 @@ def test_terminology_matches_aliases():
     assert terminology.match_analyte("Colesterol LDL (calculado)").key == "ldl"
     assert terminology.match_analyte("TGP (ALT)").key == "alt"
     assert terminology.match_analyte("Vitamina D 25-OH").key == "vitamin_d"
-    assert terminology.match_analyte("Potasio") is None
+    assert terminology.match_analyte("Tiroglobulina") is None

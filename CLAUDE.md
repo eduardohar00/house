@@ -1,0 +1,41 @@
+# House: contexto para Claude Code
+
+House es un expediente de salud **familiar y privado** (uso personal de Eduardo, Eugenia y Beatriz). Convierte estudios de laboratorio, imágenes, recetas y expediente clínico en una línea de tiempo por persona. Responde siempre en **español** al usuario (Eduardo).
+
+Documentos clave (léelos antes de proponer cambios grandes):
+- `docs/PRODUCT.md`: producto, decisiones y alcance.
+- `docs/TECHNICAL_PLAN.md`: arquitectura, seguridad, fases y riesgos.
+- `docs/mockup/house-mockup.html`: maqueta interactiva aprobada (datos ficticios).
+- `bench/README.md`: banco de pruebas de extracción.
+
+## Reglas de privacidad (obligatorias)
+1. **Nunca leas, abras, imprimas ni resumas** nada dentro de `bench/private/`, ni PDFs de estudios, ni `config/house.toml`. Contienen datos de salud reales. No uses `cat`, `head`, `grep` ni la herramienta Read sobre ellos.
+2. Ejecuta los comandos que pida Eduardo y muestra solo lo que impriman. Si una salida trae valores de laboratorio o datos personales, detente y avísale sin repetirlos.
+3. Nunca subas a git datos de salud, claves de API ni `config/house.toml`. La CI falla si hay PDF o DICOM en el repo.
+4. Los datos de prueba del repo son **sintéticos**. Para nuevas pruebas usa datos inventados.
+5. Los mensajes de error y las bitácoras no deben incluir contenido de documentos.
+
+## Decisiones de producto ya tomadas
+- Modo de IA **único: híbrido**. Lectura, limpieza de datos personales y DICOM ocurren en la Mac; a la IA solo llega texto anonimizado.
+- **Agnóstico al modelo**: el proveedor se elige por tarea en `config/house.toml`; se decide con el banco de pruebas.
+- **La IA propone, el código dispone**: conversiones, rangos, estados y tendencias son deterministas; toda fila requiere evidencia literal y revisión humana (al inicio, siempre).
+- MVP en **una sola máquina** (laptop de Eduardo). Onboarding **solo lo hace Eduardo** (admin): crea perfiles y asigna PIN. Cada persona ve solo su perfil.
+- Fuera de alcance: diagnóstico, resumen o preparación de consulta, compartir con terceros, vender paneles de laboratorio.
+- Los umbrales de "Atención/Vigilar" y las explicaciones de marcadores son provisionales y **deben revisarse con un médico**.
+
+## Cómo trabajar
+```bash
+source .venv/bin/activate
+pytest -q
+ruff check . && ruff format --check .
+python -m house.bench                       # banco offline
+python -m house.bench.new_case <pdf> --id <id> --names "Nombre"   # crea un caso en bench/private/
+python -m house.bench.names bench/private/<id>                    # solo nombres y unidades sin reconocer
+```
+- Python 3.11+, tipado con pydantic, `ruff` (línea 110). Pruebas con `pytest` para todo cambio de comportamiento.
+- El catálogo de analitos está en `src/house/normalize/terminology.py`. **No inventes códigos LOINC**: déjalos en blanco si no estás seguro.
+- Los adaptadores de OpenAI y Gemini están **sin verificar** contra la API real.
+- Antes de subir: pruebas y ruff en verde. Commits claros en español o inglés; nunca fuerces push a `main`.
+
+## Estado y siguientes pasos
+Fase 0 lista (plan, proveedores, anonimizador, normalización, banco de pruebas). En curso: **Fase 0b**, Eduardo arma casos reales en `bench/private/` y compara proveedores. Después, **Fase 1** (API local, base cifrada, PIN, ingesta y revisión lado a lado). PDFs escaneados requieren OCR local (Fase 1).

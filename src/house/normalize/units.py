@@ -41,6 +41,14 @@ _CANON = {
     "miu/l": "mIU/L",
     "uiu/ml": "mIU/L",
     "mg/l": "mg/L",
+    "mmol/l": "mmol/L",
+    "ug/dl": "µg/dL",
+    "pg": "pg",
+    "fl": "fL",
+    "103/ul": "10^3/µL",
+    "x103/ul": "10^3/µL",
+    "106/ul": "10^6/µL",
+    "x106/ul": "10^6/µL",
 }
 
 

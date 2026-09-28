@@ -107,7 +107,7 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
         row = Row(r.analyte_name, r.value_text, r.unit_text, r.evidence)
         if not _grounded(r.evidence, r.value_text, sent_text):
             row.problems.append(Provenance.NOT_GROUNDED)
-        analyte = terminology.match_analyte(r.analyte_name)
+        analyte = terminology.match_analyte(r.analyte_name, r.unit_text)
         value = _to_float(r.value_text)
         if value is None:
             row.problems.append(Provenance.NOT_NUMERIC)
@@ -121,7 +121,7 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
             except units.UnknownUnit:
                 row.problems.append(Provenance.UNIT_PROBLEM)
             if row.value is not None:
-                lo, hi = _PLAUSIBLE[analyte.key]
+                lo, hi = _PLAUSIBLE.get(analyte.key, (0, float("inf")))
                 if not lo <= row.value <= hi:
                     row.problems.append(Provenance.IMPLAUSIBLE)
                 row.ref_low, row.ref_high = ranges.parse_ref(r.ref_text)

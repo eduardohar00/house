@@ -141,7 +141,7 @@ def test_implausible_unknown_and_unit_problems():
         lab_name=None,
         rows=[
             row("Glucosa", "9000", "mg/dL"),
-            row("Potasio", "4.1", "mmol/L"),
+            row("Tiroglobulina", "4.1", "ng/mL"),
             row("Glucosa", "90", "furlongs"),
         ],
     )
