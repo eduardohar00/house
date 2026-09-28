@@ -9,11 +9,10 @@ Documentos clave (léelos antes de proponer cambios grandes):
 - `bench/README.md`: banco de pruebas de extracción.
 
 ## Reglas de privacidad (obligatorias)
-1. **Nunca leas, abras, imprimas ni resumas** nada dentro de `bench/private/`, ni PDFs de estudios, ni `config/house.toml`. Contienen datos de salud reales. No uses `cat`, `head`, `grep` ni la herramienta Read sobre ellos.
-2. Ejecuta los comandos que pida Eduardo y muestra solo lo que impriman. Si una salida trae valores de laboratorio o datos personales, detente y avísale sin repetirlos.
-3. Nunca subas a git datos de salud, claves de API ni `config/house.toml`. La CI falla si hay PDF o DICOM en el repo.
-4. Los datos de prueba del repo son **sintéticos**. Para nuevas pruebas usa datos inventados.
-5. Los mensajes de error y las bitácoras no deben incluir contenido de documentos.
+1. Eduardo autoriza que Claude Code lea `bench/private/` y sus PDFs de estudios (datos de salud reales) para ayudar a armar y revisar casos del banco. Aun así, `verified: true` en `expected.json` lo pone solo Eduardo, tras comprobarlo contra el PDF: la respuesta correcta del banco no la fija un modelo que el banco evalúa. No leas `config/house.toml` (claves).
+2. Nunca subas a git datos de salud, claves de API ni `config/house.toml`. La CI falla si hay PDF o DICOM en el repo.
+3. Los datos de prueba del repo son **sintéticos**. Para nuevas pruebas usa datos inventados.
+4. Los mensajes de error y las bitácoras no deben incluir contenido de documentos.
 
 ## Decisiones de producto ya tomadas
 - Modo de IA **único: híbrido**. Lectura, limpieza de datos personales y DICOM ocurren en la Mac; a la IA solo llega texto anonimizado.
