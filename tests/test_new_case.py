@@ -69,3 +69,45 @@ def test_baseline_reads_hematology_units():
         "Hematocrito",
         "Velocidad de sedimentación",
     }
+
+
+# Formato de un laboratorio real con valores inventados.
+LAB_LINES = """CREATININA 1.50 * mg/dL 0.60 - 1.20
+VOLUMEN CORPUSCULAR MEDIO 85.0 fl 81.0 - 99.0
+ALBUMINA 4.00 g/dL 3.10 - 4.50
+ALBUMINA 12.0 mg/L 0.0 - 23.8
+RELACION A/G 1.20 1.00 - 2.20
+INDICE LDL / HDL 3.1 * <2.7
+INDICE ATEROGENICO 5.0 * mg/dL <3.5
+pH 6.0 5.0 - 7.0
+LIMÍTROFE 150 - 199
+ALTO = ó >200
+CÉDULA PROFESIONAL : 1234567
+Fecha de Toma : 01/03/2026"""
+
+
+def test_prefill_keeps_flagged_unitless_and_urine_rows():
+    from house.bench.new_case import prefill_expected
+
+    exp, unrecognized = prefill_expected(LAB_LINES)
+    got = {(r["key"], r["value"], r["unit"]) for r in exp["results"]}
+    assert got == {
+        ("creatinine", 1.5, "mg/dL"),
+        ("mcv", 85.0, "fL"),
+        ("albumin", 4.0, "g/dL"),
+        ("albumin_urine", 12.0, "mg/L"),
+        ("ag_ratio", 1.2, ""),
+        ("ldl_hdl_ratio", 3.1, ""),
+        ("chol_hdl_ratio", 5.0, ""),
+        ("urine_ph", 6.0, ""),
+    }
+    assert unrecognized == []
+
+
+def test_baseline_ref_text_for_unitless_rows():
+    from house.providers import LLMRequest
+    from house.providers.mock import BaselineRegexProvider
+
+    req = LLMRequest(task="extract", system="", user="INDICE LDL / HDL 3.1 * <2.7", schema={})
+    (row,) = BaselineRegexProvider().complete_json(req).data["rows"]
+    assert row["unit_text"] is None and row["ref_text"] == "<2.7"

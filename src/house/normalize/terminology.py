@@ -264,6 +264,37 @@ _EXTRA: tuple[Analyte, ...] = (
     _a("eos_abs", "Eosinófilos abs.", "711-2", "10^3/µL", "diferencial", "eosinofilos absolutos"),
     _a("baso_pct", "Basófilos %", "706-2", "%", "diferencial", "basofilos"),
     _a("baso_abs", "Basófilos abs.", "704-7", "10^3/µL", "diferencial", "basofilos absolutos"),
+    _a("uric_acid", "Ácido úrico", "3084-1", "mg/dL", "rinon", "acido urico"),
+    _a(
+        "protein_total",
+        "Proteínas totales",
+        "2885-2",
+        "g/dL",
+        "higado",
+        "proteinas totales",
+        "proteina total",
+    ),
+    _a("calcium", "Calcio", "17861-6", "mg/dL", "electrolitos", "calcio", "calcio serico"),
+    _a("chloride", "Cloro", "2075-0", "mmol/L", "electrolitos", "cloro", "cloruro", "cloruros"),
+    _a(
+        "vldl",
+        "Colesterol VLDL",
+        "",
+        "mg/dL",
+        "lipidos",
+        "colesterol de muy baja densidad vldl",
+        "colesterol vldl",
+        "vldl",
+    ),
+    _a("mpv", "Volumen plaquetario medio", "32623-1", "fL", "sangre", "volumen plaquetario medio", "vpm"),
+    # Cocientes y análisis de orina sin unidad: unidad canónica "".
+    _a("ag_ratio", "Relación albúmina/globulina", "1759-0", "", "higado", "relacion a g"),
+    _a("chol_hdl_ratio", "Índice aterogénico (CT/HDL)", "9830-1", "", "lipidos", "indice aterogenico"),
+    _a("ldl_hdl_ratio", "Índice LDL/HDL", "", "", "lipidos", "indice ldl hdl", "relacion ldl hdl"),
+    _a(
+        "urine_sg", "Gravedad específica (orina)", "", "", "orina", "gravedad especifica", "densidad urinaria"
+    ),
+    _a("urine_ph", "pH (orina)", "", "", "orina", "ph", "ph urinario"),
 )
 
 CATALOG: tuple[Analyte, ...] = _BASE + _EXTRA

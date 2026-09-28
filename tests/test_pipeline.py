@@ -275,3 +275,24 @@ def test_schema_is_strict():
                 check(v)
 
     check(extraction_json_schema())
+
+
+def test_ratio_printed_with_mg_dl_is_not_a_conversion():
+    line = "INDICE ATEROGENICO 5.0 * mg/dL <3.5"
+    raw = RawExtraction(
+        document_type="laboratorio",
+        collected_on=None,
+        lab_name=None,
+        rows=[
+            RawRow(
+                analyte_name="INDICE ATEROGENICO",
+                value_text="5.0",
+                unit_text="mg/dL",
+                ref_text="<3.5",
+                evidence=line,
+            )
+        ],
+    )
+    (row,) = process(raw, line)
+    assert (row.key, row.value, row.unit) == ("chol_hdl_ratio", 5.0, "")
+    assert not row.converted and not row.problems and row.status == "high"

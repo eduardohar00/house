@@ -14,11 +14,14 @@ import time
 from .base import LLMRequest, LLMResponse
 
 # Independiente del espaciado (los PDF suelen colapsar las columnas a un solo espacio).
-# Exige una unidad con "/" o "%" tras el valor, para no confundir números del nombre ("25-OH").
+# Tras el valor exige una unidad ("/", "%", fL, pg) o, en análisis sin unidad (pH, índices), un
+# intervalo de referencia; así no confunde números del nombre ("25-OH") ni leyendas ("ALTO 200 - 499").
+# El "*" que algunos laboratorios ponen tras un valor fuera de rango se tolera.
 _LINE = re.compile(
-    r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?P<value>\d+(?:[.,]\d+)?)\s*"
-    r"(?P<unit>x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ]+(?:/[A-Za-zµμ]+)?|%|fL|pg)"
-    r"(?:\s+(?P<ref>\S.*?))?\s*$"
+    r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?P<value>\d+(?:[.,]\d+)?)(?:\s*\*)?"
+    r"(?:\s*(?P<unit>x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ]+(?:/[A-Za-zµμ]+)?|%|[fF][lL]|pg)"
+    r"(?:\s+(?P<ref>\S.*?))?"
+    r"|\s+(?P<ref_only>[<>]=?\s*\d.*?|\d+(?:[.,]\d+)?\s*-\s*\d.*?))\s*$"
 )
 _DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 
@@ -42,7 +45,7 @@ class BaselineRegexProvider:
                         "analyte_name": m.group("name").strip(),
                         "value_text": m.group("value"),
                         "unit_text": m.group("unit"),
-                        "ref_text": (m.group("ref") or "").strip() or None,
+                        "ref_text": (m.group("ref") or m.group("ref_only") or "").strip() or None,
                         "evidence": line.strip(),
                     }
                 )

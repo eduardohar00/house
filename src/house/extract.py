@@ -117,7 +117,7 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
             row.key, row.name, row.loinc = analyte.key, analyte.name, analyte.loinc
             try:
                 row.value, row.unit = units.to_canonical(analyte.key, value, r.unit_text, analyte.unit)
-                row.converted = units.norm_unit(r.unit_text) != units.norm_unit(analyte.unit)
+                row.converted = not units.same_unit(analyte.key, r.unit_text, analyte.unit)
             except units.UnknownUnit:
                 row.problems.append(Provenance.UNIT_PROBLEM)
             if row.value is not None:

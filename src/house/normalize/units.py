@@ -52,10 +52,22 @@ _CANON = {
 }
 
 
+# Cocientes sin unidad que algunos laboratorios imprimen con la unidad de sus operandos
+# (p. ej. índice aterogénico CT/HDL "6.3 mg/dL"). El valor no cambia: no es una conversión.
+_RATIO_PRINTED_AS = {("chol_hdl_ratio", "mg/dl"), ("ldl_hdl_ratio", "mg/dl")}
+
+
+def same_unit(key: str, unit_text: str | None, canonical_unit: str) -> bool:
+    u = norm_unit(unit_text)
+    return u == norm_unit(canonical_unit) or (key, u) in _RATIO_PRINTED_AS
+
+
 def to_canonical(key: str, value: float, unit_text: str | None, canonical_unit: str) -> tuple[float, str]:
     """Devuelve (valor, unidad canónica). Lanza UnknownUnit si no sabe convertir."""
     u = norm_unit(unit_text)
-    if u == "" and canonical_unit == "%":
+    if (key, u) in _RATIO_PRINTED_AS:
+        return value, canonical_unit
+    if u == "" and canonical_unit in ("%", ""):
         return value, canonical_unit
     canon = _CANON.get(u)
     if canon == canonical_unit:

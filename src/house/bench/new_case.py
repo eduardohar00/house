@@ -55,7 +55,7 @@ def prefill_expected(text: str) -> tuple[dict, list[str]]:
     data = BaselineRegexProvider().complete_json(req).data
     results, unrecognized = [], []
     for r in data["rows"]:
-        analyte = terminology.match_analyte(r["analyte_name"])
+        analyte = terminology.match_analyte(r["analyte_name"], r["unit_text"])
         try:
             value = float(r["value_text"].replace(",", "."))
         except ValueError:
