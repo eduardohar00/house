@@ -84,6 +84,12 @@ _SAME_VALUE = {
     ("bun_creat_ratio", "mg/dl"),  # cociente impreso con "mg/dL"
     ("insulin", "uui/ml"),  # µUI/mL = µU/mL
     ("sd_ldl", ""),  # Chopo a veces lo imprime sin unidad, con el mismo rango (mg/dL)
+    # Tiras de orina con valor sin unidad impresa: por convención van en mg/dL.
+    ("urine_bilirubin", ""),
+    ("urine_urobilinogen", ""),
+    ("urine_protein", ""),
+    ("urine_glucose", ""),
+    ("urine_ketones", ""),
 }
 
 

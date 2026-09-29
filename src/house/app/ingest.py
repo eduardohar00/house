@@ -307,10 +307,11 @@ def page_layout(data: bytes, rows: list[sqlite3.Row]) -> dict:
                 lines.append((n, _norm_line(ln["text"]), ln))
     boxes: dict[int, dict] = {}
     for r in rows:
+        # Si el valor ocupa dos renglones ("Ligera" / "Aspecto turbidez Claro"), se ubica el del nombre.
         ev, name, val = (
-            _norm_line(r["evidence"]),
+            _norm_line(r["evidence"].splitlines()[-1]),
             _norm_line(r["printed_name"]),
-            _norm_line(r["value_printed"]),
+            _norm_line(r["value_printed"].split()[-1] if r["value_printed"].strip() else ""),
         )
         hit = next((x for x in lines if x[1] == ev), None) or next(
             (x for x in lines if ev and ev in x[1]), None

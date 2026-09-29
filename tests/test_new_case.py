@@ -325,3 +325,23 @@ Prediabetes: 5.7% a 6.4%"""
     exp, unrecognized = prefill_expected(doc)
     assert [(r["key"], r["value"]) for r in exp["results"]] == [("hba1c", 5.0)]
     assert unrecognized == []
+
+
+def test_split_text_value_and_unitless_dipstick():
+    from house.bench.new_case import prefill_expected
+
+    doc = """EXAMEN GENERAL DE ORINA
+EXAMEN FÍSICO ___
+Ligera
+Aspecto turbidez Claro
+EXAMEN QUÍMICO ___
+Bilirrubina 1 Negativo ó < 0.2
+Urobilinógeno 1 Negativo ó < 1"""
+    exp, unrecognized = prefill_expected(doc)
+    got = {r["key"]: (r["value"], r["unit"]) for r in exp["results"]}
+    assert got == {
+        "urine_appearance": ("Ligera turbidez", ""),
+        "urine_bilirubin": (1.0, "mg/dL"),
+        "urine_urobilinogen": (1.0, "mg/dL"),
+    }
+    assert unrecognized == []

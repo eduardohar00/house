@@ -85,8 +85,13 @@ def _to_float(s: str) -> float | None:
 
 
 def _grounded(row_evidence: str, value_text: str, sent_text: str) -> bool:
+    """La evidencia debe estar literalmente en el texto enviado y contener el valor. Un valor partido en
+    dos renglones ("Ligera" / "Aspecto turbidez Claro") cuenta si todas sus palabras están en la evidencia."""
     ev = _compact(row_evidence)
-    return bool(ev) and ev in _compact(sent_text) and _compact(value_text) in ev
+    if not ev or ev not in _compact(sent_text):
+        return False
+    val = _compact(value_text)
+    return val in ev or all(w in ev.split() for w in val.split())
 
 
 # Límites de plausibilidad por analito (en unidad canónica). Fuera de esto se marca para revisión.

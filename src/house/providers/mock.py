@@ -173,6 +173,16 @@ class BaselineRegexProvider:
                 }
             else:
                 row = _text_row(line)
+                # "Ligera" / "Aspecto turbidez Claro": la primera palabra del resultado quedó sola en el
+                # renglón anterior; se une para leer "Ligera turbidez".
+                prev = lines[i - 1].strip() if i else ""
+                if (
+                    row
+                    and re.fullmatch(r"[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+", prev)
+                    and not _NUMBER.match(row["value_text"])
+                ):
+                    row["value_text"] = f"{prev} {row['value_text']}"
+                    line = f"{lines[i - 1]}\n{line}"
             if row:
                 if row["unit_text"] is None and i + 1 < len(lines) and _UNIT_LINE.match(lines[i + 1]):
                     row["unit_text"] = lines[i + 1].strip()
