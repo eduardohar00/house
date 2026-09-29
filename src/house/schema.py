@@ -17,10 +17,15 @@ class RawRow(BaseModel):
     """Un resultado tal como aparece impreso en el documento."""
 
     analyte_name: str = Field(description="Nombre del análisis exactamente como está impreso")
-    value_text: str = Field(description="Valor exactamente como está impreso, p. ej. '92' o '1.01'")
+    value_text: str = Field(
+        description="Valor exactamente como está impreso, p. ej. '92', '1.01' o 'Negativo'"
+    )
     unit_text: str | None = Field(default=None, description="Unidad impresa, p. ej. 'mg/dL'")
     ref_text: str | None = Field(default=None, description="Rango de referencia impreso, si existe")
     evidence: str = Field(description="La línea completa del documento de donde salió la fila")
+    section: str | None = Field(
+        default=None, description="Encabezado de la sección donde aparece, p. ej. 'EXAMEN GENERAL DE ORINA'"
+    )
 
 
 class RawExtraction(BaseModel):
@@ -43,8 +48,9 @@ def extraction_json_schema() -> dict:
             "unit_text": nullable_str,
             "ref_text": nullable_str,
             "evidence": {"type": "string"},
+            "section": nullable_str,
         },
-        "required": ["analyte_name", "value_text", "unit_text", "ref_text", "evidence"],
+        "required": ["analyte_name", "value_text", "unit_text", "ref_text", "evidence", "section"],
         "additionalProperties": False,
     }
     return {

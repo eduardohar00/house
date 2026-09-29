@@ -37,6 +37,26 @@ def test_parse_ref(text, expected):
     assert ranges.parse_ref(text) == expected
 
 
+def test_strict_limits():
+    assert ranges.classify_ref(1, ranges.parse_ref_full("Negativo ó < 1")) == "high"
+    assert ranges.classify_ref(1, ranges.parse_ref_full("<= 1")) == "ok"
+    assert ranges.classify_ref(1, ranges.parse_ref_full("< = 1")) == "ok"
+    assert ranges.classify_ref(1, ranges.parse_ref_full("hasta 1")) == "ok"
+    assert ranges.classify_ref(60, ranges.parse_ref_full("> 60")) == "low"
+    assert ranges.classify_ref(15, ranges.parse_ref_full("> = 15")) == "ok"
+    assert ranges.classify_ref(99, ranges.parse_ref_full("70 - 99")) == "ok"
+
+
+def test_text_results():
+    assert ranges.classify_text("NEGATIVO", "Leu/µL NEGATIVO") == "ok"
+    assert ranges.classify_text("Positiva", "Positiva") == "ok"
+    assert ranges.classify_text("Ausente", "Ausentes ó 1 - 5") == "ok"
+    assert ranges.classify_text("Incompleta", "Completa") == "abnormal"
+    assert ranges.classify_text("Negativo", None) is None
+    assert ranges.classify_text("AUSENTES", "/ Campo") is None
+    assert ranges.classify_text("NEGATIVO", "/ Campo NEGATIVO") == "ok"
+
+
 def test_classify_and_deviation():
     assert ranges.classify(112, None, 100) == "high"
     assert ranges.classify(29, 30, 400) == "low"

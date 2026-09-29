@@ -33,17 +33,21 @@ CREATE TABLE observation (
   analyte_key   TEXT NOT NULL,                       -- clave canónica (ver normalize/terminology.py)
   loinc         TEXT,
   printed_name  TEXT NOT NULL,                       -- tal como aparecía en el documento
-  value_num     REAL NOT NULL,                       -- en unidad canónica
+  value_num     REAL,                                -- en unidad canónica
+  value_text    TEXT,                                -- resultado de texto ("Negativo", "Ausentes")
   unit          TEXT NOT NULL,
   value_printed TEXT NOT NULL,                       -- lo impreso, para auditar conversiones
   unit_printed  TEXT,
   ref_low       REAL,
   ref_high      REAL,
+  ref_printed   TEXT,                                -- "< 1", "Negativo ó < 0.2": define si el límite entra
+  status        TEXT CHECK (status IN ('low', 'ok', 'high', 'abnormal')),
   collected_on  TEXT NOT NULL,
   source_page   INTEGER,
   source_region TEXT,                                -- coordenadas para resaltar en el original
   confirmed_by  INTEGER REFERENCES person(id),       -- quién confirmó la revisión
-  confirmed_at  TEXT
+  confirmed_at  TEXT,
+  CHECK (value_num IS NOT NULL OR value_text IS NOT NULL)
 );
 CREATE INDEX idx_obs_series ON observation (person_id, analyte_key, collected_on);
 

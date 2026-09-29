@@ -23,11 +23,11 @@ import shutil
 import sys
 from pathlib import Path
 
-from ..normalize import terminology, units
+from ..extract import Provenance, process
 from ..privacy.anonymize import CURP, EMAIL, LABELED_ID, PHONE, RFC
 from ..providers import LLMRequest
 from ..providers.mock import BaselineRegexProvider
-from ..schema import extraction_json_schema
+from ..schema import RawExtraction, extraction_json_schema
 
 
 def extract_pdf_text(pdf: Path) -> str:
@@ -50,26 +50,19 @@ def detect_identifiers(text: str) -> list[str]:
 
 
 def prefill_expected(text: str) -> tuple[dict, list[str]]:
-    """Devuelve (expected, líneas_sin_reconocer) usando la línea base sin IA."""
+    """Devuelve (expected, líneas_sin_reconocer) usando la línea base sin IA y el mismo
+    reconocimiento que el pipeline (catálogo, secciones, unidades)."""
     req = LLMRequest(task="extract", system="", user=text, schema=extraction_json_schema())
     data = BaselineRegexProvider().complete_json(req).data
+    raw = RawExtraction.model_validate(data)
     results, unrecognized = [], []
-    for r in data["rows"]:
-        analyte = terminology.match_analyte(r["analyte_name"], r["unit_text"])
-        try:
-            value = float(r["value_text"].replace(",", "."))
-        except ValueError:
-            unrecognized.append(r["evidence"])
+    blocking = {Provenance.UNKNOWN_ANALYTE, Provenance.NOT_NUMERIC, Provenance.UNIT_PROBLEM}
+    for row in process(raw, text):
+        if row.key is None or blocking & set(row.problems):
+            unrecognized.append(row.evidence)
             continue
-        if analyte is None:
-            unrecognized.append(r["evidence"])
-            continue
-        try:
-            value, unit = units.to_canonical(analyte.key, value, r["unit_text"], analyte.unit)
-        except units.UnknownUnit:
-            unrecognized.append(r["evidence"])
-            continue
-        results.append({"key": analyte.key, "value": value, "unit": unit})
+        value = row.value if row.value is not None else row.value_label
+        results.append({"key": row.key, "value": value, "unit": row.unit})
     expected = {
         "verified": False,
         "_instrucciones": (

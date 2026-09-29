@@ -166,3 +166,65 @@ def test_collected_on_from_short_date_but_not_birth_date():
 
     text = "Fecha de nacimiento:01/02/1990\nFecha: 05/06/19 08:54 Edad:29 años\nGlucosa 90 55 - 99 mg/dL"
     assert prefill_expected(text)[0]["collected_on"] == "2019-06-05"
+
+
+# Secciones y resultados de texto, con valores inventados.
+SECTIONS_DOC = """ESPERMATOBIOSCOPÍA (SEMINOGRAMA)
+Volumen 3.0 > = 1.5 mL
+pH 7.8 > = 7.2
+Licuefacción Incompleta Completa
+Leucocitos 0 0 - 1 millones/mL
+BIOMETRÍA HEMÁTICA COMPLETA
+Leucocitos 6.00 3.8-11.6 miles/µL
+AC A VIRUS DE HEPATITIS C EN SUERO
+Anticuerpos anti-VHC No Reactivo No reactivo
+Cualquier resultado positivo debe confirmarse con un método treponemico como FTA.
+EXAMEN GENERAL DE ORINA
+EXAMEN FÍSICO ___
+Color Ámbar Amarillo
+pH 6.0 4.8 - 7.4
+EXAMEN QUÍMICO ___
+Leucocitos Negativo Negativo ó < 10
+Urobilinógeno 1 Negativo ó < 1
+mg/dL
+SUCURSAL CENTRO
+MIGUEL HIDALGO, CMX
+Glucosa Negativo Negativo mg/dL
+EXAMEN MICROSCÓPICO ___
+Leucocitos Ausentes Ausentes ó 1 - 5
+ERITROCITOS AUSENTES / Campo
+CILINDROS NEGATIVO / Campo NEGATIVO
+Cristales Urato Amorfo Ausentes
+Células Pavimentosas Escasas Ausentes - Escasas
+Estadio G1: >90 mL/min/1.73m2 TFG normal
+valores menores a 60 mL/min/1.73 m2, es decir, las clasificaciones G3a – G5, por"""
+
+
+def test_sections_and_text_results():
+    from house.extract import process
+    from house.providers import LLMRequest
+    from house.providers.mock import BaselineRegexProvider
+    from house.schema import RawExtraction
+
+    req = LLMRequest(task="extract", system="", user=SECTIONS_DOC, schema={})
+    raw = RawExtraction.model_validate(BaselineRegexProvider().complete_json(req).data)
+    rows = process(raw, SECTIONS_DOC)
+    got = {(r.key, r.value if r.value is not None else r.value_label, r.status) for r in rows}
+    assert got == {
+        ("semen_volume", 3.0, "ok"),
+        ("semen_ph", 7.8, "ok"),
+        ("semen_liquefaction", "Incompleta", "abnormal"),
+        ("semen_wbc", 0.0, "ok"),
+        ("wbc", 6.0, "ok"),
+        ("hcv_ab", "No Reactivo", "ok"),
+        ("urine_color", "Ámbar", "abnormal"),
+        ("urine_ph", 6.0, "ok"),
+        ("urine_leuk_esterase", "Negativo", "ok"),
+        ("urine_urobilinogen", 1.0, "high"),
+        ("urine_glucose", "Negativo", "ok"),
+        ("urine_wbc_micro", "Ausentes", "ok"),
+        ("urine_rbc_micro", "AUSENTES", None),
+        ("urine_casts", "NEGATIVO", "ok"),
+        ("urine_crystals", "Urato Amorfo", "abnormal"),
+        ("urine_squamous", "Escasas", "ok"),
+    }

@@ -16,10 +16,13 @@ from .providers import LLMRequest, LLMResponse, Router
 from .schema import RawExtraction, extraction_json_schema
 
 SYSTEM_PROMPT = """Eres un asistente que lee informes de laboratorio clínico en español o inglés.
-Extrae cada resultado numérico tal como está impreso. No calcules, no conviertas unidades, no
-corrijas valores y no infieras datos que no estén en el texto. Para cada fila copia en "evidence"
-la línea completa del documento de donde salió. Si un dato no aparece, usa null. Los marcadores
-como [NOMBRE] o [FOLIO] son datos personales ya eliminados: ignóralos."""
+Extrae cada resultado tal como está impreso, sea una cifra ("92") o un texto ("Negativo",
+"Ausentes", "No reactivo"). No calcules, no conviertas unidades, no corrijas valores y no infieras
+datos que no estén en el texto. Para cada fila copia en "evidence" la línea completa del documento
+de donde salió y en "section" el encabezado de la sección donde aparece (p. ej. "EXAMEN GENERAL DE
+ORINA > EXAMEN MICROSCÓPICO"), porque un mismo nombre cambia de sentido según la sección. Si un
+dato no aparece, usa null. Los marcadores como [NOMBRE] o [FOLIO] son datos personales ya
+eliminados: ignóralos."""
 
 
 class Provenance:
@@ -41,7 +44,10 @@ class Row:
     name: str | None = None
     loinc: str | None = None
     value: float | None = None
+    value_label: str | None = None  # resultado de texto ("Negativo"); value queda en None
     unit: str | None = None
+    ref_text: str | None = None
+    section: str | None = None
     ref_low: float | None = None
     ref_high: float | None = None
     status: str | None = None
@@ -104,17 +110,29 @@ def build_prompt(document_text: str) -> str:
 def process(raw: RawExtraction, sent_text: str) -> list[Row]:
     rows: list[Row] = []
     for r in raw.rows:
-        row = Row(r.analyte_name, r.value_text, r.unit_text, r.evidence)
+        row = Row(
+            r.analyte_name, r.value_text, r.unit_text, r.evidence, ref_text=r.ref_text, section=r.section
+        )
         if not _grounded(r.evidence, r.value_text, sent_text):
             row.problems.append(Provenance.NOT_GROUNDED)
-        analyte = terminology.match_analyte(r.analyte_name, r.unit_text)
+        analyte = terminology.match_analyte(r.analyte_name, r.unit_text, r.section)
         value = _to_float(r.value_text)
-        if value is None:
-            row.problems.append(Provenance.NOT_NUMERIC)
         if analyte is None:
             row.problems.append(Provenance.UNKNOWN_ANALYTE)
-        if analyte and value is not None:
+        else:
             row.key, row.name, row.loinc = analyte.key, analyte.name, analyte.loinc
+        if value is None:
+            if analyte and analyte.kind in ("qual", "mixed"):
+                row.value_label, row.unit = r.value_text.strip(), ""
+                row.status = ranges.classify_text(r.value_text, r.ref_text)
+            else:
+                row.problems.append(Provenance.NOT_NUMERIC)
+        elif analyte and analyte.kind == "qual":
+            # Conteo en un análisis de texto (p. ej. "2" leucocitos por campo): sin conversión.
+            ref = ranges.parse_ref_full(r.ref_text)
+            row.value, row.unit, row.ref_low, row.ref_high = value, "", ref.low, ref.high
+            row.status = ranges.classify_ref(value, ref)
+        elif analyte:
             try:
                 row.value, row.unit = units.to_canonical(analyte.key, value, r.unit_text, analyte.unit)
                 row.converted = not units.same_unit(analyte.key, r.unit_text, analyte.unit)
@@ -124,9 +142,10 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
                 lo, hi = _PLAUSIBLE.get(analyte.key, (0, float("inf")))
                 if not lo <= row.value <= hi:
                     row.problems.append(Provenance.IMPLAUSIBLE)
-                row.ref_low, row.ref_high = ranges.parse_ref(r.ref_text)
+                ref = ranges.parse_ref_full(r.ref_text)
+                row.ref_low, row.ref_high = ref.low, ref.high
                 if not row.converted:
-                    row.status = ranges.classify(row.value, row.ref_low, row.ref_high)
+                    row.status = ranges.classify_ref(row.value, ref)
         rows.append(row)
     return rows
 

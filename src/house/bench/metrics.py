@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..extract import Outcome, Provenance
+from ..extract import Outcome, Provenance, Row
+from ..normalize.ranges import norm_text_result
 
 
 @dataclass
@@ -41,6 +42,12 @@ def _close(a: float, b: float) -> bool:
     return abs(a - b) <= max(0.01, 0.005 * abs(b))
 
 
+def _value_ok(row: Row, expected: float | str) -> bool:
+    if isinstance(expected, str):
+        return row.value_label is not None and norm_text_result(row.value_label) == norm_text_result(expected)
+    return row.value is not None and _close(row.value, expected)
+
+
 def score_case(case: str, provider: str, expected: dict, outcome: Outcome, forbidden: list[str]) -> CaseScore:
     s = CaseScore(case=case, provider=provider)
     exp = {r["key"]: r for r in expected["results"]}
@@ -52,10 +59,11 @@ def score_case(case: str, provider: str, expected: dict, outcome: Outcome, forbi
             s.missing.append(key)
             continue
         s.found += 1
-        if row.value is not None and _close(row.value, e["value"]):
+        if _value_ok(row, e["value"]):
             s.value_ok += 1
         else:
-            s.wrong.append(f"{key}: esperado {e['value']}, obtenido {row.value}")
+            got = row.value if row.value is not None else row.value_label
+            s.wrong.append(f"{key}: esperado {e['value']}, obtenido {got}")
         if row.unit == e["unit"]:
             s.unit_ok += 1
     s.extra_rows = sum(1 for r in outcome.rows if r.key and r.key not in exp) + sum(

@@ -21,6 +21,8 @@ class Analyte:
     unit: str
     group: str
     aliases: tuple[str, ...]
+    # "num": solo cifras; "qual": solo texto ("Negativo", "Ausentes"); "mixed": ambos (tiras de orina).
+    kind: str = "num"
 
 
 _BASE: tuple[Analyte, ...] = (
@@ -377,8 +379,6 @@ _CHOPO: tuple[Analyte, ...] = (
         "antigeno prostatico especifico total",
         "psa total",
     ),
-    _a("urine_bilirubin", "Bilirrubina (orina)", "", "mg/dL", "orina"),
-    _a("urine_urobilinogen", "Urobilinógeno (orina)", "", "mg/dL", "orina", "urobilinogeno"),
     # Espermatobioscopía. "Volumen" y "pH" sin contexto se confunden con otros estudios: sin alias.
     _a("semen_abstinence", "Días de abstinencia", "", "días", "seminal", "dias de abstinencia"),
     _a("semen_volume", "Volumen seminal", "", "mL", "seminal"),
@@ -430,6 +430,122 @@ _CHOPO: tuple[Analyte, ...] = (
     _a("semen_wbc", "Leucocitos en semen", "", "10^6/mL", "seminal"),
 )
 
+
+def _q(key, name, group, *aliases, kind="qual", unit=""):
+    return Analyte(key, name, "", unit, group, tuple(aliases), kind)
+
+
+# Resultados de texto (y tiras de orina, que pueden venir como texto o como cifra).
+_QUALITATIVE: tuple[Analyte, ...] = (
+    # Examen general de orina: físico y químico.
+    _q("urine_color", "Color (orina)", "orina"),
+    _q("urine_appearance", "Aspecto (orina)", "orina"),
+    _q("urine_nitrite", "Nitritos (orina)", "orina", "nitritos"),
+    _q(
+        "urine_leuk_esterase",
+        "Esterasa leucocitaria",
+        "orina",
+        "esterasa leucocitaria",
+        "leucocitos esterasa",
+    ),
+    _q("urine_protein", "Proteínas (orina)", "orina", kind="mixed", unit="mg/dL"),
+    _q("urine_glucose", "Glucosa (orina)", "orina", kind="mixed", unit="mg/dL"),
+    _q(
+        "urine_ketones",
+        "Cetonas (orina)",
+        "orina",
+        "cetonas",
+        "cuerpos cetonicos",
+        kind="mixed",
+        unit="mg/dL",
+    ),
+    _q("urine_bilirubin", "Bilirrubina (orina)", "orina", kind="mixed", unit="mg/dL"),
+    _q("urine_urobilinogen", "Urobilinógeno (orina)", "orina", "urobilinogeno", kind="mixed", unit="mg/dL"),
+    _q("urine_blood", "Sangre / hemoglobina (orina)", "orina"),
+    # Examen general de orina: microscópico.
+    _q("urine_wbc_micro", "Leucocitos por campo (orina)", "orina"),
+    _q("urine_rbc_micro", "Eritrocitos por campo (orina)", "orina"),
+    _q("urine_dysmorphic_rbc", "Eritrocitos dismórficos (orina)", "orina", "eritrocitos dismorficos"),
+    _q("urine_casts", "Cilindros (orina)", "orina", "cilindros"),
+    _q("urine_crystals", "Cristales (orina)", "orina", "cristales"),
+    _q(
+        "urine_squamous",
+        "Células epiteliales escamosas",
+        "orina",
+        "celulas pavimentosas",
+        "c epitelio escamoso",
+    ),
+    _q("urine_transitional", "Células de transición", "orina", "celulas de transicion"),
+    _q("urine_renal_tubular", "Células tubulares renales", "orina", "celulas tubulares renales"),
+    _q("urine_mucus", "Filamento mucoide (orina)", "orina", "redes mucoides", "filamento mucoide"),
+    _q("urine_bacteria", "Bacterias (orina)", "orina"),
+    _q("urine_yeast", "Levaduras (orina)", "orina"),
+    # Espermatobioscopía.
+    _q("semen_appearance", "Apariencia (semen)", "seminal", "apariencia"),
+    _q("semen_color", "Color (semen)", "seminal"),
+    _q("semen_liquefaction", "Licuefacción", "seminal", "licuefaccion"),
+    _q("semen_fructose", "Fructosa (semen)", "seminal", "fructosa"),
+    _q("semen_agglutination", "Aglutinación", "seminal", "aglutinacion"),
+    _q("semen_immature_cells", "Células germinales inmaduras", "seminal", "celulas germinales inmaduras"),
+    _q("semen_bacteria", "Bacterias (semen)", "seminal"),
+    _q("semen_rbc", "Eritrocitos (semen)", "seminal"),
+    # Serología y cultivos.
+    _q("mycoplasma_hominis", "Cultivo de Mycoplasma hominis", "infecciosas", "cultivo de mycoplasma hominis"),
+    _q("ureaplasma", "Cultivo de Ureaplasma urealyticum", "infecciosas", "cultivo de ureaplasma urealyticum"),
+    _q(
+        "hiv_ab",
+        "Anticuerpos anti-VIH 1-2",
+        "infecciosas",
+        "anticuerpos anti hiv 1 2",
+        "anticuerpos anti vih 1 2",
+    ),
+    _q("vdrl", "VDRL", "infecciosas", "v d r l", "vdrl"),
+    _q("hcv_ab", "Anticuerpos anti-VHC", "infecciosas", "anticuerpos anti vhc", "anticuerpos anti hcv"),
+)
+
+# Nombres que dependen de la sección del estudio: "pH" o "Leucocitos" significan cosas
+# distintas en la orina, en su parte microscópica o en el espermiograma.
+_BY_SECTION = {
+    "orina": {
+        "color": "urine_color",
+        "aspecto": "urine_appearance",
+        "ph": "urine_ph",
+        "proteinas": "urine_protein",
+        "glucosa": "urine_glucose",
+        "bilirrubina": "urine_bilirubin",
+        "bilirrubinas": "urine_bilirubin",
+        "hemoglobina": "urine_blood",
+        "sangre": "urine_blood",
+        "leucocitos": "urine_leuk_esterase",
+        "bacterias": "urine_bacteria",
+        "levaduras": "urine_yeast",
+        "albumina": "albumin_urine",
+    },
+    "orina_micro": {
+        "leucocitos": "urine_wbc_micro",
+        "eritrocitos": "urine_rbc_micro",
+    },
+    "semen": {
+        "volumen": "semen_volume",
+        "ph": "semen_ph",
+        "color": "semen_color",
+        "bacterias": "semen_bacteria",
+        "eritrocitos": "semen_rbc",
+        "leucocitos": "semen_wbc",
+    },
+}
+
+
+def section_context(section: str | None) -> list[str]:
+    """Contextos de catálogo que aplican a un encabezado de sección, del más al menos específico."""
+    s = _norm(section or "")
+    if "orina" in s or "urinalisis" in s:
+        return ["orina_micro", "orina"] if "microscop" in s else ["orina"]
+    if "espermato" in s or "seminograma" in s or "seminal" in s or "espermograma" in s:
+        return ["semen"]
+    return []
+
+
 # Otras formas de escribir análisis ya catalogados.
 _MORE_ALIASES = {
     "bun": ("nitrogeno de urea en sangre bun", "nitrogeno de urea en sangre"),
@@ -446,7 +562,8 @@ _MORE_ALIASES = {
 }
 
 CATALOG: tuple[Analyte, ...] = tuple(
-    replace(a, aliases=a.aliases + _MORE_ALIASES.get(a.key, ())) for a in _BASE + _EXTRA + _CHOPO
+    replace(a, aliases=a.aliases + _MORE_ALIASES.get(a.key, ()))
+    for a in _BASE + _EXTRA + _CHOPO + _QUALITATIVE
 )
 
 # Mismo nombre impreso, distinto analito según la unidad (p. ej. albúmina en suero vs. mg/L,
@@ -471,8 +588,12 @@ _INDEX = {_norm(a): an for an in CATALOG for a in (*an.aliases, an.name)}
 BY_KEY = {a.key: a for a in CATALOG}
 
 
-def match_analyte(printed_name: str, unit: str | None = None) -> Analyte | None:
-    found = _INDEX.get(_norm(printed_name))
+def match_analyte(printed_name: str, unit: str | None = None, section: str | None = None) -> Analyte | None:
+    name = _norm(printed_name)
+    for ctx in section_context(section):
+        if key := _BY_SECTION[ctx].get(name):
+            return BY_KEY[key]
+    found = _INDEX.get(name)
     if found and unit:
         variant = _UNIT_VARIANTS.get((found.key, units.norm_unit(unit)))
         if variant:
