@@ -347,3 +347,6 @@ button.lchip.add{cursor:pointer;padding:3px 10px;font-size:12.5px;font-weight:60
 .mgrp>details[open]>summary::before{content:"▾"}
 .mgrp>details>summary>span:first-child{flex:1 1 200px}
 .mgrp .xl{margin:8px 0 0 14px;padding-left:10px;border-left:2px solid var(--line)}
+.msg h4{margin:14px 0 4px;font-size:15px}
+.msg ol,.msg ul{margin:6px 0;padding-left:22px}
+.webs{margin:0 0 6px;padding-left:20px;font-size:13px}

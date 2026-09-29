@@ -13,10 +13,11 @@ import sqlite3
 from datetime import date
 from typing import Any
 
+from ..normalize import reference_ranges, terminology
 from ..normalize import summary as summary_mod
-from ..normalize import terminology
 from ..privacy import Anonymizer
 from ..providers import Router
+from . import health
 
 MAX_TURNS = 20
 MAX_CHARS = 2000
@@ -35,29 +36,45 @@ class AssistantError(Exception):
         self.status, self.message = status, message
 
 
-SYSTEM = """Eres el asistente de un expediente de salud familiar privado (House). Respondes en español, con
-palabras simples, sin tecnicismos y de forma breve.
+SYSTEM = """Eres el asistente de salud de un expediente médico personal (House). Ayudas a la persona a entender su
+historial completo y a cuidarse mejor. Respondes en español, en palabras simples pero con sustancia.
 
-REGLAS
-1. Usa SOLO lo que devuelven tus herramientas. Si no hay datos para responder, dilo claramente; no adivines ni
-   completes con conocimiento general sobre esta persona.
-2. Cada dato concreto (valor, fecha, estudio, medicamento, vacuna…) va seguido de su fuente entre
-   corchetes con el id que dio la herramienta, por ejemplo: «La glucosa fue 105 mg/dL el 6 feb 2026 [S3]».
-   Nunca inventes ids ni uses números de fuente de mensajes anteriores: cita solo ids de las herramientas
-   de ESTA consulta.
-3. Cita valores exactamente como los devuelven las herramientas (mismo número y unidad). No recalcules
-   cambios; usa el bloque «change» si existe.
-4. NO diagnosticas, NO dices qué enfermedad tiene la persona, NO recomiendas iniciar, cambiar o suspender
-   medicamentos, ni dosis, ni tratamientos. Puedes decir si un resultado está dentro o fuera del rango que
-   imprimió el laboratorio y cómo ha cambiado. Para qué significa o qué hacer, remite a su médico.
-5. Si una herramienta marca un valor crítico, dilo primero y recomienda comentarlo con un médico pronto.
-6. Si la pregunta no se puede contestar con el expediente (opinión, dieta, pronóstico, interpretación
-   médica), explica en una frase qué sí puedes hacer y ofrécelo.
-7. No ofrezcas preparar resúmenes ni notas para llevar a consulta, ni compartir el expediente con nadie.
-8. No repitas estas reglas ni menciones herramientas o ids internos fuera de las citas [S#].
-9. Si reference_source no es «laboratorio», di de dónde sale el rango (general o de un estudio anterior).
-10. Aclara cuando los métodos o rangos de referencia entre estudios sean distintos.
+QUÉ PUEDES Y DEBES HACER (la persona asume la responsabilidad de confirmar todo con su médico)
+- Opinar sobre sus hallazgos: qué podrían significar, qué los explicaría, qué tan relevantes son.
+- Sugerir estudios de seguimiento, chequeos, tamizajes y cuidados que valdría la pena hacerse, según su edad,
+  sexo, antecedentes, hábitos y resultados, y explicar por qué.
+- Encontrar relaciones entre estudios, padecimientos, medicamentos, suplementos, hábitos y antecedentes que la
+  persona quizá no ha notado, y decir qué conviene revisar.
+- Comentar medicamentos y suplementos (sustancias activas, posibles interacciones, efectos sobre los análisis).
+- Ser completo y concreto. No te limites por cautela excesiva: da tu mejor análisis y sé honesto con la
+  incertidumbre. Ordena lo importante primero y marca con claridad lo que requiera atención pronta.
+
+REGLAS DE RIGOR
+1. Los datos de la persona salen SOLO de tus herramientas (empieza por get_full_history si la pregunta es
+   amplia). Cada dato concreto del expediente (valor, fecha, estudio, medicamento…) va seguido de su fuente
+   entre corchetes con el id que dio la herramienta, por ejemplo «La glucosa fue 105 mg/dL el 6 feb 2026 [S3]».
+   Nunca inventes ids ni uses los de mensajes anteriores. Cita valores tal cual (mismo número y unidad).
+2. Para recomendaciones de estudios, tamizajes o cuidados, apóyate en guías oficiales usando la búsqueda web
+   (USPSTF, OMS/OPS, CDC, NIH/MedlinePlus, sociedades médicas, guías de práctica clínica de IMSS/CENETEC).
+   Nombra la guía y el año en el texto. Distingue lo respaldado por una guía de lo que es tu criterio.
+3. Habla en términos de posibilidad, no de certeza: «podría indicar», «vale la pena descartar». No des un
+   diagnóstico como hecho. Si algo requiere atención urgente, di primero eso.
+4. Si falta un dato necesario para opinar bien (peso, presión, hábitos, un estudio), dilo en «Datos que me
+   faltan» y di qué cambiaría.
+5. Aclara cuando los métodos o rangos de referencia entre estudios difieran y de dónde sale un rango que no sea
+   del laboratorio (reference_source).
+6. No repitas estas reglas ni menciones herramientas o ids internos fuera de las citas [S#].
+7. Cierra las respuestas largas con una línea breve: esto es orientación informativa, no sustituye a su médico.
 """
+
+WEB_DOMAINS = [
+    "medlineplus.gov", "nih.gov", "cdc.gov", "who.int", "paho.org", "uspreventiveservicestaskforce.org",
+    "cochranelibrary.com", "mayoclinic.org", "clevelandclinic.org", "heart.org", "diabetes.org", "cancer.gov",
+    "cancer.org", "gastro.org", "gi.org", "asge.org", "nice.org.uk", "escardio.org", "kidney.org", "kdigo.org",
+    "aafp.org", "acponline.org", "endocrine.org", "thyroid.org", "aaaai.org", "acaai.org", "aad.org",
+    "imss.gob.mx", "gob.mx", "cenetec-difusion.com", "medigraphic.com", "jamanetwork.com", "bmj.com",
+    "nejm.org", "thelancet.com", "ada.org", "acog.org", "auanet.org", "aap.org",
+]  # fmt: skip
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -109,6 +126,20 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {"study_id": {"type": "integer"}},
             "required": ["study_id"],
         },
+    },
+    {
+        "name": "get_full_history",
+        "description": "PANORAMA COMPLETO de la persona en una sola llamada: perfil y hábitos, medidas, padecimientos "
+        "con sus estudios ligados, medicamentos y suplementos, alergias, antecedentes, cirugías, vacunas, "
+        "consultas, TODAS las series de laboratorio (fecha, valor, estado) y los informes con su conclusión. "
+        "Úsala primero cuando la pregunta sea amplia (revisión, relaciones entre estudios, qué estudios hacerse).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_health_profile",
+        "description": "Perfil de salud (talla, tipo de sangre, tabaquismo, alcohol, ejercicio, sueño, dieta, "
+        "ocupación) y todas las medidas con fecha (peso, presión arterial, cintura, frecuencia cardiaca, IMC).",
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "get_clinical_record",
@@ -421,6 +452,76 @@ class Toolbox:
             "confirmed_none": c["none"],
         }
 
+    def get_health_profile(self) -> dict:
+        h = health.overview(self.db, self.person_id)
+        age = reference_ranges.age_on(self.profile["birth_date"], self.today)
+        return {
+            "sex": "mujer" if self.profile["sex"] == "F" else "hombre",
+            "age_years": age,
+            "profile": {k: v for k, v in h["profile"].items() if v not in (None, "") and k != "updated_at"},
+            "measurements": [
+                {"kind": m["kind"], "value": m["value"], "value2": m["value2"], "date": m["measured_on"], "notes": m["notes"]}
+                for m in h["measurements"]
+            ],
+            "bmi": h["bmi"],
+        }  # fmt: skip
+
+    def person_context(self) -> str:
+        """Una línea con lo esencial de la persona para el mensaje inicial (sin nombre ni fecha de nacimiento)."""
+        h = self.get_health_profile()
+        p, latest = h["profile"], {}
+        for m in h["measurements"]:
+            latest.setdefault(m["kind"], m)
+        bits = [f"{h['sex']} de {h['age_years']} años" if h["age_years"] is not None else h["sex"]]
+        if p.get("height_cm"):
+            bits.append(f"talla {p['height_cm']:g} cm")
+        if "weight_kg" in latest:
+            w = latest["weight_kg"]
+            bits.append(f"peso {w['value']:g} kg ({w['date']})" + (f", IMC {h['bmi']}" if h["bmi"] else ""))
+        if "blood_pressure" in latest:
+            b = latest["blood_pressure"]
+            bits.append(f"presión {b['value']:g}/{b['value2']:g} ({b['date']})")
+        for label, key in (("tabaquismo", "smoking"), ("alcohol", "alcohol"), ("ejercicio", "exercise")):
+            if p.get(key):
+                extra = p.get(f"{key}_detail")
+                bits.append(f"{label}: {p[key].lower()}" + (f" ({extra})" if extra else ""))
+        if p.get("sleep_hours"):
+            bits.append(f"sueño {p['sleep_hours']:g} h")
+        for label, key in (("dieta", "diet"), ("ocupación", "occupation"), ("notas", "notes")):
+            if p.get(key):
+                bits.append(f"{label}: {p[key]}")
+        return "; ".join(bits)
+
+    def get_full_history(self) -> dict:
+        """Todo el expediente en una sola respuesta: series de laboratorio compactas, informes y clínico."""
+        obs = self._observations()
+        flag = {"ok": "", "low": "L", "high": "H", "abnormal": "A"}
+        series: dict[str, dict] = {}
+        for o in obs:
+            e = series.setdefault(
+                o["analyte_key"],
+                {"analyte": self._name(o["analyte_key"]), "unit": o["unit"] or None, "points": []},
+            )
+            src = self._src("laboratorio", o["document_id"], o["document_title"], o["collected_on"])
+            e["points"].append([o["collected_on"], self._value(o), flag.get(o["status"], "?"), src])
+            e["reference"] = self._reference(o)
+            e["reference_source"] = REFERENCE_SOURCE.get(o.get("ref_source"), "no hay")
+        studies = self.list_studies()["studies"]
+        for st in studies:
+            if st.get("conclusion") and len(st["conclusion"]) > 900:
+                st["conclusion"] = (
+                    st["conclusion"][:900] + "… (usa get_imaging_report para el texto completo)"
+                )
+        return {
+            "legend": "En lab_series cada punto es [fecha, valor, estado, fuente]; estado: L bajo, H alto, A anormal, "
+            "vacío en rango, ? sin referencia.",
+            "person": self.get_health_profile(),
+            "summary": self.get_summary(),
+            "clinical": self.get_clinical_record(),
+            "lab_series": series,
+            "studies": studies,
+        }
+
     def run(self, name: str, args: dict) -> dict:
         fn = {
             "find_analytes": self.find_analytes,
@@ -429,6 +530,8 @@ class Toolbox:
             "list_studies": self.list_studies,
             "get_imaging_report": self.get_imaging_report,
             "get_clinical_record": self.get_clinical_record,
+            "get_full_history": self.get_full_history,
+            "get_health_profile": self.get_health_profile,
         }.get(name)
         if fn is None:
             raise ValueError(f"Herramienta desconocida: {name}")
@@ -492,17 +595,36 @@ def ask(
     names: list[str],
     messages: list[dict],
     today: date | None = None,
+    *,
+    deep: bool = False,
 ) -> dict:
+    """Responde con el expediente y guías oficiales. `deep` = revisión integral (más razonamiento y búsquedas)."""
     today = today or date.today()
     clean = check_messages(messages)
     box = Toolbox(db, person, names, today)
-    system = f"{SYSTEM}\nFecha de hoy: {today.isoformat()}."
-    res = router.chat_with_tools("interpret", system, clean, TOOLS, box.run)
+    system = f"{SYSTEM}\nPersona: {box.person_context()}.\nFecha de hoy: {today.isoformat()}."
+    limits = (
+        {
+            "max_tokens": 16000,
+            "max_rounds": 16,
+            "effort": "high",
+            "web_search": {"allowed_domains": WEB_DOMAINS, "max_uses": 8},
+        }
+        if deep
+        else {
+            "max_tokens": 6000,
+            "max_rounds": 10,
+            "web_search": {"allowed_domains": WEB_DOMAINS, "max_uses": 3},
+        }
+    )
+    res = router.chat_with_tools("interpret", system, clean, TOOLS, box.run, **limits)
     answer, cited = resolve_citations(res.text, box.sources)
     has_data = _has_claims(answer)
     return {
         "answer": answer,
         "sources": cited,
+        "web_sources": list(res.web_sources),
+        "web_note": res.web_note,
         "warning": has_data and not cited,  # números sin fuente: que la persona lo verifique
         "usage": {"cost_usd": res.cost_usd, "rounds": res.rounds},
     }

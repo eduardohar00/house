@@ -49,6 +49,8 @@ class ChatResult:
     latency_s: float = 0.0
     request_id: str | None = None
     rounds: int = 1  # cuántas veces se consultó al modelo (cada uso de herramientas suma una)
+    web_sources: tuple[dict, ...] = ()  # páginas web citadas: {"url", "title"}
+    web_note: str | None = None  # p. ej. la búsqueda web no estaba disponible
 
 
 @runtime_checkable

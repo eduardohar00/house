@@ -22,7 +22,7 @@ from ..normalize import explanations, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import assistant, auth, backup, clinical, drugs, health, ingest, naming, store
+from . import assistant, auth, backup, clinical, drugs, health, ingest, naming, reviews, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -203,6 +203,8 @@ def create_app(
     ingest.migrate_observation(db)
     ingest.migrate_document(db)
     db.executescript(health.SCHEMA)
+    db.executescript(reviews.SCHEMA)
+    reviews.interrupted(db)
     ingest.load_custom(db)
     db.executescript(backup.SETTINGS_SCHEMA)
     clinical.migrate(db)
@@ -421,6 +423,39 @@ def create_app(
 
     def profile_of(person: sqlite3.Row) -> dict:
         return {"sex": person["sex_at_birth"], "birth_date": person["birth_date"]}
+
+    @app.post("/api/people/{person_id}/reviews")
+    def start_review(person_id: int, actor: Me) -> dict:
+        """Revisión integral del historial (unos minutos, en segundo plano); devuelve su id."""
+        person = subject(person_id, actor, "consultar_asistente")
+        router = assistant_router()
+        if router is None:
+            raise HTTPException(
+                409, "La revisión integral necesita Claude: conecta tu clave en Configuración."
+            )
+        return {"id": reviews.start(db, router, person, ingest.person_names(db, person))}
+
+    @app.get("/api/people/{person_id}/reviews")
+    def list_reviews(person_id: int, actor: Me) -> list[dict]:
+        subject(person_id, actor, "consultar_asistente")
+        return reviews.listing(db, person_id)
+
+    @app.get("/api/reviews/{review_id}")
+    def get_review(review_id: int, actor: Me) -> dict:
+        r = reviews.detail(db, review_id)
+        if r is None:
+            raise HTTPException(404, "Revisión no encontrada")
+        subject(r["person_id"], actor, "consultar_asistente")
+        return r
+
+    @app.delete("/api/reviews/{review_id}")
+    def delete_review(review_id: int, actor: Me) -> dict:
+        r = reviews.detail(db, review_id)
+        if r is None:
+            raise HTTPException(404, "Revisión no encontrada")
+        subject(r["person_id"], actor, "consultar_asistente")
+        db.execute("DELETE FROM review WHERE id = ?", (review_id,))
+        return {"ok": True}
 
     @app.get("/api/people/{person_id}/overview")
     def overview(person_id: int, actor: Me) -> dict:

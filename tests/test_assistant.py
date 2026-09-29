@@ -186,3 +186,188 @@ def test_warning_only_for_claims_that_need_a_source():
     assert assistant._has_claims("La glucosa fue 105 mg/dL")
     assert assistant._has_claims("Se hizo en 2021")
     assert not assistant._has_claims("No encontré resultados de vitamina B12 ni de nada de hace 5 años")
+
+
+# ---------- modo orientación: perfil, panorama completo, búsqueda web y revisión integral ----------
+
+from types import SimpleNamespace as NS  # noqa: E402
+
+
+class Spy(FakeChat):
+    """Guarda cómo se le habla al modelo (sistema, herramientas y límites) y usa el panorama completo."""
+
+    def chat_with_tools(self, system, messages, tools, run_tool, **kw):
+        self.calls.append({"system": system, "tools": [t["name"] for t in tools], "kw": kw})
+        full = run_tool("get_full_history", {})
+        self.tool_outputs.append(full)
+        sid = full["lab_series"]["glucose"]["points"][-1][3]
+        return ChatResult(
+            text=f"## Resumen ejecutivo\nLa glucosa está en {full['lab_series']['glucose']['points'][-1][1]} mg/dL [{sid}].",
+            provider="fake", model="m", cost_usd=0.5, rounds=2,
+            web_sources=({"url": "https://medlineplus.gov/x", "title": "Guía"},),
+        )  # fmt: skip
+
+
+def seeded(tmp_path, fake):
+    c = make_client(tmp_path, fake)
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    load_glucose(c, me)
+    c.put(
+        f"/api/people/{me}/health/profile",
+        json={"height_cm": "178", "smoking": "Exfumador", "alcohol": "Semanal"},
+        headers=H,
+    )
+    c.post(
+        f"/api/people/{me}/health/measurements",
+        json={"kind": "weight_kg", "value": "82", "measured_on": "2026-03-01"},
+        headers=H,
+    )
+    return c, me
+
+
+def test_full_history_gives_everything_with_sources_and_the_system_knows_the_person(tmp_path):
+    spy = Spy()
+    c, me = seeded(tmp_path, spy)
+    r = c.post(
+        f"/api/people/{me}/assistant",
+        json={"messages": [{"role": "user", "content": "¿Qué me falta revisar?"}]},
+        headers=H,
+    )
+    assert r.status_code == 200
+    out = r.json()
+    assert out["answer"].endswith("[1].") and out["sources"][0]["title"] == "Perfil 2026"
+    assert out["web_sources"] == [{"url": "https://medlineplus.gov/x", "title": "Guía"}]
+
+    call = spy.calls[0]
+    assert {"get_full_history", "get_health_profile"} <= set(call["tools"])
+    assert (
+        "hombre de 3" in call["system"]
+        and "talla 178 cm" in call["system"]
+        and "peso 82 kg" in call["system"]
+    )
+    assert "tabaquismo: exfumador" in call["system"] and "IMC 25.9" in call["system"]
+    assert (
+        "Admin Ejemplo" not in call["system"] and "1990" not in call["system"]
+    )  # sin nombre ni fecha de nacimiento
+    assert (
+        call["kw"]["web_search"]["max_uses"] == 3
+        and "medlineplus.gov" in call["kw"]["web_search"]["allowed_domains"]
+    )
+
+    full = spy.tool_outputs[0]
+    assert full["lab_series"]["glucose"]["points"] == [
+        ["2025-03-01", 88, "", full["lab_series"]["glucose"]["points"][0][3]],
+        ["2026-03-01", 105, "H", full["lab_series"]["glucose"]["points"][1][3]],
+    ]
+    assert full["person"]["bmi"] == 25.9 and full["person"]["profile"]["smoking"] == "Exfumador"
+    assert full["clinical"]["src"] and len(full["studies"]) == 2  # dos laboratorios
+    assert full["lab_series"]["glucose"]["reference"] == "70 a 99"
+
+
+def test_integral_review_runs_in_background_is_saved_and_can_fail_cleanly(tmp_path):
+    import time
+
+    spy = Spy()
+    c, me = seeded(tmp_path, spy)
+    rid = c.post(f"/api/people/{me}/reviews", headers=H).json()["id"]
+    for _ in range(100):
+        r = c.get(f"/api/reviews/{rid}").json()
+        if r["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert r["status"] == "done" and r["cost_usd"] == 0.5 and "Resumen ejecutivo" in r["content"]
+    assert r["sources"][0]["kind"] == "laboratorio" and r["web_sources"][0]["url"].startswith(
+        "https://medlineplus.gov"
+    )
+    kw = spy.calls[0]["kw"]  # la revisión usa el máximo esfuerzo y más búsquedas
+    assert kw["effort"] == "high" and kw["max_tokens"] == 16000 and kw["web_search"]["max_uses"] == 8
+    assert [x["id"] for x in c.get(f"/api/people/{me}/reviews").json()] == [rid]
+    assert (
+        c.delete(f"/api/reviews/{rid}", headers=H).status_code == 200
+        and c.get(f"/api/reviews/{rid}").status_code == 404
+    )
+
+    from house.providers import ProviderError
+
+    def boom(run):
+        raise ProviderError("claude: se acabó el saldo de tu cuenta de Anthropic (agrega crédito en Billing)")
+
+    c2 = make_client(tmp_path / "otro", FakeChat(boom))
+    c2.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me2 = c2.get("/api/me").json()["id"]
+    rid2 = c2.post(f"/api/people/{me2}/reviews", headers=H).json()["id"]
+    for _ in range(100):
+        r = c2.get(f"/api/reviews/{rid2}").json()
+        if r["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert r["status"] == "error" and "saldo" in r["error"]
+
+    plain = TestClient(create_app(tmp_path / "sin", key_provider=lambda: KEY))
+    plain.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    assert (
+        plain.post(f"/api/people/{plain.get('/api/me').json()['id']}/reviews", headers=H).status_code == 409
+    )
+
+
+def test_web_search_tool_collects_cited_pages_continues_pause_turn_and_falls_back(tmp_path):
+    from house.providers.anthropic_provider import AnthropicProvider
+
+    def usage():
+        return NS(input_tokens=10, output_tokens=5)
+
+    cite = NS(url="https://uspreventiveservicestaskforce.org/g", title="USPSTF")
+    seen_result = NS(url="https://medlineplus.gov/otra", title="Otra")
+    pause = NS(
+        stop_reason="pause_turn", usage=usage(), content=[NS(type="server_tool_use", name="web_search")]
+    )
+    final = NS(
+        stop_reason="end_turn", usage=usage(),
+        content=[NS(type="web_search_tool_result", content=[seen_result]), NS(type="text", text="Listo.", citations=[cite])],
+    )  # fmt: skip
+    calls = []
+
+    class Client:
+        class messages:  # noqa: N801
+            @staticmethod
+            def create(**kw):
+                calls.append(kw)
+                return pause if len(calls) == 1 else final
+
+    prov = AnthropicProvider("claude", "m", client=Client())
+    res = prov.chat_with_tools("s", [{"role": "user", "content": "hola"}], [], lambda *_: {},
+                               web_search={"allowed_domains": ["cdc.gov"], "max_uses": 4}, effort="high")  # fmt: skip
+    assert res.text == "Listo." and res.rounds == 2
+    assert res.web_sources == (
+        {"url": "https://uspreventiveservicestaskforce.org/g", "title": "USPSTF"},
+    )  # lo citado
+    web = calls[0]["tools"][-1]
+    assert (
+        web["type"].startswith("web_search")
+        and web["allowed_domains"] == ["cdc.gov"]
+        and web["max_uses"] == 4
+    )
+    assert calls[0]["output_config"] == {"effort": "high"}
+    assert calls[1]["messages"][-1]["role"] == "assistant"  # se le devolvió su turno para que siguiera
+
+    # la cuenta no tiene búsqueda web: se reintenta sin ella y se avisa
+    seq = []
+
+    class NoWeb:
+        class messages:  # noqa: N801
+            @staticmethod
+            def create(**kw):
+                seq.append(kw)
+                if any(t.get("name") == "web_search" for t in kw["tools"]):
+                    raise RuntimeError("web_search tool is not enabled for your organization")
+                return NS(
+                    stop_reason="end_turn",
+                    usage=usage(),
+                    content=[NS(type="text", text="Sin web.", citations=None)],
+                )
+
+    res = AnthropicProvider("claude", "m", client=NoWeb()).chat_with_tools(
+        "s", [{"role": "user", "content": "hola"}], [], lambda *_: {}, web_search={"allowed_domains": []}
+    )
+    assert res.text == "Sin web." and "búsqueda web" in res.web_note and len(seq) == 2

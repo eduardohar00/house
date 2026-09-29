@@ -117,32 +117,55 @@ class AnthropicProvider:
         *,
         max_tokens: int = 2000,
         max_rounds: int = 8,
+        effort: str | None = None,
+        web_search: dict | None = None,
     ) -> ChatResult:
-        """Conversación con herramientas: el modelo pide datos, `run_tool` los da y sigue hasta responder."""
+        """Conversación con herramientas: el modelo pide datos, `run_tool` los da y sigue hasta responder.
+
+        `web_search` = {"allowed_domains": [...], "max_uses": n} activa la búsqueda web del propio Claude,
+        limitada a esos sitios; las páginas que cita quedan en `web_sources`. Si la cuenta no la tiene
+        habilitada, se reintenta sin ella y `web_note` lo dice.
+        """
         history = list(messages)
         t0 = time.monotonic()
         tin = tout = 0
         request_id = None
+        web: dict[str, str] = {}
+        web_note = None
+        use_web = web_search
         for rounds in range(1, max_rounds + 1):
+            all_tools = [*tools, self._web_tool(use_web)] if use_web else tools
             kwargs: dict = {
                 "model": self.model,
                 "max_tokens": max_tokens,
                 "system": system,
                 "messages": history,
-                "tools": tools,
+                "tools": all_tools,
             }
-            if self.effort:
-                kwargs["output_config"] = {"effort": self.effort}
+            if effort or self.effort:
+                kwargs["output_config"] = {"effort": effort or self.effort}
             try:
                 resp = self._client.messages.create(**kwargs)
             except Exception as e:  # noqa: BLE001 - se re-lanza tipado, sin el contenido
+                if (
+                    use_web and "web_search" in str(e).lower()
+                ):  # la cuenta no la tiene: seguir sin buscar en la web
+                    use_web, web_note = None, "La búsqueda web no está disponible en tu cuenta de Anthropic."
+                    continue
                 raise ProviderError(self._why(e)) from e
             tin += resp.usage.input_tokens
             tout += resp.usage.output_tokens
             request_id = getattr(resp, "_request_id", None) or request_id
-            if getattr(resp, "stop_reason", None) == "refusal":
+            self._collect_web(resp.content, web)
+            stop = getattr(resp, "stop_reason", None)
+            if stop == "refusal":
                 raise ProviderRefusal(f"{self.name}: solicitud rechazada por el proveedor")
-            if getattr(resp, "stop_reason", None) == "tool_use":
+            if (
+                stop == "pause_turn"
+            ):  # la búsqueda web pidió más tiempo: se le devuelve su turno para que siga
+                history.append({"role": "assistant", "content": resp.content})
+                continue
+            if stop == "tool_use":
                 history.append({"role": "assistant", "content": resp.content})
                 results = []
                 for block in resp.content:
@@ -168,7 +191,7 @@ class AnthropicProvider:
                 history.append({"role": "user", "content": results})
                 continue
             text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
-            if getattr(resp, "stop_reason", None) == "max_tokens":
+            if stop == "max_tokens":
                 raise ProviderError(f"{self.name}: respuesta truncada (max_tokens)")
             return ChatResult(
                 text=text,
@@ -180,5 +203,34 @@ class AnthropicProvider:
                 latency_s=time.monotonic() - t0,
                 request_id=request_id,
                 rounds=rounds,
+                web_sources=tuple({"url": u, "title": t} for u, t in web.items()),
+                web_note=web_note,
             )
         raise ProviderError(f"{self.name}: demasiadas consultas seguidas sin respuesta")
+
+    @staticmethod
+    def _web_tool(cfg: dict) -> dict:
+        tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": int(cfg.get("max_uses", 5))}
+        if cfg.get("allowed_domains"):
+            tool["allowed_domains"] = list(cfg["allowed_domains"])
+        return tool
+
+    @staticmethod
+    def _collect_web(content: Any, into: dict[str, str]) -> None:
+        """Páginas web que Claude citó (o, si no citó ninguna, las que consultó)."""
+        cited: dict[str, str] = {}
+        seen: dict[str, str] = {}
+        for b in content:
+            kind = getattr(b, "type", "")
+            if kind == "text":
+                for c in getattr(b, "citations", None) or []:
+                    url = getattr(c, "url", None)
+                    if url:
+                        cited[url] = getattr(c, "title", None) or url
+            elif kind == "web_search_tool_result":
+                found = getattr(b, "content", None)
+                for r in found if isinstance(found, list) else []:
+                    url = getattr(r, "url", None)
+                    if url:
+                        seen[url] = getattr(r, "title", None) or url
+        into.update(cited or seen)

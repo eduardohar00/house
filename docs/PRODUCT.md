@@ -151,9 +151,12 @@ Un lugar privado donde toda la información médica de la familia (laboratorios,
 ### 6.8 Integraciones (P2)
 - Apple Health, Google Health Connect, Whoop u Oura (exportaciones o APIs), FHIR y exportación completa (PDF y JSON).
 
+### Alcance ampliado (2026-09-29)
+Por decisión de Eduardo el asistente **sí da orientación de salud**: opina sobre hallazgos, sugiere estudios de seguimiento, tamizajes y cuidados, señala relaciones entre estudios, antecedentes, medicamentos, suplementos y hábitos, y lo respalda con guías oficiales consultadas en internet (fuentes citadas). Incluye la **Revisión integral** (informe guardado y comparable en el tiempo) y un **perfil de salud** (talla, hábitos, medidas) que alimenta esas recomendaciones. La persona asume la responsabilidad de confirmar con su médico; el producto lo recuerda siempre. Las opiniones no están validadas por un médico: hay que revisarlas.
+
 ### Fuera de alcance (v1)
-Resumen o preparación de consulta para el médico y compartir el expediente con terceros (decisión de Eduardo).
-Diagnóstico, prescripción, telemedicina, venta de suplementos, pedir estudios (no somos laboratorio), red social.
+Compartir el expediente con terceros (decisión de Eduardo).
+Prescripción, telemedicina, venta de suplementos, pedir estudios (no somos laboratorio), red social.
 
 ## 7. Arquitectura de IA
 

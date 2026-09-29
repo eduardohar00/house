@@ -1410,21 +1410,25 @@ async function openImagingReview(id, d, layout) {
 
 /* ---------- Asistente: pregunta a tu expediente ---------- */
 
-const ASK_IDEAS = ['¿Qué está fuera de rango en el estudio más reciente?', '¿Cómo ha cambiado el colesterol LDL?', '¿Cuándo fue la última vacuna de influenza?', '¿Qué dicen los últimos informes de imagen?'];
+const ASK_IDEAS = ['¿Qué estudios o chequeos me convendría hacerme?', '¿Qué opinas de lo que está fuera de rango en mi último estudio?', '¿Hay relación entre mis estudios que deba revisar?', '¿Cómo ha cambiado el colesterol LDL?'];
 
 // Texto de la respuesta: párrafos, viñetas y **negritas**, con [n] como enlaces a las fuentes.
 function answerHtml(text, sources) {
   const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\[(\d+)\]/g, (m, n) => sources.some(x => x.n == n) ? `<a class="cite" href="#src-${n}" data-cite="${n}">${n}</a>` : m);
-  const out = []; let list = null;
+  const out = []; let list = null, ordered = false;
+  const flush = () => { if (list) { out.push(`<${ordered ? 'ol' : 'ul'}>${list.join('')}</${ordered ? 'ol' : 'ul'}>`); list = null; } };
   for (const line of text.split('\n')) {
-    const li = line.match(/^\s*[-•]\s+(.*)/);
-    if (li) { (list ||= []).push(`<li>${inline(li[1])}</li>`); continue; }
-    if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; }
-    if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+    const h = line.match(/^\s*#{1,4}\s+(.*)/), li = line.match(/^\s*[-•*]\s+(.*)/), ol = line.match(/^\s*\d+[.)]\s+(.*)/);
+    if (h) { flush(); out.push(`<h4>${inline(h[1])}</h4>`); continue; }
+    if (li || ol) { const isOl = !!ol; if (list && ordered !== isOl) flush(); ordered = isOl; (list ||= []).push(`<li>${inline((li || ol)[1])}</li>`); continue; }
+    flush();
+    if (line.trim() && !/^\s*-{3,}\s*$/.test(line)) out.push(`<p>${inline(line)}</p>`);
   }
-  if (list) out.push(`<ul>${list.join('')}</ul>`);
+  flush();
   return out.join('');
 }
+
+const webLinks = list => list && list.length ? `<p class="tip" style="margin:8px 0 2px">Guías y páginas consultadas:</p><ul class="webs">${list.map(w => `<li><a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.title || w.url)}</a></li>`).join('')}</ul>` : '';
 
 async function renderAssistant() {
   const st = await api('/api/assistant/status');
@@ -1440,21 +1444,21 @@ async function renderAssistant() {
     ? `<a href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener">${esc(x.title)}${x.date ? ' · ' + fd(x.date) : ''}</a>`
     : `<button class="link" data-goexp="1">${esc(x.title)}</button>`;
   const draw = () => {
-    view().innerHTML = `<section class="card cfg ask">
+    document.getElementById('chatwrap').innerHTML = `<section class="card cfg ask">
       <div class="bar"><h2>Pregunta a tu expediente</h2>${chat.msgs.length ? '<button class="mini" id="newchat">Nueva conversación</button>' : ''}</div>
       <div class="chat" id="chat" aria-live="polite">
-        ${chat.msgs.length ? '' : `<p class="tip">Respondo solo con lo que hay guardado en House y cito el documento de cada dato. No soy médico: no diagnostico ni recomiendo tratamientos.</p>
+        ${chat.msgs.length ? '' : `<p class="tip">Respondo con lo que hay en tu expediente y con guías médicas oficiales: opino sobre tus hallazgos, sugiero estudios o cuidados y busco relaciones entre tus estudios. Cito el documento de cada dato. Soy una IA, no un médico: confirma todo con tu doctor.</p>
           <div class="chips">${ASK_IDEAS.map(q => `<button class="chip" data-idea="${esc(q)}">${esc(q)}</button>`).join('')}</div>`}
         ${chat.msgs.map(m => m.role === 'user' ? `<div class="msg me"><p>${esc(m.content)}</p></div>`
           : `<div class="msg bot">${answerHtml(m.content, m.sources || [])}
               ${m.warning ? '<p class="warnline">Esta respuesta menciona datos sin fuente: verifícalos en tus documentos.</p>' : ''}
-              ${(m.sources || []).length ? `<ol class="srcs">${m.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${srcLink(x)}</li>`).join('')}</ol>` : ''}</div>`).join('')}
+              ${(m.sources || []).length ? `<ol class="srcs">${m.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${srcLink(x)}</li>`).join('')}</ol>` : ''}${webLinks(m.web_sources)}</div>`).join('')}
         ${chat.busy ? '<p class="tip"><span class="spin"></span>Buscando en tu expediente… puede tardar hasta un minuto.</p>' : ''}
         ${chat.error ? `<p class="err">${esc(chat.error)}</p>` : ''}
       </div>
       <form id="askf" class="askf"><textarea name="q" rows="2" maxlength="2000" placeholder="Escribe tu pregunta…" ${chat.busy ? 'disabled' : ''} aria-label="Tu pregunta"></textarea>
         <button class="btn" ${chat.busy ? 'disabled' : ''}>Preguntar</button></form>
-      <p class="tip">Se envía a Claude lo que necesita para responder, sin tu nombre ni fecha de nacimiento. El asistente no reemplaza a tu médico.</p></section>`;
+      <p class="tip">Se envía a Claude lo que necesita para responder, sin tu nombre ni fecha de nacimiento; puede consultar guías médicas en internet. No reemplaza a tu médico.</p></section>`;
     const box = document.getElementById('chat'); box.scrollTop = box.scrollHeight;
     const nc = document.getElementById('newchat'); if (nc) nc.onclick = () => { chat.msgs = []; chat.error = ''; draw(); };
     view().querySelectorAll('[data-idea]').forEach(b => b.onclick = () => send(b.dataset.idea));
@@ -1469,11 +1473,51 @@ async function renderAssistant() {
     chat.msgs.push({ role: 'user', content: q }); chat.busy = true; chat.error = ''; draw();
     try {
       const r = await api(`/api/people/${S.subject}/assistant`, { method: 'POST', body: { messages: chat.msgs.map(m => ({ role: m.role, content: m.content })) } });
-      chat.msgs.push({ role: 'assistant', content: r.answer, sources: r.sources, warning: r.warning });
+      chat.msgs.push({ role: 'assistant', content: r.answer, sources: r.sources, warning: r.warning, web_sources: r.web_sources });
     } catch (e) { chat.error = e.message; chat.msgs.pop(); }
     chat.busy = false; if (S.tab === 'ask') draw();
   };
+  view().innerHTML = '<div id="revcard"></div><div id="chatwrap" style="margin-top:12px"></div>';
   draw();
+  paintReviews();
+}
+
+// Revisión integral: Claude analiza todo el historial con guías oficiales; corre en segundo plano.
+const REV_STATE = { done: 'lista', running: 'analizando…', error: 'con error' };
+async function paintReviews(forceOpen) {
+  const box = document.getElementById('revcard');
+  if (!box || S.tab !== 'ask') return;
+  const revs = await api(`/api/people/${S.subject}/reviews`);
+  const rv = ((S.rev ||= {})[S.subject] ||= { open: null });
+  if (forceOpen) rv.open = forceOpen;
+  if ((rv.open == null || !revs.some(r => r.id === rv.open)) && revs.length) rv.open = revs[0].id;
+  const running = revs.find(r => r.status === 'running');
+  const cur = rv.open ? await api(`/api/reviews/${rv.open}`).catch(() => null) : null;
+  const body = !cur ? '' : cur.status === 'running' ? '<p class="tip"><span class="spin"></span>Claude está analizando todo tu historial y buscando en guías oficiales… puede tardar unos minutos. Puedes seguir usando House.</p>'
+    : cur.status === 'error' ? `<p class="err">${esc(cur.error || 'La revisión falló.')}</p>`
+    : `<div class="msg bot" style="max-width:none">${answerHtml(cur.content || '', cur.sources || [])}
+        ${(cur.sources || []).length ? `<ol class="srcs">${cur.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${x.document_id ? `<a href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener">${esc(x.title)}${x.date ? ' · ' + fd(x.date) : ''}</a>` : esc(x.title)}</li>`).join('')}</ol>` : ''}
+        ${webLinks(cur.web_sources)}${cur.web_note ? `<p class="tip">${esc(cur.web_note)}</p>` : ''}
+        <p class="tip" style="margin:8px 0 0">Orientación informativa generada por IA con tus datos y guías públicas; confírmala con tu médico.${cur.cost_usd ? ` Costo: ${cur.cost_usd.toFixed(2)} USD.` : ''}</p></div>
+      <div class="bar"><span></span><button class="mini dn" data-delrev="${cur.id}">Borrar esta revisión</button></div>`;
+  box.innerHTML = `<section class="card cfg"><div class="bar"><h2>Revisión integral</h2><button class="btn" id="newrev" ${running ? 'disabled' : ''}>${running ? 'Analizando…' : revs.length ? 'Hacer una nueva revisión' : 'Hacer mi primera revisión'}</button></div>
+    <p class="tip">Claude revisa todo tu historial (laboratorios, informes, padecimientos, medicamentos, hábitos y antecedentes), lo compara con guías oficiales y te da su opinión, las relaciones entre tus estudios y los estudios o cuidados que podrías considerar. Tarda unos minutos y cuesta alrededor de 1 dólar. Confirma todo con tu médico.</p>
+    ${revs.length ? `<div class="chips" role="group" aria-label="Revisiones anteriores">${revs.map(r => `<button class="chip" data-openrev="${r.id}" aria-pressed="${r.id === rv.open}">${fd(r.created_at.slice(0, 10))} · ${REV_STATE[r.status]}</button>`).join('')}</div>` : ''}
+    ${body}</section>`;
+  const nb = document.getElementById('newrev');
+  if (nb) nb.onclick = async () => {
+    if (!confirm('Se enviará tu historial completo a Claude para analizarlo (sin tu nombre) y buscará en guías médicas oficiales. Cuesta alrededor de 1 dólar y tarda unos minutos. ¿Continuar?')) return;
+    nb.disabled = true;
+    try { const r = await api(`/api/people/${S.subject}/reviews`, { method: 'POST' }); paintReviews(r.id); } catch (e) { nb.disabled = false; toast(e.message); }
+  };
+  box.querySelectorAll('[data-openrev]').forEach(b => b.onclick = () => { rv.open = Number(b.dataset.openrev); paintReviews(); });
+  box.querySelectorAll('[data-delrev]').forEach(b => b.onclick = async () => {
+    if (!confirm('¿Borrar esta revisión? No se puede deshacer.')) return;
+    await api(`/api/reviews/${b.dataset.delrev}`, { method: 'DELETE' }); rv.open = null; paintReviews();
+  });
+  box.querySelectorAll('[data-cite]').forEach(a => a.onclick = e => { e.preventDefault(); const t = box.querySelector('#src-' + a.dataset.cite); t?.scrollIntoView({ block: 'nearest' }); t?.classList.add('flash'); setTimeout(() => t?.classList.remove('flash'), 1200); });
+  clearTimeout(S.revTimer);
+  if (running) S.revTimer = setTimeout(() => paintReviews(), 4000);  // solo actualiza esta tarjeta: no toca lo que escribes en el chat
 }
 
 /* ---------- Familia (solo administrador) ---------- */
