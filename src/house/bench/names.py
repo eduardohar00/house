@@ -21,7 +21,7 @@ def names_and_units(lines: list[str]) -> list[tuple[str, str]]:
     for line in lines:
         m = _LINE.match(line)
         if m:
-            out.add((re.sub(r"\s+", " ", m["name"]).strip(), m["unit"] or ""))
+            out.add((re.sub(r"\s+", " ", m["name"]).strip(), m["unit"] or m["unit_after"] or ""))
     return sorted(out)
 
 

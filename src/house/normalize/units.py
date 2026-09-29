@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 
 class UnknownUnit(ValueError):
@@ -13,6 +14,7 @@ def norm_unit(u: str | None) -> str:
     if u is None:
         return ""
     s = u.strip().replace("μ", "u").replace("µ", "u").lower().replace(" ", "")
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
     return re.sub(r"[^a-z0-9/%]", "", s)
 
 
@@ -53,25 +55,42 @@ _CANON = {
     "x103/ul": "10^3/µL",
     "106/ul": "10^6/µL",
     "x106/ul": "10^6/µL",
+    "miles/ul": "10^3/µL",
+    "millones/ul": "10^6/µL",
+    "millones/ml": "10^6/mL",
+    "millones": "10^6",
+    "ml": "mL",
+    "cm": "cm",
+    "dias": "días",
+    "ml/min/173m2": "mL/min/1.73m2",
 }
 
 
-# Cocientes sin unidad que algunos laboratorios imprimen con la unidad de sus operandos
-# (p. ej. índice aterogénico CT/HDL "6.3 mg/dL"). El valor no cambia: no es una conversión.
-_RATIO_PRINTED_AS = {("chol_hdl_ratio", "mg/dl"), ("ldl_hdl_ratio", "mg/dl"), ("t3_uptake", "uct")}
+# Unidades impresas que valen lo mismo que la canónica para ese analito: no es una conversión.
+# Cocientes impresos con la unidad de sus operandos (índice aterogénico "6.3 mg/dL") y
+# electrolitos monovalentes, donde 1 mEq/L = 1 mmol/L.
+_SAME_VALUE = {
+    ("chol_hdl_ratio", "mg/dl"),
+    ("ldl_hdl_ratio", "mg/dl"),
+    ("t3_uptake", "uct"),
+    ("sodium", "meq/l"),
+    ("potassium", "meq/l"),
+    ("chloride", "meq/l"),
+    ("co2_total", "meq/l"),
+}
 
 
 def same_unit(key: str, unit_text: str | None, canonical_unit: str) -> bool:
     u = norm_unit(unit_text)
-    return u == norm_unit(canonical_unit) or _CANON.get(u) == canonical_unit or (key, u) in _RATIO_PRINTED_AS
+    return u == norm_unit(canonical_unit) or _CANON.get(u) == canonical_unit or (key, u) in _SAME_VALUE
 
 
 def to_canonical(key: str, value: float, unit_text: str | None, canonical_unit: str) -> tuple[float, str]:
     """Devuelve (valor, unidad canónica). Lanza UnknownUnit si no sabe convertir."""
     u = norm_unit(unit_text)
-    if (key, u) in _RATIO_PRINTED_AS:
+    if (key, u) in _SAME_VALUE:
         return value, canonical_unit
-    if u == "" and canonical_unit in ("%", ""):
+    if u == "" and canonical_unit == "":
         return value, canonical_unit
     canon = _CANON.get(u)
     if canon == canonical_unit:

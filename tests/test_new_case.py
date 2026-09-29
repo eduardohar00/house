@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from house.bench.new_case import detect_identifiers, scaffold
 from house.bench.runner import run
 
@@ -113,3 +115,47 @@ def test_baseline_ref_text_for_unitless_rows():
     req = LLMRequest(task="extract", system="", user="INDICE LDL / HDL 3.1 * <2.7", schema={})
     (row,) = BaselineRegexProvider().complete_json(req).data["rows"]
     assert row["unit_text"] is None and row["ref_text"] == "<2.7"
+
+
+# Formato Chopo (valor, referencia, unidad al final) con valores inventados.
+CHOPO_LINES = """Fecha de Registro:02/01/2024 08:00
+Glucosa 90 55 - 99 mg/dL
+Sodio 139 136 - 145 meq/L
+Relación A/G 1.50 1.18 – 2.33
+Eritrocitos 5.00 4.70-5.80
+millones/µL
+Conc. Media de Hemoglobina Corp. 33.0 32.0-36.0 g/dL (%)
+Linfocitos 30.0 16.5-49.6 %
+Linfocitos 1.50 1.05-3.53 miles/µL
+No. de espermatozoides por mL 40 > = 15 millones/mL
+Leucocitos 0 0 - 1 millones/mL
+Estadio G2: 60-89 mL/min/1.73m2 TFG levemente disminuida
+Dirigido a:DR(A). NOMBRE FICTICIO Hoja: 1 de 8
+130 - 159 Cercano al óptimo"""
+
+
+def test_prefill_reads_chopo_layout():
+    from house.bench.new_case import prefill_expected
+
+    exp, unrecognized = prefill_expected(CHOPO_LINES)
+    got = {(r["key"], r["value"], r["unit"]) for r in exp["results"]}
+    assert got == {
+        ("glucose", 90.0, "mg/dL"),
+        ("sodium", 139.0, "mmol/L"),
+        ("ag_ratio", 1.5, ""),
+        ("rbc", 5.0, "10^6/µL"),
+        ("mchc", 33.0, "g/dL"),
+        ("lymph_pct", 30.0, "%"),
+        ("lymph_abs", 1.5, "10^3/µL"),
+        ("semen_conc", 40.0, "10^6/mL"),
+        ("semen_wbc", 0.0, "10^6/mL"),
+    }
+    assert unrecognized == []
+    assert exp["collected_on"] == "2024-01-02"
+
+
+def test_percent_analyte_without_unit_is_not_assumed_percent():
+    from house.normalize import units
+
+    with pytest.raises(units.UnknownUnit):
+        units.to_canonical("lymph_pct", 1.5, None, "%")

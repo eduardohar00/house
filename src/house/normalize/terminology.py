@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import units
 
@@ -318,10 +318,147 @@ _EXTRA: tuple[Analyte, ...] = (
     _a("pbi", "Yodo proteico hormonal", "", "µg/dL", "tiroides", "yodo proteico hormonal"),
 )
 
-CATALOG: tuple[Analyte, ...] = _BASE + _EXTRA
+# Chopo y otros laboratorios (solo nombres y unidades). LOINC en blanco: por completar.
+_CHOPO: tuple[Analyte, ...] = (
+    _a("neut_pct", "Neutrófilos %", "", "%", "diferencial", "neutrofilos"),
+    _a("neut_abs", "Neutrófilos abs.", "", "10^3/µL", "diferencial", "neutrofilos absolutos"),
+    _a(
+        "rdw_sd",
+        "Ancho de distribución eritrocitaria (SD)",
+        "",
+        "fL",
+        "sangre",
+        "ancho de distrib de eritrocitos sd",
+    ),
+    _a(
+        "bun_creat_ratio",
+        "Relación BUN/creatinina",
+        "",
+        "",
+        "rinon",
+        "relacion bun creat",
+        "relacion bun creatinina",
+    ),
+    _a(
+        "egfr",
+        "Tasa de filtración glomerular estimada",
+        "",
+        "mL/min/1.73m2",
+        "rinon",
+        "tasa de filtracion glomerular estima",
+        "tasa de filtracion glomerular estimada",
+        "tfge",
+    ),
+    _a("sd_ldl", "LDL pequeñas y densas (sd LDL)", "", "", "lipidos", "sd ldl"),
+    _a("phospholipids", "Fosfolípidos", "", "mg/dL", "lipidos", "fosfolipidos en suero", "fosfolipidos"),
+    _a("ast_alt_ratio", "Relación AST/ALT", "", "", "higado", "relacion ast alt"),
+    _a("uibc", "Capacidad latente de fijación de hierro (UIBC)", "", "µg/dL", "sangre", "uibc"),
+    _a(
+        "tibc",
+        "Capacidad total de fijación de hierro",
+        "",
+        "µg/dL",
+        "sangre",
+        "captacion de hierro",
+        "capacidad total de fijacion de hierro",
+        "tibc",
+    ),
+    _a("iron_sat", "Saturación de hierro", "", "%", "sangre", "porcentaje de saturacion de hierro"),
+    _a("igg", "Inmunoglobulina G", "", "mg/dL", "inmunologia", "inmunoglobulina g", "igg"),
+    _a("iga", "Inmunoglobulina A", "", "mg/dL", "inmunologia", "inmunoglobulina a", "iga"),
+    _a("igm", "Inmunoglobulina M", "", "mg/dL", "inmunologia", "inmunoglobulina m", "igm"),
+    _a("cea", "Antígeno carcinoembrionario", "", "ng/mL", "marcadores", "antigeno carcinoembrionario"),
+    _a(
+        "psa_total",
+        "Antígeno prostático específico total",
+        "",
+        "ng/mL",
+        "marcadores",
+        "antigeno prostatico especifico total",
+        "psa total",
+    ),
+    _a("urine_bilirubin", "Bilirrubina (orina)", "", "mg/dL", "orina"),
+    # Espermatobioscopía. "Volumen" y "pH" sin contexto se confunden con otros estudios: sin alias.
+    _a("semen_abstinence", "Días de abstinencia", "", "días", "seminal", "dias de abstinencia"),
+    _a("semen_volume", "Volumen seminal", "", "mL", "seminal"),
+    _a("semen_viscosity", "Viscosidad seminal", "", "cm", "seminal", "viscosidad"),
+    _a("semen_ph", "pH seminal", "", "", "seminal"),
+    _a(
+        "semen_conc",
+        "Concentración de espermatozoides",
+        "",
+        "10^6/mL",
+        "seminal",
+        "no de espermatozoides por ml",
+    ),
+    _a(
+        "semen_total", "Número total de espermatozoides", "", "10^6", "seminal", "no total de espermatozoides"
+    ),
+    _a("semen_prog_motility", "Motilidad progresiva", "", "%", "seminal", "motilidad progresiva"),
+    _a("semen_nonprog_motility", "Motilidad no progresiva", "", "%", "seminal", "motilidad no progresiva"),
+    _a("semen_total_motility", "Motilidad total", "", "%", "seminal", "motilidad total"),
+    _a("semen_immotile", "Espermatozoides inmóviles", "", "%", "seminal", "espermatozoides inmoviles"),
+    _a("semen_vitality", "Vitalidad espermática", "", "%", "seminal", "vitalidad"),
+    _a("semen_head_abn", "Anormalidades de cabeza", "", "%", "seminal", "anormalidades de cabeza"),
+    _a(
+        "semen_midpiece_abn",
+        "Anormalidades de pieza intermedia",
+        "",
+        "%",
+        "seminal",
+        "anormalidades de pieza intermedia",
+    ),
+    _a("semen_tail_abn", "Anormalidades de cola", "", "%", "seminal", "anormalidades de cola"),
+    _a(
+        "semen_cyto_excess",
+        "Exceso de citoplasma residual",
+        "",
+        "%",
+        "seminal",
+        "exceso de citoplasma residual",
+    ),
+    _a(
+        "semen_normal_morph",
+        "Morfología normal",
+        "",
+        "%",
+        "seminal",
+        "espermatozoides con morfologia norma",
+        "espermatozoides con morfologia normal",
+    ),
+    _a("semen_wbc", "Leucocitos en semen", "", "10^6/mL", "seminal"),
+)
 
-# Mismo nombre impreso, distinto analito según la unidad (p. ej. albúmina en suero vs. mg/L).
-_UNIT_VARIANTS = {("albumin", "mg/l"): "albumin_urine"}
+# Otras formas de escribir análisis ya catalogados.
+_MORE_ALIASES = {
+    "bun": ("nitrogeno de urea en sangre bun", "nitrogeno de urea en sangre"),
+    "vldl": ("vldl colesterol",),
+    "ggt": ("gama glutamil transpeptidasa",),
+    "globulin": ("globulinas",),
+    "alp": ("f alcalina total",),
+    "ldh": ("ldh",),
+    "mcv": ("volumen corp medio",),
+    "mch": ("hemoglobina corp media",),
+    "mchc": ("conc media de hemoglobina corp",),
+    "rdw": ("ancho de distrib de eritrocitos cv",),
+    "urine_sg": ("densidad",),
+}
+
+CATALOG: tuple[Analyte, ...] = tuple(
+    replace(a, aliases=a.aliases + _MORE_ALIASES.get(a.key, ())) for a in _BASE + _EXTRA + _CHOPO
+)
+
+# Mismo nombre impreso, distinto analito según la unidad (p. ej. albúmina en suero vs. mg/L,
+# "Linfocitos" en % vs. en miles/µL, "Leucocitos" en sangre vs. en semen).
+_UNIT_VARIANTS = {
+    ("albumin", "mg/l"): "albumin_urine",
+    ("wbc", "millones/ml"): "semen_wbc",
+    **{
+        (f"{cell}_pct", u): f"{cell}_abs"
+        for cell in ("neut", "lymph", "mono", "eos", "baso")
+        for u in ("miles/ul", "103/ul", "x103/ul")
+    },
+}
 
 
 def _norm(s: str) -> str:

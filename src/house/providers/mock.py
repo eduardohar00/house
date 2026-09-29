@@ -14,15 +14,19 @@ import time
 from .base import LLMRequest, LLMResponse
 
 # Independiente del espaciado (los PDF suelen colapsar las columnas a un solo espacio).
-# Tras el valor exige una unidad ("/", "%", fL, pg) o, en análisis sin unidad (pH, índices), un
-# intervalo de referencia; así no confunde números del nombre ("25-OH") ni leyendas ("ALTO 200 - 499").
-# El "*" que algunos laboratorios ponen tras un valor fuera de rango se tolera.
+# Acepta dos órdenes de columnas: "valor unidad referencia" y "valor referencia unidad" (Chopo).
+# Sin unidad impresa exige un intervalo de referencia; así no confunde números del nombre ("25-OH")
+# ni leyendas ("ALTO 200 - 499"). El "*" tras un valor fuera de rango se tolera.
+_UNIT = r"x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ0-9.]+(?:/[A-Za-zµμ0-9.]+)?|%|[fF][lL]|pg|UCT"
+_WORD_UNIT = r"días|dias|mL|cm|millones"
+_REF = r"[<>]\s*=?\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?"
 _LINE = re.compile(
     r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?P<value>\d+(?:[.,]\d+)?)(?:\s*\*)?"
-    r"(?:\s*(?P<unit>x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ]+(?:/[A-Za-zµμ]+)?|%|[fF][lL]|pg|UCT)"
-    r"(?:\s+(?P<ref>\S.*?))?"
-    r"|\s+(?P<ref_only>[<>]=?\s*\d.*?|\d+(?:[.,]\d+)?\s*-\s*\d.*?))\s*$"
+    rf"(?:\s*(?P<unit>{_UNIT})(?:\s+(?P<ref>\S.*?))?"
+    rf"|\s+(?P<ref_only>{_REF})(?:\s+(?P<unit_after>{_UNIT}|{_WORD_UNIT})(?:\s*\(.*\))?)?)\s*$"
 )
+# Unidad sola en el renglón siguiente (Chopo parte "4.70-5.80 / millones/µL").
+_UNIT_LINE = re.compile(rf"^\s*(?:{_UNIT}|{_WORD_UNIT})\s*$")
 _DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 
 
@@ -32,26 +36,34 @@ class BaselineRegexProvider:
 
     def complete_json(self, req: LLMRequest) -> LLMResponse:
         t0 = time.monotonic()
-        rows, collected = [], None
-        for line in req.user.splitlines():
+        rows, collected, registered = [], None, None
+        lines = req.user.splitlines()
+        for i, line in enumerate(lines):
             if collected is None and re.search(r"toma|recolecci|muestra", line, re.I):
                 m = _DATE.search(line)
                 if m:
                     collected = f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+            if registered is None and re.search(r"registro", line, re.I):
+                m = _DATE.search(line)
+                if m:
+                    registered = f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
             m = _LINE.match(line)
             if m:
+                unit = m.group("unit") or m.group("unit_after")
+                if unit is None and i + 1 < len(lines) and _UNIT_LINE.match(lines[i + 1]):
+                    unit = lines[i + 1].strip()
                 rows.append(
                     {
                         "analyte_name": m.group("name").strip(),
                         "value_text": m.group("value"),
-                        "unit_text": m.group("unit"),
+                        "unit_text": unit,
                         "ref_text": (m.group("ref") or m.group("ref_only") or "").strip() or None,
                         "evidence": line.strip(),
                     }
                 )
         data = {
             "document_type": "laboratorio" if rows else "otro",
-            "collected_on": collected,
+            "collected_on": collected or registered,
             "lab_name": None,
             "rows": rows,
         }
