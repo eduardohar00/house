@@ -352,3 +352,23 @@ button.lchip.add{cursor:pointer;padding:3px 10px;font-size:12.5px;font-weight:60
 .webs{margin:0 0 6px;padding-left:20px;font-size:13px}
 .xl li.grp{padding:10px 0 2px;border-top:0}
 .xl li.grp:not(:first-child){border-top:1px solid var(--line);margin-top:4px}
+.rvhero{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--surface);margin:8px 0 12px}
+.rvhero h3{margin:0 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.exec{display:grid;gap:10px}
+.exlead{margin:0;color:var(--muted)}
+.ex{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border-radius:10px;border-left:4px solid var(--muted);background:color-mix(in srgb,var(--muted) 8%,transparent)}
+.ex p{margin:2px 0 0}
+.ex.urg{border-left-color:var(--crit);background:color-mix(in srgb,var(--crit) 10%,transparent)}
+.ex.pro{border-left-color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.ex.rut{border-left-color:var(--good);background:color-mix(in srgb,var(--good) 9%,transparent)}
+.exchip{flex:none;min-width:74px;text-align:center;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,var(--muted) 22%,transparent)}
+.ex.urg .exchip{background:var(--crit);color:#fff}
+.ex.pro .exchip{background:var(--warn);color:#fff}
+.ex.rut .exchip{background:var(--good);color:#fff}
+.rvnav{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.rvsec{border:1px solid var(--line);border-radius:12px;margin:8px 0;background:var(--surface)}
+.rvsec>summary{cursor:pointer;padding:10px 14px;font-weight:700;list-style:none}
+.rvsec>summary::-webkit-details-marker{display:none}
+.rvsec>summary::before{content:"▸";margin-right:8px;color:var(--muted)}
+.rvsec[open]>summary::before{content:"▾"}
+.rvsec>*:not(summary){padding:0 14px 10px}

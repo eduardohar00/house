@@ -1508,7 +1508,7 @@ const ASK_IDEAS = ['¿Qué estudios o chequeos me convendría hacerme?', '¿Qué
 
 // Texto de la respuesta: párrafos, viñetas y **negritas**, con [n] como enlaces a las fuentes.
 function answerHtml(text, sources) {
-  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\[(\d+)\]/g, (m, n) => sources.some(x => x.n == n) ? `<a class="cite" href="#src-${n}" data-cite="${n}">${n}</a>` : m);
+  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])\*([^*\n]+?)\*(?![*\w])/g, '$1<i>$2</i>').replace(/\[(\d+)\]/g, (m, n) => sources.some(x => x.n == n) ? `<a class="cite" href="#src-${n}" data-cite="${n}">${n}</a>` : m);
   const out = []; let list = null, ordered = false;
   const flush = () => { if (list) { out.push(`<${ordered ? 'ol' : 'ul'}>${list.join('')}</${ordered ? 'ol' : 'ul'}>`); list = null; } };
   for (const line of text.split('\n')) {
@@ -1520,6 +1520,41 @@ function answerHtml(text, sources) {
   }
   flush();
   return out.join('');
+}
+
+// Revisión integral: resumen ejecutivo en tarjetas con prioridad, secciones plegables y fuentes al final.
+const PRIO = { urgente: ['Urgente', 'urg'], pronto: ['Pronto', 'pro'], rutina: ['Rutina', 'rut'], informativo: ['Informativo', 'inf'], ojo: ['Ojo', 'pro'], importante: ['Importante', 'pro'] };
+const mdInline = (t, sources) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])\*([^*\n]+?)\*(?![*\w])/g, '$1<i>$2</i>').replace(/\[(\d+)\]/g, (m, n) => sources.some(x => x.n == n) ? `<a class="cite" href="#src-${n}" data-cite="${n}">${n}</a>` : m);
+function execHtml(lines, sources) {
+  const out = [];
+  for (const line of lines) {
+    const it = line.match(/^\s*\d+[.)]\s+(.*)/);
+    if (!it) { if (line.trim() && !/^\s*-{3,}\s*$/.test(line)) out.push(`<p class="exlead">${mdInline(line, sources)}</p>`); continue; }
+    const m = it[1].match(/^\*\*(.+?)\*\*\s*(.*)$/);
+    let chip = '', cls = 'inf', title = '', desc = it[1];
+    if (m) {
+      const bold = m[1].replace(/[.:]\s*$/, ''), k = bold.indexOf(':');
+      const head = k > 0 ? bold.slice(0, k).trim() : '', key = head.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (k > 0 && head.length <= 24) { const p = PRIO[key]; chip = p ? p[0] : head; cls = p ? p[1] : 'inf'; title = bold.slice(k + 1).trim(); } else title = bold;
+      desc = m[2];
+    }
+    out.push(`<div class="ex ${cls}">${chip ? `<span class="exchip">${esc(chip)}</span>` : ''}<div>${title ? `<b>${mdInline(title, sources)}</b>` : ''}<p>${mdInline(desc, sources)}</p></div></div>`);
+  }
+  return `<div class="exec">${out.join('')}</div>`;
+}
+function reviewHtml(text, sources, openAll) {
+  const secs = []; let cur = { title: '', lines: [] };
+  for (const line of (text || '').split('\n')) {
+    const h = line.match(/^\s*##\s+(.*)/);
+    if (h) { secs.push(cur); cur = { title: h[1].trim(), lines: [] }; } else cur.lines.push(line);
+  }
+  secs.push(cur);
+  const has = x => x.title || x.lines.some(l => l.trim());
+  const summary = secs.find(x => /resumen/i.test(x.title)), rest = secs.filter(x => x !== summary && has(x));
+  const nav = rest.filter(x => x.title).map((x, i) => `<button class="chip" data-gosec="${i}">${esc(x.title)}</button>`).join('');
+  return `${summary ? `<div class="rvhero"><h3>${esc(summary.title)}</h3>${execHtml(summary.lines, sources)}</div>` : ''}
+    ${nav ? `<div class="rvnav"><span class="tip">Ir a:</span>${nav}<button class="mini" id="rvtoggle">${openAll ? 'Contraer todo' : 'Expandir todo'}</button></div>` : ''}
+    ${rest.map((x, i) => x.title ? `<details class="rvsec" id="rvs-${i}" ${openAll ? 'open' : ''}><summary>${esc(x.title)}</summary><div class="msg-body">${answerHtml(x.lines.join('\n'), sources)}</div></details>` : `<div class="msg-body">${answerHtml(x.lines.join('\n'), sources)}</div>`).join('')}`;
 }
 
 const webLinks = list => list && list.length ? `<p class="tip" style="margin:8px 0 2px">Guías y páginas consultadas:</p><ul class="webs">${list.map(w => `<li><a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.title || w.url)}</a></li>`).join('')}</ul>` : '';
@@ -1589,9 +1624,10 @@ async function paintReviews(forceOpen) {
   const cur = rv.open ? await api(`/api/reviews/${rv.open}`).catch(() => null) : null;
   const body = !cur ? '' : cur.status === 'running' ? '<p class="tip"><span class="spin"></span>Claude está analizando todo tu historial y buscando en guías oficiales… puede tardar unos minutos. Puedes seguir usando House.</p>'
     : cur.status === 'error' ? `<p class="err">${esc(cur.error || 'La revisión falló.')}</p>`
-    : `<div class="msg bot" style="max-width:none">${answerHtml(cur.content || '', cur.sources || [])}
+    : `<div class="msg bot rvdoc" style="max-width:none">${reviewHtml(cur.content, cur.sources || [], rv.openAll)}
+        <details class="rvsec" id="rvsrc"><summary>Fuentes de tu expediente (${(cur.sources || []).length}) y guías consultadas (${(cur.web_sources || []).length})</summary>
         ${(cur.sources || []).length ? `<ol class="srcs">${cur.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${x.document_id ? `<a href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener">${esc(x.title)}${x.date ? ' · ' + fd(x.date) : ''}</a>` : esc(x.title)}</li>`).join('')}</ol>` : ''}
-        ${webLinks(cur.web_sources)}${cur.web_note ? `<p class="tip">${esc(cur.web_note)}</p>` : ''}
+        ${webLinks(cur.web_sources)}${cur.web_note ? `<p class="tip">${esc(cur.web_note)}</p>` : ''}</details>
         <p class="tip" style="margin:8px 0 0">Orientación informativa generada por IA con tus datos y guías públicas; confírmala con tu médico.${cur.cost_usd ? ` Costo: ${cur.cost_usd.toFixed(2)} USD.` : ''}</p></div>
       <div class="bar"><span></span><button class="mini dn" data-delrev="${cur.id}">Borrar esta revisión</button></div>`;
   box.innerHTML = `<section class="card cfg"><div class="bar"><h2>Revisión integral</h2><button class="btn" id="newrev" ${running ? 'disabled' : ''}>${running ? 'Analizando…' : revs.length ? 'Hacer una nueva revisión' : 'Hacer mi primera revisión'}</button></div>
@@ -1609,7 +1645,10 @@ async function paintReviews(forceOpen) {
     if (!confirm('¿Borrar esta revisión? No se puede deshacer.')) return;
     await api(`/api/reviews/${b.dataset.delrev}`, { method: 'DELETE' }); rv.open = null; paintReviews();
   });
-  box.querySelectorAll('[data-cite]').forEach(a => a.onclick = e => { e.preventDefault(); const t = box.querySelector('#src-' + a.dataset.cite); t?.scrollIntoView({ block: 'nearest' }); t?.classList.add('flash'); setTimeout(() => t?.classList.remove('flash'), 1200); });
+  box.querySelectorAll('[data-cite]').forEach(a => a.onclick = e => { e.preventDefault(); const t = box.querySelector('#src-' + a.dataset.cite); if (t) { t.closest('details').open = true; t.scrollIntoView({ block: 'center' }); t.classList.add('flash'); setTimeout(() => t.classList.remove('flash'), 1400); } });
+  box.querySelectorAll('[data-gosec]').forEach(b => b.onclick = () => { const d = box.querySelector('#rvs-' + b.dataset.gosec); if (d) { d.open = true; d.scrollIntoView({ block: 'start', behavior: 'smooth' }); } });
+  const tg = box.querySelector('#rvtoggle');
+  if (tg) tg.onclick = () => { rv.openAll = !rv.openAll; box.querySelectorAll('details.rvsec[id^=rvs-]').forEach(d => d.open = rv.openAll); tg.textContent = rv.openAll ? 'Contraer todo' : 'Expandir todo'; };
   clearTimeout(S.revTimer);
   if (running) S.revTimer = setTimeout(() => paintReviews(), 4000);  // solo actualiza esta tarjeta: no toca lo que escribes en el chat
 }

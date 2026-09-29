@@ -37,7 +37,10 @@ Busca en guías oficiales para respaldar cada recomendación.
 
 Estructura tu respuesta EXACTAMENTE con estos apartados (títulos con ##):
 ## Resumen ejecutivo
-Lo más importante en 5 renglones como máximo, con lo urgente primero.
+Máximo 5 puntos numerados, ordenados por prioridad (lo urgente primero). Formato EXACTO de cada punto:
+`1. **Prioridad: título corto.** Una o dos frases: qué pasa y qué hacer.`
+donde «Prioridad» es una sola palabra: Urgente, Pronto, Rutina o Informativo. Sin sub-listas ni párrafos
+largos. Después de los puntos, no agregues nada más en este apartado.
 ## Lo que dicen tus datos
 Padecimientos y hallazgos relevantes, con tu opinión de qué podrían significar y qué tan importantes son.
 ## Relaciones que noté
