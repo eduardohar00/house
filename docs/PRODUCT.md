@@ -16,7 +16,7 @@
 | Privacidad de IA | **Único modo: híbrido** (no existe un modo "solo local").  OCR, anonimización y DICOM en local (modelos de ~4B a 7B cuantizados); a la API solo va texto anonimizado, con proveedor sin entrenamiento y retención mínima |
 | Alojamiento MVP | Local-first en el Mac, cifrado (FileVault más cifrado de la app); acceso móvil por Tailscale; respaldo cifrado con llave propia |
 | Evolución | Mini-PC o Mac mini dedicado, o VPS cifrado, cuando se necesite acceso 24/7 |
-| Abstracción de modelos | **Agnóstico al modelo:** la interpretación médica pasa por una capa de proveedor intercambiable (varios proveedores de API, elegibles por tarea). La elección se decide con un banco de pruebas propio (exactitud de extracción, calidad de explicación, alucinaciones) y no por reputación |
+| Abstracción de modelos | **Agnóstico al modelo:** la interpretación médica pasa por una capa de proveedor intercambiable (varios proveedores de API, elegibles por tarea). La elección se decide con un banco de pruebas propio (exactitud de extracción, calidad de explicación, alucinaciones) y no por reputación. **Por ahora (2026-09-28) todo lo hace Claude**; la capa de proveedores se mantiene para cambiar después |
 | Reglas clínicas | Rangos, banderas rojas y cálculos son deterministas y auditables; el modelo interpreta y explica, no decide |
 
 | Confirmado | Arquitectura híbrida (B) y local-first |
