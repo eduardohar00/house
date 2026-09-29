@@ -489,3 +489,36 @@ def test_medications_have_active_ingredient_and_brand(world):
         ).status_code
         == 404
     )
+
+
+def test_allergies_have_a_type_and_no_allergies_means_no_drug_allergies(world):
+    c, me, _ = world
+    assert c.get(f"/api/people/{me}/clinical").json()["allergy_categories"] == [
+        "Medicamento",
+        "Alimento",
+        "Ambiental",
+        "Otro",
+    ]
+    assert (
+        c.put(f"/api/people/{me}/clinical-none/allergy", headers=H).status_code == 200
+    )  # «sin alergias a medicamentos»
+    # una alergia ambiental (prueba cutánea) no contradice esa confirmación
+    add(c, me, "allergy", substance="Dermatophagoides pteronyssinus", category="Ambiental").raise_for_status()
+    add(c, me, "allergy", substance="Cacahuate", category="Alimento").raise_for_status()
+    assert "allergy" in c.get(f"/api/people/{me}/clinical").json()["none"]
+    # una alergia a un medicamento sí la invalida
+    add(
+        c, me, "allergy", substance="Penicilina", category="Medicamento", reaction="Ronchas"
+    ).raise_for_status()
+    assert "allergy" not in c.get(f"/api/people/{me}/clinical").json()["none"]
+    assert add(c, me, "allergy", substance="X", category="Cosa").status_code == 422
+    cats = [(a["substance"], a["category"]) for a in c.get(f"/api/people/{me}/clinical").json()["allergies"]]
+    assert ("Penicilina", "Medicamento") in cats and ("Cacahuate", "Alimento") in cats
+
+    # solo con alergias no medicamentosas se puede confirmar «sin alergias a medicamentos»
+    for a in c.get(f"/api/people/{me}/clinical").json()["allergies"]:
+        if a["category"] == "Medicamento":
+            c.delete(f"/api/people/{me}/clinical/allergy/{a['id']}", headers=H)
+    assert c.put(f"/api/people/{me}/clinical-none/allergy", headers=H).status_code == 200
+    add(c, me, "allergy", substance="Amoxicilina").raise_for_status()  # sin tipo: se trata como medicamento
+    assert "allergy" not in c.get(f"/api/people/{me}/clinical").json()["none"]

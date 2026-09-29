@@ -20,6 +20,12 @@ from ..normalize import terminology
 IMAGING = {label for _, label in MODALITIES} - {"Electrocardiograma"}
 PROBLEM_STATUSES = ("En control", "En tratamiento", "Seguimiento", "Resuelta")
 NONE_SECTIONS = ("allergy", "medication", "problem", "procedure", "family")
+ALLERGY_CATEGORIES = (
+    "Medicamento",
+    "Alimento",
+    "Ambiental",
+    "Otro",
+)  # «sin alergias» aplica solo a medicamentos
 OUT = ("low", "high", "abnormal")
 
 
@@ -70,7 +76,7 @@ _EXTRA_COLUMNS = {
         "brand": "TEXT",
     },
     "problem": {"notes": "TEXT"},
-    "allergy": {"notes": "TEXT"},
+    "allergy": {"notes": "TEXT", "category": "TEXT"},
     "procedure_history": {"notes": "TEXT"},
     "vaccine": {"brand": "TEXT", "lot": "TEXT"},
 }
@@ -133,6 +139,7 @@ DOSE_OPTIONS = ("Dosis única", "Primera dosis", "Segunda dosis", "Tercera dosis
 SPECS: dict[str, tuple[str, dict[str, Field]]] = {
     "allergy": ("allergy", {
         "substance": Field("text", True), "reaction": Field("text"), "notes": Field("text", max=1000),
+        "category": Field("enum", options=ALLERGY_CATEGORIES),
     }),
     "problem": ("problem", {
         "name": Field("text", True), "status": Field("enum", True, options=PROBLEM_STATUSES),
@@ -219,6 +226,17 @@ def clean(kind: str, data: dict) -> dict[str, Any]:
 # ---------- Operaciones ----------
 
 
+def _breaks_none(kind: str, values: dict) -> bool:
+    """Un dato nuevo invalida «confirmado: no hay», salvo medicamento suspendido o alergia ambiental."""
+    if kind not in NONE_SECTIONS:
+        return False
+    if kind == "medication":
+        return bool(values["active"])
+    if kind == "allergy":
+        return (values.get("category") or "Medicamento") == "Medicamento"
+    return True
+
+
 def add(db, person_id: int, kind: str, data: dict) -> int:
     values = clean(kind, data)
     table = SPECS[kind][0]
@@ -226,7 +244,7 @@ def add(db, person_id: int, kind: str, data: dict) -> int:
     marks = ", ".join("?" * (len(values) + 1))
     cur = db.execute(f"INSERT INTO {table}({cols}) VALUES({marks})", (person_id, *values.values()))  # noqa: S608
     # Ya hay datos: deja de valer "confirmado: no hay". Un medicamento suspendido no cuenta como actual.
-    if kind in NONE_SECTIONS and (kind != "medication" or values["active"]):
+    if _breaks_none(kind, values):
         db.execute("DELETE FROM clinical_none WHERE person_id = ? AND section = ?", (person_id, kind))
     return cur.lastrowid
 
@@ -241,6 +259,8 @@ def update(db, person_id: int, kind: str, item_id: int, data: dict) -> None:
     )
     if cur.rowcount == 0:
         raise ClinicalError(404, "No encontré ese dato en este perfil.")
+    if _breaks_none(kind, values):
+        db.execute("DELETE FROM clinical_none WHERE person_id = ? AND section = ?", (person_id, kind))
 
 
 def remove(db, person_id: int, kind: str, item_id: int) -> None:
@@ -258,7 +278,8 @@ def set_none(db, person_id: int, section: str, confirmed: bool) -> None:
         db.execute("DELETE FROM clinical_none WHERE person_id = ? AND section = ?", (person_id, section))
         return
     table = SPECS[section][0]
-    only_current = " AND active = 1" if section == "medication" else ""
+    drug = " AND COALESCE(category, 'Medicamento') = 'Medicamento'"
+    only_current = {"medication": " AND active = 1", "allergy": drug}.get(section, "")
     if db.execute(f"SELECT 1 FROM {table} WHERE person_id = ?{only_current}", (person_id,)).fetchone():  # noqa: S608
         raise ClinicalError(409, "Ya hay datos en esta sección; no se puede confirmar que no hay.")
     db.execute("INSERT OR IGNORE INTO clinical_none(person_id, section) VALUES(?, ?)", (person_id, section))
@@ -548,7 +569,8 @@ def overview(db, person_id: int) -> dict:
     for m in meds:
         m["problems"] = reverse.get(("medication", str(m["id"])), [])
     return {
-        "allergies": _rows(db, "allergy", person_id, "substance COLLATE NOCASE"),
+        "allergies": _rows(db, "allergy", person_id, "category, substance COLLATE NOCASE"),
+        "allergy_categories": list(ALLERGY_CATEGORIES),
         "problems": problems,
         "medications": meds,
         "supplements": _rows(db, "supplement", person_id, "active DESC, name COLLATE NOCASE"),

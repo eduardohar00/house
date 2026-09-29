@@ -441,7 +441,7 @@ class Toolbox:
 
         return {
             "src": src,
-            "allergies": pick(c["allergies"], "substance", "reaction"),
+            "allergies": pick(c["allergies"], "substance", "category", "reaction"),
             "problems": [
                 {**pick([p], "name", "status", "since_year")[0], "linked_studies": self._linked(p)}
                 for p in c["problems"]
@@ -466,7 +466,9 @@ class Toolbox:
             "procedures": pick(c["procedures"], "name", "year"),
             "vaccines": pick(c["vaccines"], "name", "brand", "dose_label", "given_on"),
             "consultations": pick(c["consultations"], "occurred_on", "reason", "specialty", "notes"),
-            "confirmed_none": c["none"],
+            "confirmed_none": [
+                "sin alergias a medicamentos conocidas" if x == "allergy" else x for x in c["none"]
+            ],
         }
 
     def get_health_profile(self) -> dict:

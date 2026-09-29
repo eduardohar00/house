@@ -852,8 +852,8 @@ async function openReview(id, opts = {}) {
 const F = (name, label, type = 'text', extra = {}) => ({ name, label, type, ...extra });
 const STCLS = { 'En control': 'c', 'En tratamiento': 'a', 'Seguimiento': 'a', 'Resuelta': 'r' };
 const CLIN = {
-  allergy: { key: 'allergies', title: 'Alergias', add: 'Agregar alergia', none: 'Sin alergias conocidas',
-    fields: [F('substance', 'Sustancia', 'text', { list: 'allergy' }), F('reaction', 'Reacción (opcional)'), F('notes', 'Notas (opcional)')],
+  allergy: { key: 'allergies', title: 'Alergias', pendingLabel: 'Alergias a medicamentos', add: 'Agregar alergia', none: 'Sin alergias a medicamentos conocidas',
+    fields: [F('category', 'Tipo de alergia', 'select', { options: 'allergy_categories' }), F('substance', 'Sustancia', 'text', { list: 'allergy' }), F('reaction', 'Reacción (opcional)'), F('notes', 'Notas (opcional)')],
     line: a => `<b>${esc(a.substance)}</b>${a.reaction ? ' · ' + esc(a.reaction) : ''}`, sub: a => a.notes },
   problem: { key: 'problems', title: 'Problemas de salud', add: 'Agregar problema', none: 'Sin problemas de salud conocidos',
     fields: [F('name', 'Problema', 'text', { list: 'problem' }), F('status', 'Estado', 'select', { options: 'statuses' }), F('since_year', 'Desde (año)', 'text', { ph: '2021' }), F('notes', 'Notas (opcional)')],
@@ -929,6 +929,9 @@ async function renderClinical() {
       ${list.map(g => `<details class="hist vgrp" ${g.length === 1 ? 'open' : ''}><summary><b>${esc(g[0].name)}</b> · ${g.length} ${g.length === 1 ? 'dosis' : 'dosis'} · última ${fd(g[0].given_on)}</summary>
         <ul class="xl">${g.map(v => row('vaccine', v, dose)).join('')}</ul></details>`).join('')}</section>`;
   };
+  // Alergias agrupadas por tipo (medicamentos, alimentos, ambientales…).
+  const allergyRows = arr => (c.allergy_categories || []).map(cat => [cat, arr.filter(a => (a.category || 'Medicamento') === cat)]).filter(([, l]) => l.length)
+    .map(([cat, l]) => `<li class="grp"><span class="s"><b>${esc(cat === 'Medicamento' ? 'A medicamentos' : cat === 'Ambiental' ? 'Ambientales (polen, ácaros…)' : cat === 'Alimento' ? 'A alimentos' : 'Otras')}</b></span></li>${l.map(a => row('allergy', a)).join('')}`).join('');
   // Medicamentos: una fila por sustancia; si se repite en varias recetas, se abre para ver cada vez.
   const occ = { noDup: true, badge: CLIN.medication.badge,
     line: m => `<b>${medWhen(m) ? (m.prescribed_on ? fd(m.prescribed_on) : m.since_year) : 'Sin fecha'}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
@@ -963,7 +966,7 @@ async function renderClinical() {
   const card = kind => {
     const cfg = CLIN[kind]; let items = itemsOf(kind), past = [];
     if (kind === 'medication' || kind === 'supplement') { past = items.filter(m => !m.active); items = items.filter(m => m.active); }
-    const listOf = arr => kind === 'medication' ? medRows(arr) : arr.map(it => row(kind, it)).join('');
+    const listOf = arr => kind === 'medication' ? medRows(arr) : kind === 'allergy' ? allergyRows(arr) : arr.map(it => row(kind, it)).join('');
     if (kind === 'vaccine' && items.length) return vaccineCard(cfg, items);
     if (kind === 'family' && items.length) return familyCard(cfg, items);
     const confirmed = c.none.includes(kind);
@@ -973,6 +976,8 @@ async function renderClinical() {
       : '<p class="s" style="margin:0">Sin registros.</p>';
     return `<section class="card xc"><h3>${cfg.title}<button class="mini add-x" data-add="${kind}">${cfg.add}</button></h3>
       ${items.length ? `<ul class="xl">${listOf(items)}</ul>` : empty}
+      ${kind === 'allergy' && items.length && !drugAllergies && !confirmed ? `<button class="mini" data-none="allergy">Confirmar: ${esc(cfg.none.toLowerCase())}</button>` : ''}
+      ${kind === 'allergy' && items.length && confirmed ? `<p class="s" style="margin:0">${esc(cfg.none)}. <button class="link" data-none-off="allergy">Quitar la confirmación</button></p>` : ''}
       ${past.length ? `<details class="hist"><summary>Suspendidos (${past.length})</summary><ul class="xl">${listOf(past)}</ul></details>` : ''}</section>`;
   };
   const chips = ['todo', ...Object.keys(EV_KIND)];
@@ -986,7 +991,8 @@ async function renderClinical() {
   const sec = SECTIONS.some(x => x[0] === S.expSec) ? S.expSec : 'res';
   const count = { problem: c.problems.filter(p => p.status !== 'Resuelta').length, medication: c.medications.filter(m => m.active).length, supplement: c.supplements.filter(m => m.active).length, allergy: c.allergies.length,
     family: c.family.length, vaccine: c.vaccines.length, procedure: c.procedures.length, consultation: c.consultations.length };
-  const pending = HAS_NONE.filter(k => !count[k] && !c.none.includes(k));  // sin datos y sin confirmar que «no hay»
+  const drugAllergies = c.allergies.filter(a => !a.category || a.category === 'Medicamento').length;
+  const pending = HAS_NONE.filter(k => !(k === 'allergy' ? drugAllergies : count[k]) && !c.none.includes(k));  // sin datos y sin confirmar que «no hay»
   const profileEmpty = !hl.profile.height_cm && !hl.profile.smoking && !hl.profile.alcohol && !hl.profile.exercise;
   const timelineHtml = (list, title) => `<section class="card xc"><h3>${title}</h3>
       ${title === 'Historial cronológico' ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${chips.map(k => `<button class="chip" data-f="${k}" aria-pressed="${k === S.clinFilter}">${k === 'todo' ? 'Todo' : EV_KIND[k]}</button>`).join('')}</div>` : ''}
@@ -1002,13 +1008,13 @@ async function renderClinical() {
     const recent = c.timeline.slice(0, 5).map(e => `<li class="xev"><span class="s">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</span><span class="ty">${e.modality && e.kind !== 'imagen' ? esc(e.modality) : EV_KIND[e.kind]}</span><span class="xet">${esc(e.title)}</span></li>`).join('');
     return `${pending.length || profileEmpty ? `<section class="card xc xpend"><h3>Por completar</h3><p class="tip" style="margin:0">Estas secciones están vacías. Agrega lo que aplique o confirma que no hay nada.</p>
         ${profileEmpty ? '<div class="xprow"><span><b>Perfil de salud</b> <span class="s">talla, tabaquismo, alcohol, ejercicio… ayudan a orientarte mejor</span></span><span><button class="mini" data-xs="per">Completar</button></span></div>' : ''}
-        ${pending.map(k => `<div class="xprow"><span><b>${esc(CLIN[k].title)}</b> <span class="s">sin registrar</span></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini" data-add="${k}">Agregar</button><button class="mini" data-none="${k}">${esc(CLIN[k].none)}</button></span></div>`).join('')}</section>` : ''}
+        ${pending.map(k => `<div class="xprow"><span><b>${esc(CLIN[k].pendingLabel || CLIN[k].title)}</b> <span class="s">sin registrar</span></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini" data-add="${k}">Agregar</button><button class="mini" data-none="${k}">${esc(CLIN[k].none)}</button></span></div>`).join('')}</section>` : ''}
       <div class="xdash">
         <section class="card xc">${head('Perfil de salud', 'per')}${basicsHtml()}</section>
         <section class="card xc">${head('Padecimientos activos', 'prob')}${mini(act, p => `<li><b>${esc(p.name)}</b> <span class="s">${esc(p.status)}${p.links.length ? ` · ${p.links.length} ${p.links.length === 1 ? 'estudio o tratamiento ligado' : 'estudios o tratamientos ligados'}` : ''}</span></li>`, 'prob', 'Sin padecimientos activos.')}</section>
         <section class="card xc">${head('Medicamentos actuales', 'med')}${mini(groupMeds(meds).map(g => g[0]), m => `<li><b>${esc(m.brand || m.name)}</b>${m.active_ingredient && m.brand ? ` <span class="s">· ${esc(m.active_ingredient)}</span>` : ''}${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'med', 'Sin medicamentos actuales.')}</section>
         <section class="card xc">${head('Suplementos actuales', 'sup')}${mini(c.supplements.filter(m => m.active), m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'sup', 'Sin suplementos registrados.')}</section>
-        <section class="card xc">${head('Alergias', 'alg')}${mini(c.allergies, a => `<li><b>${esc(a.substance)}</b>${a.reaction ? ` <span class="s">· ${esc(a.reaction)}</span>` : ''}</li>`, 'alg', c.none.includes('allergy') ? 'Sin alergias conocidas.' : 'Sin registrar.')}</section>
+        <section class="card xc">${head('Alergias', 'alg')}${mini(c.allergies, a => `<li><b>${esc(a.substance)}</b> <span class="s">· ${esc((a.category || 'Medicamento').toLowerCase())}${a.reaction ? ' · ' + esc(a.reaction) : ''}</span></li>`, 'alg', c.none.includes('allergy') ? 'Sin alergias a medicamentos conocidas.' : 'Sin registrar.')}</section>
         <section class="card xc">${head('Últimos eventos', 'his')}${recent ? `<ul class="xmini">${recent}</ul>` : '<p class="tip" style="margin:0">Todavía no hay eventos.</p>'}</section>
       </div>`;
   };
@@ -1260,7 +1266,7 @@ async function renderImaging() {
     let added = 0;
     for (const r of picked) {
       if (have.has(r.name.toLowerCase())) continue;
-      await api(`/api/people/${S.subject}/clinical/allergy`, { method: 'POST', body: { substance: r.name, reaction: `Prueba cutánea del ${fd(x.performed_on)}: grado ${r.grade}` } }); added++;
+      await api(`/api/people/${S.subject}/clinical/allergy`, { method: 'POST', body: { substance: r.name, category: 'Ambiental', reaction: `Prueba cutánea del ${fd(x.performed_on)}: grado ${r.grade}` } }); added++;
     }
     toast(added ? `Agregué ${added} ${added === 1 ? 'alergia' : 'alergias'} al expediente.` : 'Esas alergias ya estaban en tu expediente.');
   });
