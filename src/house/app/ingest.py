@@ -15,7 +15,7 @@ import threading
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from ..extract import Row, extract_document
+from ..extract import Row, convert_ref, extract_document
 from ..normalize import ranges, terminology
 from ..privacy import Anonymizer
 from ..providers import Router
@@ -253,7 +253,8 @@ def confirm_review(
             raise IngestError(422, f"«{r['printed_name']}» no tiene valor.")
         ref = ranges.parse_ref_full(r["ref_printed"])
         if value_num is not None:
-            status = ranges.classify_ref(value_num, ref) if not r["converted"] else r["status"]
+            ref = convert_ref(key, ref, r["unit_printed"], analyte.unit)  # mismo criterio que el valor
+            status = ranges.classify_ref(value_num, ref)
         else:
             status = ranges.classify_text(value_text, r["ref_printed"])
         db.execute(
@@ -343,3 +344,31 @@ def render_page(data: bytes, n: int, resolution: int = 110) -> bytes:
         buf = io.BytesIO()
         pdf.pages[n - 1].to_image(resolution=resolution).original.save(buf, "PNG")
         return buf.getvalue()
+
+
+def repair_references(db: sqlite3.Connection) -> int:
+    """Recalcula rango y estado de lo ya confirmado a partir de lo impreso (idempotente).
+
+    Corrige resultados guardados antes de que el rango se convirtiera junto con el valor
+    (p. ej. PCR: valor en mg/L con el rango "< 0.5" que era mg/dL). Devuelve cuántos cambió.
+    """
+    changed = 0
+    rows = db.execute(
+        "SELECT id, analyte_key, value_num, unit, unit_printed, ref_printed, ref_low, ref_high, status "
+        "FROM observation WHERE value_num IS NOT NULL AND ref_printed IS NOT NULL"
+    ).fetchall()
+    for r in rows:
+        analyte = terminology.BY_KEY.get(r["analyte_key"])
+        if analyte is None:
+            continue
+        ref = convert_ref(
+            r["analyte_key"], ranges.parse_ref_full(r["ref_printed"]), r["unit_printed"], analyte.unit
+        )
+        status = ranges.classify_ref(r["value_num"], ref)
+        if (ref.low, ref.high, status) != (r["ref_low"], r["ref_high"], r["status"]):
+            db.execute(
+                "UPDATE observation SET ref_low = ?, ref_high = ?, status = ? WHERE id = ?",
+                (ref.low, ref.high, status, r["id"]),
+            )
+            changed += 1
+    return changed

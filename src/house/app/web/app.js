@@ -264,6 +264,8 @@ function renderSummaryDetail(series) {
   const box = document.getElementById('detail');
   if (!S.sel) { box.hidden = true; return; }
   const pts = series[S.sel].filter(o => o.value_num != null), l = pts[pts.length - 1];
+  // Rango del estudio más reciente que lo traiga (algunos laboratorios no lo imprimen para todo).
+  const refPt = [...pts].reverse().find(o => o.ref_low != null || o.ref_high != null) || null;
   const methods = [...new Map(pts.filter(o => o.method).map(o => [normMethod(o.method), o.method])).values()];
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>${esc(l.unit)} · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
@@ -273,16 +275,24 @@ function renderSummaryDetail(series) {
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
       ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${fnum(o.value_num)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}</td><td>${esc(o.document_title)}</td><td>${esc(o.method || '—')}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${l.ref_low != null || l.ref_high != null ? `<span><i class="lg-band"></i>Rango de referencia del último estudio: ${esc(refText(l))}</span>` : ''}</div>`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${refPt ? `<span><i class="lg-band"></i>Rango de referencia${refPt === l ? ' del último estudio' : ` (del estudio del ${fd(refPt.collected_on)}; el último no lo trae)`}: ${esc(bandText(refPt))}</span>` : ''}</div>`;
   box.hidden = false;
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
   document.getElementById('tt').onclick = () => { S.view = 't'; renderSummaryDetail(series); };
-  if (S.view === 'g') drawChart(pts);
+  if (S.view === 'g') drawChart(pts, refPt);
 }
 
 function niceStep(range, n) { const raw = range / n, m = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / m; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * m; }
 
-function drawChart(pts) {
+function bandText(o) {
+  const f = v => fnum(v) + ' ' + o.unit, printed = o.ref_printed || '';
+  const strictHigh = /<(?!\s*=)/.test(printed), strictLow = />(?!\s*=)/.test(printed);
+  if (o.ref_low != null && o.ref_high != null) return `${fnum(o.ref_low)} a ${f(o.ref_high)}`;
+  if (o.ref_high != null) return `${strictHigh ? 'menos de' : 'hasta'} ${f(o.ref_high)}`;
+  return `${strictLow ? 'más de' : 'desde'} ${f(o.ref_low)}`;
+}
+
+function drawChart(pts, refPt) {
   const box = document.getElementById('chart');
   const W = Math.max(box.clientWidth, 280), H = W < 520 ? 250 : 320;
   const m = { l: W < 520 ? 40 : 48, r: W < 520 ? 52 : 64, t: 14, b: 42 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
@@ -292,7 +302,7 @@ function drawChart(pts) {
   const ordinal = pts.length <= 12;
   let t0 = ts(pts[0].collected_on), t1 = ts(l.collected_on);
   const padT = Math.max((t1 - t0) * 0.04, 60 * 864e5); t0 -= padT; t1 += padT;
-  const lims = [l.ref_low, l.ref_high].filter(v => v != null);
+  const lims = refPt ? [refPt.ref_low, refPt.ref_high].filter(v => v != null) : [];
   let mn = Math.min(...vals, ...lims), mx = Math.max(...vals, ...lims);
   const pad = (mx - mn) * 0.18 || Math.abs(mx) * 0.2 || 1; mn -= pad; mx += pad;
   const step = niceStep(mx - mn, 4);
@@ -301,7 +311,7 @@ function drawChart(pts) {
   const X = ordinal ? i => m.l + iw * (i + 0.5) / pts.length : i => m.l + (ts(pts[i].collected_on) - t0) / (t1 - t0) * iw;
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de ${esc(name(S.sel))}">`;
   if (lims.length) {
-    const top = Y(l.ref_high ?? mx), bot = Y(l.ref_low ?? mn);
+    const top = Y(refPt.ref_high ?? mx), bot = Y(refPt.ref_low ?? mn);
     s += `<rect x="${m.l}" y="${top}" width="${iw}" height="${Math.max(0, bot - top)}" fill="var(--band)" stroke="var(--band-line)" stroke-dasharray="3 3"/>`;
   }
   for (let v = mn; v <= mx + 1e-9; v += step) s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" opacity=".7"/><text class="ax" x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${Number(v.toFixed(3))}</text>`;

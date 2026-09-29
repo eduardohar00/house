@@ -157,13 +157,28 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
                 lo, hi = _PLAUSIBLE.get(analyte.key, (0, float("inf")))
                 if not lo <= row.value <= hi:
                     row.problems.append(Provenance.IMPLAUSIBLE)
-                ref = ranges.parse_ref_full(r.ref_text)
+                # El rango va en la misma unidad que el valor: si el valor se convirtió, el rango también.
+                ref = convert_ref(analyte.key, ranges.parse_ref_full(r.ref_text), r.unit_text, analyte.unit)
                 row.ref_low, row.ref_high = ref.low, ref.high
-                if not row.converted:
-                    row.status = ranges.classify_ref(row.value, ref)
+                row.status = ranges.classify_ref(row.value, ref)
         rows.append(row)
     _mark_repeats(rows)
     return rows
+
+
+def convert_ref(key: str, ref: ranges.Ref, unit_text: str | None, canonical_unit: str) -> ranges.Ref:
+    """Lleva los límites de un rango a la unidad canónica, igual que el valor ("< 0.5 mg/dL" -> "< 5 mg/L").
+
+    Si algún límite no se puede convertir, se descarta el rango completo antes que mostrar uno equivocado.
+    """
+    if units.same_unit(key, unit_text, canonical_unit):
+        return ref
+    try:
+        lo = None if ref.low is None else units.to_canonical(key, ref.low, unit_text, canonical_unit)[0]
+        hi = None if ref.high is None else units.to_canonical(key, ref.high, unit_text, canonical_unit)[0]
+    except units.UnknownUnit:
+        return ranges.Ref()
+    return ranges.Ref(lo, hi, ref.low_strict, ref.high_strict)
 
 
 def _mark_repeats(rows: list[Row]) -> None:

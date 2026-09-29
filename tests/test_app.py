@@ -322,3 +322,36 @@ def test_reread_pending_document(lab_client):
         json={"collected_on": "2026-03-01", "decisions": [{"row_id": rows["glucose"], "accept": True}]},
     )
     assert c.post(f"/api/documents/{doc_id}/reread", headers=H).status_code == 409
+
+
+def test_reference_range_is_converted_with_the_value_and_old_rows_are_repaired(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    lines = [
+        "Fecha de Toma : 01/03/2026",
+        "Proteína C Reactiva ultrasensible 0.114 < 0.5 mg/dL",
+        "Glucosa 90 70 - 99 mg/dL",
+    ]
+    doc_id = upload(c, me, make_pdf(lines)).json()["document_id"]
+    rows = {r["analyte_key"]: r for r in c.get(f"/api/documents/{doc_id}").json()["rows"]}
+    crp = rows["crp_hs"]
+    assert (crp["value_num"], crp["unit"], crp["ref_high"], crp["status"]) == (1.14, "mg/L", 5.0, "ok")
+    decisions = [{"row_id": r["id"], "accept": True} for r in rows.values()]
+    c.post(
+        f"/api/documents/{doc_id}/review",
+        headers=H,
+        json={"collected_on": "2026-03-01", "decisions": decisions},
+    )
+    obs = {o["analyte_key"]: o for o in c.get(f"/api/people/{me}/observations").json()}
+    assert (obs["crp_hs"]["ref_high"], obs["crp_hs"]["status"]) == (5.0, "ok")
+
+    # Un resultado guardado con el rango sin convertir (como antes) se repara al reiniciar.
+    db = c.app.state.db
+    db.execute("UPDATE observation SET ref_high = 0.5, status = NULL WHERE analyte_key = 'crp_hs'")
+    from house.app import ingest
+
+    assert ingest.repair_references(db) == 1
+    row = db.execute("SELECT ref_high, status FROM observation WHERE analyte_key = 'crp_hs'").fetchone()
+    assert (row["ref_high"], row["status"]) == (5.0, "ok")
+    assert ingest.repair_references(db) == 0  # idempotente

@@ -131,6 +131,7 @@ def create_app(
     data_dir = data_dir or store.default_data_dir()
     db = store.connect(data_dir)
     db.executescript(ingest.SCHEMA)
+    ingest.repair_references(db)
     fixed_router = router
     vault = Vault(data_dir / "originals", key_provider)
     app = FastAPI(title="House", docs_url=None, redoc_url=None, openapi_url=None)
