@@ -501,3 +501,10 @@ def test_questions_lean_on_the_last_integral_review_but_the_review_itself_does_n
         and "2026-09-01" in spy.calls[-1]["system"]
     )
     assert r["usage"]["cost_usd"] == 0.5  # el costo de cada respuesta llega a la pantalla
+
+
+def test_las_instrucciones_de_la_revision_caben_en_el_limite():
+    from house.app import assistant, reviews
+
+    assert len(reviews.PROMPT) <= assistant.DEEP_MAX_CHARS
+    assert assistant.check_messages([{"role": "user", "content": reviews.PROMPT}], assistant.DEEP_MAX_CHARS)

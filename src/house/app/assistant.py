@@ -22,6 +22,7 @@ from . import bodyscan, health, reviews
 
 MAX_TURNS = 20
 MAX_CHARS = 2000
+DEEP_MAX_CHARS = 8000  # solo lo usa la revisión integral con sus propias instrucciones
 
 REFERENCE_SOURCE = {
     "printed": "laboratorio",
@@ -625,7 +626,7 @@ def _has_claims(text: str) -> bool:
     return bool(_CLAIM.search(text))
 
 
-def check_messages(messages: list[dict]) -> list[dict]:
+def check_messages(messages: list[dict], max_chars: int = MAX_CHARS) -> list[dict]:
     if not messages or messages[-1].get("role") != "user":
         raise AssistantError(422, "Escribe tu pregunta.")
     if len(messages) > MAX_TURNS:
@@ -635,8 +636,8 @@ def check_messages(messages: list[dict]) -> list[dict]:
         role, text = m.get("role"), str(m.get("content") or "").strip()
         if role not in ("user", "assistant") or not text:
             raise AssistantError(422, "Mensaje inválido.")
-        if len(text) > MAX_CHARS:
-            raise AssistantError(422, f"Cada mensaje puede tener hasta {MAX_CHARS} caracteres.")
+        if len(text) > max_chars:
+            raise AssistantError(422, f"Cada mensaje puede tener hasta {max_chars} caracteres.")
         clean.append({"role": role, "content": text})
     return clean
 
@@ -653,7 +654,9 @@ def ask(
 ) -> dict:
     """Responde con el expediente y guías oficiales. `deep` = revisión integral (más razonamiento y búsquedas)."""
     today = today or date.today()
-    clean = check_messages(messages)
+    clean = check_messages(
+        messages, DEEP_MAX_CHARS if deep else MAX_CHARS
+    )  # la revisión usa su propio texto largo
     box = Toolbox(db, person, names, today)
     system = f"{SYSTEM}\nPersona: {box.person_context()}.\nFecha de hoy: {today.isoformat()}."
     last = None if deep else reviews.latest_done(db, person["id"])
