@@ -852,10 +852,30 @@ async function renderClinical() {
       ${list.map(g => `<details class="hist vgrp" ${g.length === 1 ? 'open' : ''}><summary><b>${esc(g[0].name)}</b> · ${g.length} ${g.length === 1 ? 'dosis' : 'dosis'} · última ${fd(g[0].given_on)}</summary>
         <ul class="xl">${g.map(v => row('vaccine', v, dose)).join('')}</ul></details>`).join('')}</section>`;
   };
+  // Antecedentes familiares agrupados por familiar (madre, padre, abuelos…); una condición que se repite se marca.
+  const familyCard = (cfg, items) => {
+    const order = S.sug.relative || [];
+    const rank = r => { const i = order.indexOf(r); return i < 0 ? order.length : i; };
+    const groups = new Map();
+    items.forEach(f => (groups.get(f.relative) || groups.set(f.relative, []).get(f.relative)).push(f));
+    const times = new Map();
+    items.forEach(f => { const k = plainName(f.condition); times.set(k, new Set([...(times.get(k) || []), f.relative])); });
+    const list = [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], 'es'));
+    const repeated = [...new Set(items.filter(f => times.get(plainName(f.condition)).size > 1).map(f => f.condition))];
+    const chip = f => {
+      const rep = times.get(plainName(f.condition)).size > 1;
+      return `<span class="lchip ${rep ? 'rep' : ''}" ${rep ? `title="Se repite en ${times.get(plainName(f.condition)).size} familiares"` : ''}><span class="lt">${esc(f.condition)}</span>
+        <button data-edit="family:${f.id}" title="Editar" aria-label="Editar ${esc(f.condition)}">✎</button><button data-del="family:${f.id}" title="Quitar" aria-label="Quitar ${esc(f.condition)}">✕</button></span>`;
+    };
+    return `<section class="card xc"><h3>${cfg.title}<button class="mini add-x" data-add="family">${cfg.add}</button></h3>
+      <div class="fam">${list.map(([rel, fs]) => `<div class="famrow"><span class="famrel">${esc(rel)}</span><div class="plw" style="margin:0">${fs.map(chip).join('')}</div></div>`).join('')}</div>
+      ${repeated.length ? `<p class="tip" style="margin:8px 0 0">Se repite en más de un familiar: <b>${repeated.map(esc).join(', ')}</b>.</p>` : ''}</section>`;
+  };
   const card = kind => {
     const cfg = CLIN[kind]; let items = itemsOf(kind), past = [];
     if (kind === 'medication') { past = items.filter(m => !m.active); items = items.filter(m => m.active); }
     if (kind === 'vaccine' && items.length) return vaccineCard(cfg, items);
+    if (kind === 'family' && items.length) return familyCard(cfg, items);
     const confirmed = c.none.includes(kind);
     const empty = items.length ? '' : HAS_NONE.includes(kind)
       ? (confirmed ? `<div class="alg none">${esc(cfg.none)}</div><button class="link" data-none-off="${kind}">Quitar la confirmación</button>`
