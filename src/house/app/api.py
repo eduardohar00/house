@@ -325,8 +325,9 @@ def create_app(
 
     def load_observations(person_id: int) -> list[dict]:
         rows = db.execute(
-            "SELECT o.analyte_key, o.printed_name, o.value_num, o.value_text, o.unit, o.ref_low, o.ref_high, "
-            "o.ref_printed, o.status, o.method, o.collected_on, o.document_id, o.entered_manually, "
+            "SELECT o.analyte_key, o.printed_name, o.value_num, o.qualifier, o.value_text, o.unit, "
+            "o.ref_low, o.ref_high, o.ref_printed, o.status, o.method, o.collected_on, o.document_id, "
+            "o.entered_manually, "
             "d.title AS document_title "
             "FROM observation o JOIN document d ON d.id = o.document_id WHERE o.person_id = ? "
             "ORDER BY o.collected_on, o.analyte_key",

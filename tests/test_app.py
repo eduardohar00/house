@@ -488,3 +488,28 @@ def test_migration_adds_manual_flag_to_existing_observation_table(tmp_path):
 def test_screen_files_are_always_revalidated_by_the_browser(client):
     for path in ("/", "/app.js", "/styles.css"):
         assert client.get(path).headers["cache-control"] == "no-cache"
+
+
+def test_censored_value_survives_review_and_repair(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    lines = [
+        "Informe de Resultados de Laboratorio",
+        "Fecha de Toma : 01/03/2026",
+        "PROCALCITONINA < 0.02 * ng/mL 0.00 - 0.50",
+    ]
+    doc_id = upload(c, me, make_pdf(lines)).json()["document_id"]
+    row = c.get(f"/api/documents/{doc_id}").json()["rows"][0]
+    assert (row["qualifier"], row["value_num"], row["status"]) == ("<", 0.02, "ok")
+    c.post(
+        f"/api/documents/{doc_id}/review",
+        headers=H,
+        json={"collected_on": "2026-03-01", "decisions": [{"row_id": row["id"], "accept": True}]},
+    )
+    obs = c.get(f"/api/people/{me}/observations").json()[0]
+    assert (obs["qualifier"], obs["value_num"], obs["status"]) == ("<", 0.02, "ok")
+    from house.app import ingest
+
+    assert ingest.repair_references(c.app.state.db) == 0  # sigue igual: el signo se respeta al reparar
+    c.post(f"/api/documents/{doc_id}/review", headers=H, json={"collected_on": "2026-03-01", "decisions": []})

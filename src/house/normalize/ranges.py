@@ -67,6 +67,22 @@ def classify(
     return "ok"
 
 
+def classify_censored(qualifier: str, bound: float, ref: Ref) -> Status | None:
+    """Estado de un valor "menor que" (<) o "mayor que" (>) el límite de detección del método.
+
+    "< 0.02" con rango 0 a 0.5: el valor real está entre 0 y 0.02, dentro de rango. Si con el límite no
+    alcanza para saberlo, no hay estado (mejor que afirmar algo que el laboratorio no midió)."""
+    if ref.low is None and ref.high is None:
+        return None
+    if qualifier.startswith("<"):
+        if ref.low is not None and bound <= ref.low:
+            return "low"
+        return "ok" if ref.high is None or bound <= ref.high else None
+    if ref.high is not None and bound >= ref.high:
+        return "high"
+    return "ok" if ref.low is None or bound >= ref.low else None
+
+
 def classify_ref(value: float, ref: Ref) -> Status | None:
     """Estado contra un rango; sin ningún límite no hay estado (no es lo mismo que "en rango")."""
     if ref.low is None and ref.high is None:

@@ -35,6 +35,7 @@ CREATE TABLE observation (
   printed_name  TEXT NOT NULL,                       -- tal como aparecía en el documento
   value_num     REAL,                                -- en unidad canónica
   value_text    TEXT,                                -- resultado de texto ("Negativo", "Ausentes")
+  qualifier     TEXT,                                -- "<" o ">": el valor es un límite del método, no una medida
   unit          TEXT NOT NULL,
   value_printed TEXT NOT NULL,                       -- lo impreso, para auditar conversiones
   unit_printed  TEXT,

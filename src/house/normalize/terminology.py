@@ -558,6 +558,14 @@ _BY_SECTION = {
         "leucocitos": "urine_wbc_micro",
         "eritrocitos": "urine_rbc_micro",
     },
+    "heces": {
+        "ph": "stool_ph",
+        "color": "stool_color",
+        "consistencia": "stool_consistency",
+        "sangre": "stool_blood",
+        "eritrocitos": "stool_rbc",
+        "leucocitos": "stool_wbc",
+    },
     "cistatina": {
         "tasa de filtracion estimada": "egfr_cys",
         "tasa de filtracion glomerular estimada": "egfr_cys",
@@ -582,8 +590,67 @@ def section_context(section: str | None) -> list[str]:
         return ["semen"]
     if "cistatina" in s:
         return ["cistatina"]
+    if "coprolog" in s or "heces" in s:
+        return ["heces"]
     return []
 
+
+# Coagulación, procalcitonina, COVID, heces y panel molecular gastrointestinal (estudios de 2021-2026).
+_PATHOGENS = (
+    ("campylobacter", "Campylobacter", ()),
+    ("c_difficile", "Clostridium difficile (toxina A/B)", ("clostridium difficile toxina a b",)),
+    ("plesiomonas", "Plesiomonas shigelloides", ()),
+    ("salmonella", "Salmonella", ()),
+    ("vibrio", "Vibrio", ()),
+    ("vibrio_cholerae", "Vibrio cholerae", ()),
+    ("yersinia", "Yersinia enterocolitica", ()),
+    ("eaec", "E. coli enteroagregativa (EAEC)", ("e coli enteroagregativa eaec",)),
+    ("epec", "E. coli enteropatogénica (EPEC)", ("e coli enteropatogenica epec",)),
+    ("etec", "E. coli enterotoxigénica (ETEC)", ("e coli enterotoxigenica lt st etec",)),
+    ("stec", "E. coli productora de toxina Shiga (STEC)", ("e coli stx1 stx2 stec",)),
+    ("e_coli_o157", "E. coli O157", ("e coli o157",)),
+    ("eiec", "Shigella / E. coli enteroinvasiva (EIEC)", ("shigella e coli enteroinvasiva eiec",)),
+    ("cryptosporidium", "Cryptosporidium", ()),
+    ("cyclospora", "Cyclospora cayetanensis", ()),
+    ("entamoeba", "Entamoeba histolytica", ()),
+    ("giardia_pcr", "Giardia lamblia (PCR)", ("giardia lamblia",)),
+    ("adenovirus", "Adenovirus F40/41", ("adenovirus f40 41",)),
+    ("astrovirus", "Astrovirus", ()),
+    ("norovirus", "Norovirus GI/GII", ("norovirus gi gii",)),
+    ("rotavirus", "Rotavirus A", ("rotavirus a",)),
+    ("sapovirus", "Sapovirus", ()),
+)
+_HOSPITAL: tuple[Analyte, ...] = (
+    _a("pt", "Tiempo de protrombina", "", "s", "coagulacion", "tiempo de protrombina", "tp"),
+    _a("inr", "INR", "", "", "coagulacion", "inr"),
+    _a("aptt", "Tiempo de tromboplastina parcial activada", "", "s", "coagulacion",
+       "tiempo de tromboplastina parcial activada", "ttpa"),
+    _a("tt", "Tiempo de trombina", "", "s", "coagulacion", "tiempo de trombina", "tiempo de trombina tt"),
+    _a(
+        "fibrinogen", "Fibrinógeno (Clauss)", "", "mg/dL", "coagulacion", "fibrinogeno de clauss"
+    ),
+    _a("procalcitonin", "Procalcitonina", "", "ng/mL", "infecciosas", "procalcitonina"),
+    _q("sars_cov2_pcr", "SARS-CoV-2 (PCR)", "infecciosas", "sars cov 2", "sars cov2"),
+    _a("stool_ph", "pH (heces)", "", "", "heces"),
+    _q("stool_color", "Color (heces)", "heces"),
+    _q("stool_consistency", "Consistencia (heces)", "heces", "consistencia"),
+    _q("stool_blood", "Sangre (heces)", "heces"),
+    _q("stool_occult_blood", "Sangre oculta (heces)", "heces", "sangre oculta"),
+    _q("stool_reducing_sugars", "Azúcares reductores (heces)", "heces", "azucares reductores"),
+    _q("stool_food_remains", "Restos alimenticios (heces)", "heces", "restos alimenticios"),
+    _q("stool_mucus", "Moco (heces)", "heces", "moco"),
+    _q("stool_macro_parasites", "Parásitos macroscópicos (heces)", "heces", "parasitos macroscopicos"),
+    _q("stool_rbc", "Eritrocitos (heces)", "heces"),
+    _q("stool_wbc", "Leucocitos (heces)", "heces"),
+    _q("stool_muscle_fibers", "Fibras musculares (heces)", "heces", "fibras musculares"),
+    _q("stool_vegetable_fibers", "Fibras vegetales (heces)", "heces", "fibras vegetales"),
+    _q("stool_epithelial", "Células epiteliales (heces)", "heces", "celulas epiteliales"),
+    _q("stool_micro_parasites", "Parásitos microscópicos (heces)", "heces", "parasitos microscopicos"),
+    _q("giardia_antigen", "Antígeno de Giardia en heces", "heces", "antigeno de giardia en heces"),
+    _q("calprotectin_stool", "Calprotectina en heces", "heces", "calprotectina en heces"),
+    _q("lactoferrin_stool", "Lactoferrina en heces", "heces", "lactoferrina en heces"),
+    *(_q(f"gi_{k}", f"{n} (PCR)" if "PCR" not in n else n, "infecciosas", *al, n) for k, n, al in _PATHOGENS),
+)  # fmt: skip
 
 # Otras formas de escribir análisis ya catalogados.
 _MORE_ALIASES = {
@@ -599,6 +666,8 @@ _MORE_ALIASES = {
     "rdw": ("ancho de distrib de eritrocitos cv",),
     "urine_sg": ("densidad",),
     "egfr": ("tasa de filtracion glomerular", "tasa de filtracion estimada"),
+    "magnesium": ("magnesio en sangre",),
+    "brucella": ("brucella abortus",),
     "hba1c": ("hemoglobina glicosilada a1c", "hemoglobina glucosilada a1c"),
     "vitamin_d": ("vitamina d 25 hidroxi", "25 hidroxi vitamina d", "vitamina d 25 hidroxi total"),
     "tibc": ("capacidad total de fijacion del hierro",),
@@ -609,7 +678,7 @@ _MORE_ALIASES = {
 
 CATALOG: tuple[Analyte, ...] = tuple(
     replace(a, aliases=a.aliases + _MORE_ALIASES.get(a.key, ()))
-    for a in _BASE + _EXTRA + _CHOPO + _QUALITATIVE
+    for a in _BASE + _EXTRA + _CHOPO + _QUALITATIVE + _HOSPITAL
 )
 
 # Mismo nombre impreso, distinto analito según la unidad (p. ej. albúmina en suero vs. mg/L,

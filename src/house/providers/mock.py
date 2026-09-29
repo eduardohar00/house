@@ -18,15 +18,20 @@ from .base import LLMRequest, LLMResponse
 # Acepta dos órdenes de columnas: "valor unidad referencia" y "valor referencia unidad" (Chopo).
 # Sin unidad impresa exige un intervalo de referencia; así no confunde números del nombre ("25-OH")
 # ni leyendas ("ALTO 200 - 499"). El "*" tras un valor fuera de rango se tolera.
-_UNIT = r"x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ0-9.]+(?:/[A-Za-zµμ0-9.]+)?|%|[fF][lL]|pg|UCT"
+_UNIT = r"x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ0-9.]+(?:/[A-Za-zµμ0-9.]+)?|%|[fF][lL]|pg|UCT|seg"
 _WORD_UNIT = r"días|dias|mL|cm|millones"
 _REF = r"[<>]\s*=?\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?"
 _LINE = re.compile(
-    r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?P<value>\d+(?:[.,]\d+)?)(?:\s*\*)?"
+    r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ]\S*(?:\s+\S+)*?)\s+(?:(?P<qual><=?|>=?)\s*)?(?P<value>\d+(?:[.,]\d+)?)(?:\s*\*)?"
     rf"(?:\s*(?P<unit>{_UNIT})(?:\s+(?P<ref>\S.*?))?"
     rf"|\s+(?P<ref_only>{_REF})(?:\s+(?P<unit_after>{_UNIT}|{_WORD_UNIT})(?:\s*\(.*\))?)?)\s*$"
 )
 # Unidad sola en el renglón siguiente (Chopo parte "4.70-5.80 / millones/µL").
+# "Campylobacter Ver Anexo" y, en el renglón siguiente, "NO DETECTADO" (paneles moleculares).
+_ANEXO = re.compile(r"^\s*(?P<name>[A-Za-zÁÉÍÓÚÑáéíóúñ][^\n]*?)\s+Ver\s+Anexo\s*$", re.I)
+# "Límite de referencia (Valor esperado en un paciente sano): Negativo": la referencia viene en otro renglón.
+_DETECTED = re.compile(r"^\s*(?:NO\s+)?DETECTAD[OA]\s*$", re.I)
+_REF_LINE = re.compile(r"(?:valor\s+esperado|l[ií]mite\s+de\s+referencia)[^:]*:\s*(?P<r>\S.*)$", re.I)
 _UNIT_LINE = re.compile(rf"^\s*(?:{_UNIT}|{_WORD_UNIT})\s*$")
 _DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 _SHORT_DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4}|\d{2})\b")
@@ -35,6 +40,17 @@ _SHORT_DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4}|\d{2})\b")
 _TEXT_RESULTS = sorted(
     (
         "no reactivo",
+        "no detectado",
+        "no detectada",
+        "detectado",
+        "detectada",
+        "cafe",
+        "liquida",
+        "semiliquida",
+        "blanda",
+        "semiblanda",
+        "formada",
+        "pastosa",
         "urato amorfo",
         "gris opalescente",
         "blanco grisaceo",
@@ -89,7 +105,9 @@ def _header(line: str) -> str | None:
 
 def _is_subsection(header: str) -> bool:
     p = _plain(header)
-    return p.startswith("examen ") and any(w in p for w in ("fisico", "quimico", "microscop"))
+    return (p.startswith("examen ") or p.startswith("analisis ")) and any(
+        w in p for w in ("fisico", "quimico", "microscop", "macroscop")
+    )
 
 
 def _text_row(line: str) -> dict | None:
@@ -97,7 +115,7 @@ def _text_row(line: str) -> dict | None:
     resultado de texto hay una cifra ('Bilirrubina 1 Negativo ó < 0.2'), la cifra es el valor."""
     if "," in line or not re.match(r"^\s*[A-Za-zÁÉÍÓÚÑáéíóúñ]", line):
         return None
-    toks = line.split()
+    toks = [t for t in line.split() if t != "*"]  # "*" = fuera del intervalo, según el laboratorio
     plain = [_plain(t) for t in toks]
     for k in range(1, len(toks)):
         for phrase in _TEXT_RESULTS:
@@ -113,6 +131,8 @@ def _text_row(line: str) -> dict | None:
                 value, rest = " ".join(toks[k : k + n]), toks[k + n :]
             if len(name) > 6 or len(rest) > 6 or re.search(r"[:<>=]", " ".join(name)):
                 return None
+            if len(" ".join(name)) < 3:
+                return None  # "NO DETECTADO" solo, sin nombre de análisis
             if not rest and not re.search(r"[a-záéíóúñ]", line):
                 return None  # "BIOMETRIA HEMATICA COMPLETA" es un encabezado, no un resultado
             unit = None
@@ -137,7 +157,7 @@ class BaselineRegexProvider:
     def complete_json(self, req: LLMRequest) -> LLMResponse:
         t0 = time.monotonic()
         rows, collected, registered, dated = [], None, None, None
-        major, sub = None, None
+        major, sub, skip_next = None, None, False
         lines = req.user.splitlines()
         for i, line in enumerate(lines):
             if collected is None and re.search(r"toma|recolecci|muestra", line, re.I):
@@ -159,9 +179,31 @@ class BaselineRegexProvider:
                     r["method"] = r["method"] or mm["m"]
                 continue
             section = f"{major} > {sub}" if major and sub else major
+            if skip_next:
+                skip_next = False
+                continue
+            if re.search(r"testigo", line, re.I):
+                continue  # valor del control del laboratorio, no es un resultado de la persona
+            if (an := _ANEXO.match(line)) and i + 1 < len(lines) and _DETECTED.match(lines[i + 1]):
+                rows.append(
+                    {
+                        "analyte_name": an["name"].strip(),
+                        "value_text": lines[i + 1].strip(),
+                        "unit_text": None,
+                        "ref_text": None,
+                        "qualifier": None,
+                        "evidence": f"{line.strip()}\n{lines[i + 1].strip()}",
+                        "section": section,
+                        "method": None,
+                    }
+                )
+                skip_next = True
+                continue
             m = _LINE.match(line) if ", " not in line else None  # ", ": texto explicativo
             if m and re.search(r"[<>=]", m.group("name")):
                 m = None  # "Leucocitos Negativo Negativo ó < 10 leu/uL": el 10 es la referencia
+            if m and m.group("qual") and _text_row(line):
+                m = None  # "Negativo ó < 10 leu/uL": el "<" es parte de la referencia
             if m and m.group("name").rstrip().endswith(":"):
                 m = None  # "Normal: 4.0% a 5.7%": leyenda de interpretación, no un resultado
             if m:
@@ -170,6 +212,7 @@ class BaselineRegexProvider:
                     "value_text": m.group("value"),
                     "unit_text": m.group("unit") or m.group("unit_after"),
                     "ref_text": (m.group("ref") or m.group("ref_only") or "").strip() or None,
+                    "qualifier": m.group("qual"),
                 }
             else:
                 row = _text_row(line)
@@ -186,7 +229,16 @@ class BaselineRegexProvider:
             if row:
                 if row["unit_text"] is None and i + 1 < len(lines) and _UNIT_LINE.match(lines[i + 1]):
                     row["unit_text"] = lines[i + 1].strip()
-                rows.append({**row, "evidence": line.strip(), "section": section, "method": None})
+                if i + 1 < len(lines) and re.match(r"^\s*\(testigo", lines[i + 1], re.I):
+                    continue  # "(TESTIGO)" en el renglón siguiente: es el control, no un resultado
+                if not row["ref_text"] and not _NUMBER.match(row["value_text"]):
+                    for nxt in lines[i + 1 : i + 8]:
+                        if ref := _REF_LINE.search(nxt):
+                            row["ref_text"] = ref["r"].strip()
+                            break
+                rows.append(
+                    {"qualifier": None, **row, "evidence": line.strip(), "section": section, "method": None}
+                )
             elif h := _header(line):
                 if _is_subsection(h):
                     sub = h

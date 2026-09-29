@@ -345,3 +345,90 @@ Urobilinógeno 1 Negativo ó < 1"""
         "urine_urobilinogen": (1.0, "mg/dL"),
     }
     assert unrecognized == []
+
+
+def test_censored_values_controls_panels_and_reference_on_another_line():
+    from house.bench.new_case import prefill_expected
+    from house.normalize import ranges
+
+    doc = """Fecha de Toma : 01/03/2026
+PROCALCITONINA < 0.02 * ng/mL 0.00 - 0.50
+TIEMPO DE PROTROMBINA 11.9 seg 10.0 - 13.9
+INR 0.98 0.80 - 1.20
+TIEMPO DE PROTROMBINA (TESTIGO) 12.2 seg
+TIEMPO DE TROMBOPLASTINA PARCIAL ACTIVADA 27.3 seg 24.0 - 40.0
+TIEMPO DE TROMBOPLASTINA PARCIAL ACTIVADA 30.9 seg
+(TESTIGO)
+PCR PERFIL MOLECULAR GASTROINTESTINAL
+Campylobacter Ver Anexo
+NO DETECTADO
+Salmonella Ver Anexo
+DETECTADO
+DETECCIÓN DE SARS CoV-2 RNA (COVID-19) POR RT-qPCR
+SARS CoV-2 Negativo
+(No Detectado)
+Límite de referencia (Valor esperado en un paciente sano): Negativo
+COPROLÓGICO
+CONSISTENCIA LÍQUIDA * BLANDA"""
+    exp, unrecognized = prefill_expected(doc)
+    got = {r["key"]: (r["value"], r["unit"]) for r in exp["results"]}
+    assert got == {
+        "procalcitonin": (0.02, "ng/mL"),
+        "pt": (11.9, "s"),
+        "inr": (0.98, ""),
+        "aptt": (27.3, "s"),
+        "gi_campylobacter": ("NO DETECTADO", ""),
+        "gi_salmonella": ("DETECTADO", ""),
+        "sars_cov2_pcr": ("Negativo", ""),
+        "stool_consistency": ("LÍQUIDA", ""),
+    }  # sin los valores "testigo" del laboratorio
+    assert unrecognized == []
+    r = ranges.parse_ref_full("0.00 - 0.50")
+    assert ranges.classify_censored("<", 0.02, r) == "ok"  # "< 0.02" dentro de 0 a 0.5
+    assert ranges.classify_censored("<", 0.9, r) is None  # no se puede saber: no se afirma
+    assert ranges.classify_censored(">", 0.6, r) == "high"
+    assert ranges.classify_censored("<", 0.5, ranges.parse_ref_full("1.0 - 5.0")) == "low"
+
+
+def test_censored_result_is_stored_with_its_sign_and_status(tmp_path):
+    from house.extract import process
+    from house.providers import LLMRequest
+    from house.providers.mock import BaselineRegexProvider
+    from house.schema import RawExtraction
+
+    line = "PROCALCITONINA < 0.02 * ng/mL 0.00 - 0.50"
+    raw = RawExtraction.model_validate(
+        BaselineRegexProvider()
+        .complete_json(LLMRequest(task="extract", system="", user=line, schema={}))
+        .data
+    )
+    (row,) = process(raw, line)
+    assert (row.key, row.value, row.qualifier, row.status, row.problems) == (
+        "procalcitonin",
+        0.02,
+        "<",
+        "ok",
+        [],
+    )
+    # una IA que copia el valor tal cual ("< 0.02") también queda bien
+    raw2 = RawExtraction.model_validate(
+        {
+            "document_type": "laboratorio",
+            "collected_on": None,
+            "lab_name": None,
+            "rows": [
+                {
+                    "analyte_name": "PROCALCITONINA",
+                    "value_text": "< 0.02",
+                    "unit_text": "ng/mL",
+                    "ref_text": "0.00 - 0.50",
+                    "evidence": line,
+                    "section": None,
+                    "method": None,
+                    "qualifier": None,
+                }
+            ],
+        }
+    )
+    (row2,) = process(raw2, line)
+    assert (row2.value, row2.qualifier, row2.status) == (0.02, "<", "ok")

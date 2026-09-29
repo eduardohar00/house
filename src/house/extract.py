@@ -52,6 +52,7 @@ class Row:
     ref_text: str | None = None
     section: str | None = None
     method: str | None = None  # distintos métodos pueden no ser comparables entre sí
+    qualifier: str | None = None  # "<" o ">": el valor es un límite del método, no una medida exacta
     ref_low: float | None = None
     ref_high: float | None = None
     status: str | None = None
@@ -128,10 +129,17 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
             section=r.section,
             method=r.method,
         )
-        if not _grounded(r.evidence, r.value_text, sent_text):
+        value_text = r.value_text
+        qualifier = (r.qualifier or "").strip() or None
+        if m := re.match(
+            r"^\s*(<=?|>=?)\s*(\d+(?:[.,]\d+)?)\s*$", value_text
+        ):  # "< 0.02" tal cual lo copió la IA
+            qualifier, value_text = m.group(1), m.group(2)
+        row.qualifier = qualifier
+        if not _grounded(r.evidence, value_text, sent_text):
             row.problems.append(Provenance.NOT_GROUNDED)
         analyte = terminology.match_analyte(r.analyte_name, r.unit_text, r.section)
-        value = _to_float(r.value_text)
+        value = _to_float(value_text)
         if analyte is None:
             row.problems.append(Provenance.UNKNOWN_ANALYTE)
         else:
@@ -160,7 +168,11 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
                 # El rango va en la misma unidad que el valor: si el valor se convirtió, el rango también.
                 ref = convert_ref(analyte.key, ranges.parse_ref_full(r.ref_text), r.unit_text, analyte.unit)
                 row.ref_low, row.ref_high = ref.low, ref.high
-                row.status = ranges.classify_ref(row.value, ref)
+                row.status = (
+                    ranges.classify_censored(qualifier, row.value, ref)
+                    if qualifier
+                    else ranges.classify_ref(row.value, ref)
+                )
         rows.append(row)
     _mark_repeats(rows)
     return rows

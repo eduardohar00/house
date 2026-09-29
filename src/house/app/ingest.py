@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS extraction_row (
   status TEXT, method TEXT, section TEXT,
   evidence      TEXT NOT NULL,
   problems      TEXT NOT NULL,                     -- JSON: motivos para revisar con cuidado
-  converted     INTEGER NOT NULL DEFAULT 0
+  converted     INTEGER NOT NULL DEFAULT 0,
+  qualifier     TEXT                               -- "<" o ">" impreso antes del valor
 );
 """
 
@@ -78,10 +79,15 @@ def migrate_imaging(db: sqlite3.Connection) -> None:
 
 
 def migrate_observation(db: sqlite3.Connection) -> None:
-    """Agrega a `observation` la marca de resultado escrito a mano (bases anteriores)."""
+    """Agrega a `observation` la marca de resultado escrito a mano y el signo < / > (bases anteriores)."""
     have = {r["name"] for r in db.execute("PRAGMA table_info(observation)")}
     if have and "entered_manually" not in have:
         db.execute("ALTER TABLE observation ADD COLUMN entered_manually INTEGER NOT NULL DEFAULT 0")
+    if have and "qualifier" not in have:
+        db.execute("ALTER TABLE observation ADD COLUMN qualifier TEXT")
+    have_rows = {r["name"] for r in db.execute("PRAGMA table_info(extraction_row)")}
+    if have_rows and "qualifier" not in have_rows:
+        db.execute("ALTER TABLE extraction_row ADD COLUMN qualifier TEXT")
 
 
 class IngestError(Exception):
@@ -264,7 +270,7 @@ def _save_row(db: sqlite3.Connection, doc_id: int, r: Row) -> None:
     db.execute(
         "INSERT INTO extraction_row(document_id, analyte_key, printed_name, value_num, value_text, unit, "
         "value_printed, unit_printed, ref_low, ref_high, ref_printed, status, method, section, evidence, "
-        "problems, converted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "problems, converted, qualifier) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             doc_id,
             r.key,
@@ -283,6 +289,7 @@ def _save_row(db: sqlite3.Connection, doc_id: int, r: Row) -> None:
             r.evidence,
             json.dumps(r.problems),
             int(r.converted),
+            r.qualifier,
         ),
     )
 
@@ -319,11 +326,14 @@ def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
     }
 
 
-def _typed_value(analyte: terminology.Analyte, text: str) -> tuple[float | None, str | None]:
-    """Interpreta lo que la persona escribió según el tipo del análisis (número, texto o ambos)."""
+def _typed_value(analyte: terminology.Analyte, text: str) -> tuple[float | None, str | None, str | None]:
+    """Interpreta lo que la persona escribió según el tipo del análisis: (número, texto, signo < o >)."""
     t = (text or "").strip()
     if not t:
         raise IngestError(422, f"Falta el valor de «{analyte.name}».")
+    qualifier = None
+    if m := re.match(r"^(<=?|>=?)\s*(\d+(?:[.,]\d+)?)$", t):
+        qualifier, t = m.group(1), m.group(2)
     try:
         num: float | None = float(t.replace(",", "."))
     except ValueError:
@@ -331,17 +341,17 @@ def _typed_value(analyte: terminology.Analyte, text: str) -> tuple[float | None,
     if analyte.kind == "num":
         if num is None:
             raise IngestError(422, f"«{analyte.name}» es un número: escribe solo la cifra.")
-        return num, None
-    return (num, None) if num is not None else (None, t)
+        return num, None, qualifier
+    return (num, None, qualifier) if num is not None else (None, t, None)
 
 
 def _resolved(
     analyte: terminology.Analyte, text: str, unit_text: str | None, ref_text: str | None
-) -> tuple[float | None, str | None, str, ranges.Ref, str | None]:
-    """Valor en unidad canónica, su rango convertido y su estado, a partir de lo impreso o escrito."""
-    num, txt = _typed_value(analyte, text)
+) -> tuple[float | None, str | None, str, ranges.Ref, str | None, str | None]:
+    """Valor en unidad canónica, su rango convertido, su estado y su signo (< o >), desde lo impreso."""
+    num, txt, qualifier = _typed_value(analyte, text)
     if num is None:
-        return None, txt, analyte.unit, ranges.Ref(), ranges.classify_text(txt or "", ref_text)
+        return None, txt, analyte.unit, ranges.Ref(), ranges.classify_text(txt or "", ref_text), None
     unit_text = unit_text or analyte.unit
     if analyte.kind == "qual":  # un conteo en un análisis de texto: sin conversión
         value, unit = num, ""
@@ -353,15 +363,16 @@ def _resolved(
                 422, f"No sé convertir «{unit_text}» a {analyte.unit} para {analyte.name}."
             ) from None
     ref = convert_ref(analyte.key, ranges.parse_ref_full(ref_text), unit_text, analyte.unit)
-    return value, None, unit, ref, ranges.classify_ref(value, ref)
+    status = ranges.classify_censored(qualifier, value, ref) if qualifier else ranges.classify_ref(value, ref)
+    return value, None, unit, ref, status, qualifier
 
 
 def _insert_observation(db: sqlite3.Connection, doc: sqlite3.Row, **f) -> None:
     db.execute(
         "INSERT INTO observation(person_id, document_id, analyte_key, loinc, printed_name, value_num, "
         "value_text, unit, value_printed, unit_printed, ref_low, ref_high, ref_printed, method, status, "
-        "collected_on, confirmed_by, confirmed_at, entered_manually) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "collected_on, confirmed_by, confirmed_at, entered_manually, qualifier) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             doc["person_id"],
             doc["id"],
@@ -382,6 +393,7 @@ def _insert_observation(db: sqlite3.Connection, doc: sqlite3.Row, **f) -> None:
             f["reviewer_id"],
             f["now"],
             f["manual"],
+            f.get("qualifier"),
         ),
     )
 
@@ -417,7 +429,7 @@ def confirm_review(
         if key != r["analyte_key"]:
             # La persona indicó (o cambió) el análisis: el valor se interpreta de nuevo desde lo impreso.
             text = d.get("printed_value") or r["value_printed"]
-            value_num, value_text, unit, ref, status = _resolved(
+            value_num, value_text, unit, ref, status, qualifier = _resolved(
                 analyte, text, r["unit_printed"], r["ref_printed"]
             )
         else:
@@ -425,10 +437,15 @@ def confirm_review(
             value_text = d.get("value_text", r["value_text"])
             if value_num is None and not value_text:
                 raise IngestError(422, f"«{r['printed_name']}» no tiene valor.")
+            qualifier = r["qualifier"]
             ref = ranges.parse_ref_full(r["ref_printed"])
             if value_num is not None:
                 ref = convert_ref(key, ref, r["unit_printed"], analyte.unit)  # mismo criterio que el valor
-                status = ranges.classify_ref(value_num, ref)
+                status = (
+                    ranges.classify_censored(qualifier, value_num, ref)
+                    if qualifier
+                    else ranges.classify_ref(value_num, ref)
+                )
             else:
                 status = ranges.classify_text(value_text, r["ref_printed"])
             unit = d.get("unit", r["unit"]) or analyte.unit
@@ -447,6 +464,7 @@ def confirm_review(
             ref_printed=r["ref_printed"],
             method=r["method"],
             status=status,
+            qualifier=qualifier,
             manual=0,
             **common,
         )
@@ -455,7 +473,7 @@ def confirm_review(
         analyte = terminology.BY_KEY.get(m.get("analyte_key") or "")
         if analyte is None:
             raise IngestError(422, "Elige el análisis que quieres agregar.")
-        value_num, value_text, unit, ref, status = _resolved(
+        value_num, value_text, unit, ref, status, qualifier = _resolved(
             analyte, m.get("value") or "", m.get("unit"), m.get("ref")
         )
         _insert_observation(
@@ -473,6 +491,7 @@ def confirm_review(
             ref_printed=(m.get("ref") or None),
             method=None,
             status=status,
+            qualifier=qualifier,
             manual=1,
             **common,
         )
@@ -548,8 +567,8 @@ def repair_references(db: sqlite3.Connection) -> int:
     """
     changed = 0
     rows = db.execute(
-        "SELECT id, analyte_key, value_num, unit, unit_printed, ref_printed, ref_low, ref_high, status "
-        "FROM observation WHERE value_num IS NOT NULL"  # incluye los que no traían rango: sin estado
+        "SELECT id, analyte_key, value_num, unit, unit_printed, ref_printed, ref_low, ref_high, status, "
+        "qualifier FROM observation WHERE value_num IS NOT NULL"  # también los que no traían rango
     ).fetchall()
     for r in rows:
         analyte = terminology.BY_KEY.get(r["analyte_key"])
@@ -558,7 +577,11 @@ def repair_references(db: sqlite3.Connection) -> int:
         ref = convert_ref(
             r["analyte_key"], ranges.parse_ref_full(r["ref_printed"]), r["unit_printed"], analyte.unit
         )
-        status = ranges.classify_ref(r["value_num"], ref)
+        status = (
+            ranges.classify_censored(r["qualifier"], r["value_num"], ref)
+            if r["qualifier"]
+            else ranges.classify_ref(r["value_num"], ref)
+        )
         if (ref.low, ref.high, status) != (r["ref_low"], r["ref_high"], r["status"]):
             db.execute(
                 "UPDATE observation SET ref_low = ?, ref_high = ?, status = ? WHERE id = ?",

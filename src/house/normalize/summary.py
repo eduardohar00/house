@@ -172,6 +172,7 @@ def _drifting_to_limit(series: list[Obs]) -> dict | None:
 def _brief(o: Obs) -> Obs:
     keys = (
         "value_num",
+        "qualifier",
         "value_text",
         "unit",
         "status",

@@ -8,6 +8,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const ts = d => Date.parse(d + 'T00:00:00Z');
 const fd = d => d ? new Date(ts(d)).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'sin fecha';
 const fnum = v => (v == null ? '' : String(Number(Number(v).toFixed(3))));
+// Valor con su signo si el laboratorio imprimió "< 0.02": es un límite del método, no una medida exacta.
+const vnum = o => (o.qualifier ? o.qualifier + ' ' : '') + fnum(o.value_num);
 const name = k => S.catalog[k]?.name || k;
 
 function toast(t) {
@@ -148,9 +150,9 @@ const view = () => document.getElementById('view');
 
 const GROUPS = [
   ['glucosa', 'Metabolismo de la glucosa'], ['lipidos', 'Lípidos y riesgo cardiovascular'], ['higado', 'Hígado'],
-  ['pancreas', 'Páncreas'], ['rinon', 'Riñón'], ['electrolitos', 'Electrolitos y minerales'], ['sangre', 'Sangre y hierro'],
+  ['pancreas', 'Páncreas'], ['coagulacion', 'Coagulación'], ['rinon', 'Riñón'], ['electrolitos', 'Electrolitos y minerales'], ['sangre', 'Sangre y hierro'],
   ['diferencial', 'Glóbulos blancos'], ['tiroides', 'Tiroides'], ['vitaminas', 'Vitaminas'], ['inmunologia', 'Inmunología'],
-  ['marcadores', 'Marcadores'], ['orina', 'Orina'], ['seminal', 'Espermiograma'], ['infecciosas', 'Infecciones'], ['otros', 'Otros'],
+  ['marcadores', 'Marcadores'], ['orina', 'Orina'], ['seminal', 'Espermiograma'], ['infecciosas', 'Infecciones'], ['heces', 'Heces'], ['otros', 'Otros'],
 ];
 const STL = { ok: 'En rango', low: 'Por debajo', high: 'Por encima', abnormal: 'Fuera de referencia' };
 const OUT = s => s === 'low' || s === 'high' || s === 'abnormal';
@@ -199,7 +201,7 @@ async function renderSummary() {
   const stOf = k => sm.last_status[k]?.status ?? last(k).status;
   const yr = o => o.collected_on.slice(0, 4);
   const isNum = k => last(k).value_num != null;
-  const valTxt = o => o.value_num != null ? `${fnum(o.value_num)} ${esc(o.unit)}` : esc(qlabel(o));
+  const valTxt = o => o.value_num != null ? `${vnum(o)} ${esc(o.unit)}` : esc(qlabel(o));
   S.sel = null;
 
   // ---- cifras del encabezado
@@ -238,7 +240,7 @@ async function renderSummary() {
     const l = a.last, vals = series[a.key].map(o => o.value_num).filter(v => v != null);
     const how = l.value_num != null && distOut(l) > 0 ? `${Math.round(distOut(l) * 100)} % ${l.status === 'high' ? 'sobre' : 'bajo'} el rango` : 'Fuera de lo esperado';
     return `<button class="pri" data-k="${esc(a.key)}"><span class="pri-top"><span class="pri-name">${esc(name(a.key))}</span>${KIND[a.kind] ? `<span class="tag at">${KIND[a.kind]}</span>` : ''}</span>
-      <span class="pri-row"><span class="pri-val">${l.value_num != null ? fnum(l.value_num) : esc(qlabel(l))}${l.value_num != null ? `<small>${esc(l.unit)}</small>` : ''}</span>${vals.length > 1 && l.value_num != null ? spark(vals) : ''}</span>
+      <span class="pri-row"><span class="pri-val">${l.value_num != null ? vnum(l) : esc(qlabel(l))}${l.value_num != null ? `<small>${esc(l.unit)}</small>` : ''}</span>${vals.length > 1 && l.value_num != null ? spark(vals) : ''}</span>
       <span class="pri-meta">${how} · rango ${esc(refText(l))}${l.ref_from ? ` (del estudio de ${yr({ collected_on: l.ref_from })})` : ''}</span>${change(a)}</button>`;
   };
   const line = (cls, label, k, sub) => `<button class="fr" data-k="${esc(k)}"><span class="tag ${cls}">${label}</span><span class="fm">${esc(name(k))} · ${valTxt(last(k))}</span><span class="fs">${sub}</span></button>`;
@@ -258,7 +260,7 @@ async function renderSummary() {
     if (!isNum(k)) return `<button class="qp ${!old && OUT(stOf(k)) ? 'out' : ''} ${old ? 'old' : ''}" data-k="${esc(k)}" title="Ver cómo ha cambiado">${esc(name(k))}: <b>${esc(qlabel(l))}</b>${old ? ` (${yr(l)})` : ''}<span class="qds">${s.slice(-6).map(o => `<i class="qd ${OUT(o.status) ? 'o' : o.status === 'ok' ? 'k' : ''}"></i>`).join('')}</span></button>`;
     const vals = s.map(o => o.value_num).filter(v => v != null);
     return `<button class="bm ${old ? 'old' : ''}" data-k="${esc(k)}"><span class="nm">${esc(name(k))}</span><div>${old ? `<span class="pill na">Último: ${yr(l)}</span>` : pill(stOf(k))}</div>
-      <div class="row"><div><div class="val">${fnum(l.value_num)}<small>${esc(l.unit)}</small></div></div>${vals.length > 1 ? spark(vals) : ''}</div></button>`;
+      <div class="row"><div><div class="val">${vnum(l)}<small>${esc(l.unit)}</small></div></div>${vals.length > 1 ? spark(vals) : ''}</div></button>`;
   };
   const splitMarkers = ks => `<div class="cards">${ks.filter(isNum).map(marker).join('')}</div><div class="qual">${ks.filter(k => !isNum(k)).map(marker).join('')}</div>`;
   const sysRow = sy => {
@@ -352,7 +354,7 @@ function renderSummaryDetail(series) {
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}). Compara la tendencia con cautela.</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
-      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${fnum(o.value_num)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}</td><td>${esc(o.document_title)}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td></tr>`).join('')}
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}</td><td>${esc(o.document_title)}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${refPt ? `<span><i class="lg-band"></i>Rango de referencia${refPt === l ? ' del último estudio' : ` (del estudio del ${fd(refPt.collected_on)}; el último no lo trae)`}: ${esc(bandText(refPt))}</span>` : ''}</div>`;
   box.hidden = false;
@@ -512,7 +514,7 @@ function drawChart(pts, refPt) {
     const q = P[bi], o = pts[bi], sc = r.width / W;
     xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
     tip.hidden = false;
-    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${fnum(o.value_num)} ${esc(o.unit)}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.entered_manually ? '<span>Agregado a mano</span>' : o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
+    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${vnum(o)} ${esc(o.unit)}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.entered_manually ? '<span>Agregado a mano</span>' : o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
     const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
     tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
   };
@@ -634,7 +636,7 @@ async function openReview(id) {
             ${r.analyte_key ? '' : `<input list="catlist" data-assign="${r.id}" placeholder="¿Qué análisis es? Escribe para buscar" value="${r.assigned ? esc(S.catalog[r.assigned].name) : ''}" style="width:100%;margin-top:4px">${r.assigned ? '' : '<span class="flag">No reconocido: dime qué análisis es o no se guardará</span>'}`}
             ${r.problems.filter(p => p !== 'analito_desconocido').map(p => `<span class="flag">${esc(PROBLEMS[p] || p)}</span>`).join('')}
             ${r.converted ? `<span class="flag">Convertido de ${esc(r.value_printed)} ${esc(r.unit_printed || '')}</span>` : ''}</td>
-          <td><input type="text" data-val="${r.id}" value="${esc(r.edited ?? (r.assigned ? r.value_printed : r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed))}"> ${esc(r.assigned ? (r.unit_printed || '') : (r.unit || ''))}</td>
+          <td>${r.qualifier ? `<span title="El laboratorio imprimió ${esc(r.qualifier)} antes del valor: es un límite del método">${esc(r.qualifier)}</span> ` : ''}<input type="text" data-val="${r.id}" value="${esc(r.edited ?? (r.assigned ? r.value_printed : r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed))}"> ${esc(r.assigned ? (r.unit_printed || '') : (r.unit || ''))}</td>
           <td>${esc(r.ref_printed || '—')}<div style="margin-top:4px">${pill(r.status)}</div></td></tr>`).join('')}
       </tbody></table></div>
       ${manual.length ? `<h3 style="margin:8px 0 0;font-size:15px">Agregados a mano</h3><div class="tblwrap"><table class="rt"><tbody>${manual.map((m, i) => `<tr><td><b>${esc(S.catalog[m.analyte_key].name)}</b><span class="flag">Agregado a mano</span></td><td>${esc(m.value)} ${esc(m.unit || '')}</td><td>${esc(m.ref || '—')}</td><td><button class="mini dn" data-rm="${i}">Quitar</button></td></tr>`).join('')}</tbody></table></div>` : ''}

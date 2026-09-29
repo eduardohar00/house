@@ -65,6 +65,8 @@ _CANON = {
     "ml/min/173m2": "mL/min/1.73m2",
     "ml/min/173": "mL/min/1.73m2",  # "ml/min/1.73" con el "m2" en el renglón siguiente
     "mosm/kg": "mOsm/kg",
+    "seg": "s",
+    "s": "s",
     "uu/ml": "µU/mL",
 }
 
