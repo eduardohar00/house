@@ -22,13 +22,27 @@ LABELED_ID = re.compile(
     r"(?im)^(?P<label>\s*(?:folio|orden|no\.?\s*de\s*(?:orden|registro|expediente)|registro|"
     r"expediente|nss|id\s*paciente)[^:\n]{0,20}[:#]\s*)(?P<val>\S[^\n]*?)(?=\s{2,}|\s·|$)"
 )
+# Números administrativos en cualquier parte del renglón ("56392629 Orden:OK0350125",
+# "Episodio : 1501338810 Habitación/Cama: LMCA411-Cama411") y códigos solos al inicio de renglón.
+INLINE_ID = re.compile(
+    r"(?i)(?P<label>\b(?:orden|solicitud|episodio|habitaci[oó]n/cama|n[°º]\s*paciente|id\s*paciente)"
+    r"[ \t]*:[ \t]*)(?P<val>[A-Z0-9][A-Z0-9-]*)"
+)
+ID_AT_LINE_START = re.compile(r"(?m)^(?:\d{7,}|[A-Z]{1,3}\d{6,})(?=[ \t]|$)")
 ADDRESS_LINE = re.compile(r"(?im)^(?P<label>\s*(?:domicilio|direcci[oó]n|calle)\s*:\s*).+$")
 DOB = re.compile(
-    r"(?i)(?P<label>fecha\s+de\s+nacimiento\s*:\s*)(?P<d>\d{1,2})[/-](?P<m>\d{1,2})[/-](?P<y>\d{4})"
+    r"(?i)(?P<label>(?:fecha\s+de\s+nacimiento|fec(?:ha)?\.?[ \t]*(?:de[ \t]+)?nac(?:\.|imiento)?)"
+    r"[ \t]*:?[ \t]*)"
+    r"(?P<d>\d{1,2})[/-](?P<m>\d{1,2})[/-](?P<y>\d{4})"
 )
+# Nombre tras un encabezado ("Paciente: ORTIZ HARO", "Médico : Dr. NOMBRE", "Dirigido a:DR(A). NOMBRE").
+# Nunca cruza de renglón: [ \t] en vez de \s, para no juntar líneas y perder resultados.
+# El nombre exige mayúscula inicial aunque la etiqueta se busque sin distinguir mayúsculas.
 HEADER_NAME = re.compile(
-    r"(?im)(?P<label>\b(?:paciente|nombre|m[eé]dico|m[eé]dico\s+solicitante|solicit[oó]|"
-    r"referido\s+por|dr\.?|dra\.?)\s*[:.]?\s+)(?P<name>(?:[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ'-]+\s?){1,5})"
+    r"(?im)(?P<label>\b(?:paciente|nombre|m[eé]dico(?:[ \t]+solicitante)?|solicit[oó]|referido[ \t]+por|"
+    r"dirigido[ \t]+a|dra?)\b[ \t]*[:.]?[ \t]*(?:(?:dr\(a\)|dra?)\.?[ \t]*)?)"
+    r"(?P<name>(?-i:[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ'-]+)"
+    r"(?:[ \t](?!(?:sexo|edad|hoja|fecha|folio|orden|solicitud)\b)(?-i:[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ'-]+)){0,4})"
 )
 
 
@@ -95,6 +109,8 @@ class Anonymizer:
             return f"{m['label']}[FOLIO]"
 
         s = LABELED_ID.sub(labeled, s)
+        s = INLINE_ID.sub(labeled, s)
+        s = sub(ID_AT_LINE_START, "FOLIO", s)
 
         def addr(m: re.Match[str]) -> str:
             found.append(Redaction("DIRECCION", "[DIRECCION]"))
@@ -108,8 +124,7 @@ class Anonymizer:
 
         def hdr(m: re.Match[str]) -> str:
             found.append(Redaction("NOMBRE", "[NOMBRE]"))
-            trailing = " " if m["name"].endswith(" ") else ""
-            return f"{m['label']}[NOMBRE]{trailing}"
+            return f"{m['label']}[NOMBRE]"
 
         s = HEADER_NAME.sub(hdr, s)
         if self._name_re:

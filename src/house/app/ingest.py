@@ -1,0 +1,259 @@
+"""Subir un estudio: original cifrado → texto → limpieza de datos personales → IA → verificación.
+
+Nada llega a `observation` sin revisión humana: la extracción queda en `extraction_row` hasta que
+alguien la confirme (ver `confirm_review`).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import re
+import sqlite3
+from dataclasses import dataclass
+from datetime import date, datetime
+
+from ..extract import Row, extract_document
+from ..normalize import ranges, terminology
+from ..privacy import Anonymizer
+from ..providers import Router
+from .vault import Vault
+
+MAX_BYTES = 25 * 1024 * 1024
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS person_alias (
+  person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+  name      TEXT NOT NULL                          -- como aparece en estudios: "ORTIZ HARO CARLOS"
+);
+CREATE TABLE IF NOT EXISTS extraction (
+  document_id   INTEGER PRIMARY KEY REFERENCES document(id) ON DELETE CASCADE,
+  sent_text     TEXT NOT NULL,                     -- lo que vio la IA (ya sin datos personales)
+  redactions    TEXT NOT NULL,                     -- JSON: tipo -> cuántos se quitaron
+  provider      TEXT, model TEXT, cost_usd REAL,
+  collected_on  TEXT
+);
+CREATE TABLE IF NOT EXISTS extraction_row (
+  id            INTEGER PRIMARY KEY,
+  document_id   INTEGER NOT NULL REFERENCES document(id) ON DELETE CASCADE,
+  analyte_key   TEXT, printed_name TEXT NOT NULL,
+  value_num     REAL, value_text TEXT, unit TEXT,
+  value_printed TEXT NOT NULL, unit_printed TEXT,
+  ref_low REAL, ref_high REAL, ref_printed TEXT,
+  status TEXT, method TEXT, section TEXT,
+  evidence      TEXT NOT NULL,
+  problems      TEXT NOT NULL,                     -- JSON: motivos para revisar con cuidado
+  converted     INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+
+class IngestError(Exception):
+    def __init__(self, status: int, message: str, document_id: int | None = None) -> None:
+        super().__init__(message)
+        self.status, self.message, self.document_id = status, message, document_id
+
+
+def pdf_text(data: bytes) -> str:
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(data)) as doc:
+        return "\n".join(page.extract_text() or "" for page in doc.pages)
+
+
+def person_names(db: sqlite3.Connection, person: sqlite3.Row) -> list[str]:
+    aliases = [
+        r["name"] for r in db.execute("SELECT name FROM person_alias WHERE person_id = ?", (person["id"],))
+    ]
+    return [person["display_name"], *aliases]
+
+
+@dataclass
+class Ingested:
+    document_id: int
+    rows: int
+
+
+def ingest_pdf(
+    db: sqlite3.Connection,
+    vault: Vault,
+    router: Router,
+    person: sqlite3.Row,
+    filename: str,
+    data: bytes,
+    today: date | None = None,
+) -> Ingested:
+    if len(data) > MAX_BYTES:
+        raise IngestError(413, "El archivo pesa más de 25 MB.")
+    if not data.startswith(b"%PDF"):
+        raise IngestError(415, "Por ahora solo se aceptan PDF.")
+    sha = hashlib.sha256(data).hexdigest()
+    dup = db.execute(
+        "SELECT id FROM document WHERE person_id = ? AND file_sha256 = ?", (person["id"], sha)
+    ).fetchone()
+    if dup:
+        raise IngestError(409, "Este estudio ya estaba cargado.", dup["id"])
+    try:
+        text = pdf_text(data)
+    except Exception:
+        raise IngestError(422, "No se pudo leer el PDF.") from None
+    if len(re.sub(r"\s", "", text)) < 40:
+        raise IngestError(
+            422, "El PDF parece un escaneo sin texto. Los escaneos llegan en una fase posterior."
+        )
+
+    outcome = extract_document(
+        text, router, anonymizer=Anonymizer(person_names(db, person)), reference_date=today or date.today()
+    )
+    stored = vault.put(data)
+    title = re.sub(r"\.pdf$", "", filename, flags=re.I).strip() or "Estudio"
+    cur = db.execute(
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256) "
+        "VALUES(?, 'laboratorio', ?, ?, ?, ?)",
+        (person["id"], title, outcome.collected_on, stored, sha),
+    )
+    doc_id = cur.lastrowid
+    llm = outcome.llm
+    db.execute(
+        "INSERT INTO extraction(document_id, sent_text, redactions, provider, model, cost_usd, collected_on) "
+        "VALUES(?,?,?,?,?,?,?)",
+        (
+            doc_id,
+            outcome.sent_text,
+            json.dumps(outcome.redactions),
+            llm.provider,
+            llm.model,
+            llm.cost_usd,
+            outcome.collected_on,
+        ),
+    )
+    db.execute(
+        "INSERT INTO ai_call(task, provider, model, input_tokens, output_tokens, cost_usd, request_id, "
+        "person_id) VALUES('extract',?,?,?,?,?,?,?)",
+        (
+            llm.provider,
+            llm.model,
+            llm.input_tokens,
+            llm.output_tokens,
+            llm.cost_usd,
+            llm.request_id,
+            person["id"],
+        ),
+    )
+    for r in outcome.rows:
+        _save_row(db, doc_id, r)
+    return Ingested(doc_id, len(outcome.rows))
+
+
+def _save_row(db: sqlite3.Connection, doc_id: int, r: Row) -> None:
+    db.execute(
+        "INSERT INTO extraction_row(document_id, analyte_key, printed_name, value_num, value_text, unit, "
+        "value_printed, unit_printed, ref_low, ref_high, ref_printed, status, method, section, evidence, "
+        "problems, converted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            doc_id,
+            r.key,
+            r.printed_name,
+            r.value,
+            r.value_label,
+            r.unit,
+            r.value_text,
+            r.unit_text,
+            r.ref_low,
+            r.ref_high,
+            r.ref_text,
+            r.status,
+            r.method,
+            r.section,
+            r.evidence,
+            json.dumps(r.problems),
+            int(r.converted),
+        ),
+    )
+
+
+def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
+    doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    ex = db.execute("SELECT * FROM extraction WHERE document_id = ?", (doc_id,)).fetchone()
+    rows = []
+    for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ? ORDER BY id", (doc_id,)):
+        a = terminology.BY_KEY.get(r["analyte_key"] or "")
+        rows.append(
+            {
+                **dict(r),
+                "name": a.name if a else None,
+                "problems": json.loads(r["problems"]),
+                "needs_attention": bool(json.loads(r["problems"])) or bool(r["converted"]),
+            }
+        )
+    return {
+        "document": {
+            k: doc[k] for k in ("id", "person_id", "title", "collected_on", "review_state", "uploaded_at")
+        },
+        "ai_saw": ex["sent_text"] if ex else None,
+        "redactions": json.loads(ex["redactions"]) if ex else {},
+        "rows": rows,
+    }
+
+
+def confirm_review(
+    db: sqlite3.Connection, doc_id: int, reviewer_id: int, collected_on: str, decisions: list[dict]
+) -> int:
+    """Guarda en `observation` solo las filas aceptadas (con las correcciones del revisor)."""
+    date.fromisoformat(collected_on)
+    doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    if doc["review_state"] != "pendiente":
+        raise IngestError(409, "Este estudio ya fue revisado.")
+    rows = {r["id"]: r for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ?", (doc_id,))}
+    now = datetime.now().isoformat(timespec="seconds")
+    saved = 0
+    for d in decisions:
+        r = rows.get(d.get("row_id"))
+        if r is None:
+            raise IngestError(422, "Fila desconocida.")
+        if not d.get("accept"):
+            continue
+        key = d.get("analyte_key") or r["analyte_key"]
+        analyte = terminology.BY_KEY.get(key or "")
+        if analyte is None:
+            raise IngestError(422, f"Falta indicar qué análisis es «{r['printed_name']}».")
+        value_num = d.get("value_num", r["value_num"])
+        value_text = d.get("value_text", r["value_text"])
+        if value_num is None and not value_text:
+            raise IngestError(422, f"«{r['printed_name']}» no tiene valor.")
+        ref = ranges.parse_ref_full(r["ref_printed"])
+        if value_num is not None:
+            status = ranges.classify_ref(value_num, ref) if not r["converted"] else r["status"]
+        else:
+            status = ranges.classify_text(value_text, r["ref_printed"])
+        db.execute(
+            "INSERT INTO observation(person_id, document_id, analyte_key, loinc, printed_name, value_num, "
+            "value_text, unit, value_printed, unit_printed, ref_low, ref_high, ref_printed, method, status, "
+            "collected_on, confirmed_by, confirmed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                doc["person_id"],
+                doc_id,
+                key,
+                analyte.loinc or None,
+                r["printed_name"],
+                value_num,
+                value_text,
+                d.get("unit", r["unit"]) or analyte.unit,
+                r["value_printed"],
+                r["unit_printed"],
+                ref.low,
+                ref.high,
+                r["ref_printed"],
+                r["method"],
+                status,
+                collected_on,
+                reviewer_id,
+                now,
+            ),
+        )
+        saved += 1
+    db.execute(
+        "UPDATE document SET review_state = 'revisada', collected_on = ? WHERE id = ?", (collected_on, doc_id)
+    )
+    return saved

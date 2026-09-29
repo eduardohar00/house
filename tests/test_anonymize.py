@@ -36,3 +36,57 @@ def test_accent_insensitive_known_names():
 def test_dates_of_the_study_not_treated_as_birth():
     res = Anonymizer().scrub("Fecha de toma: 01/02/2026", reference_date=None)
     assert "01/02/2026" in res.text
+
+
+def test_never_joins_lines_and_covers_lab_header_variants():
+    doc = (
+        "Paciente : PEREZ FICTICIO JUAN\n"
+        "SOLICITUD : 0000000001\n"
+        "Fec. Nac. : 01/02/1980 Edad : 46A\n"
+        "Médico : Dr. ALGUIEN INVENTADO SOTO\n"
+        "Paciente:PEREZ FICTICIO JUAN Sexo: Masculino\n"
+        "Dirigido a:DR(A). OTRO NOMBRE FALSO Hoja: 1 de 8\n"
+        "Fecha de nacimiento:01/02/1980 Edad:46 años\n"
+        "Glucosa 90 55 - 99 mg/dL\n"
+        "interpretación hecha por el médico tratante."
+    )
+    res = Anonymizer().scrub(doc, reference_date=date(2026, 3, 1))
+    assert len(res.text.splitlines()) == len(doc.splitlines())
+    for leak in ["PEREZ", "FICTICIO", "01/02/1980", "ALGUIEN", "INVENTADO", "SOTO", "OTRO NOMBRE", "FALSO"]:
+        assert leak not in res.text, leak
+    for keep in [
+        "SOLICITUD",
+        "Sexo: Masculino",
+        "Hoja: 1 de 8",
+        "Glucosa 90 55 - 99 mg/dL",
+        "médico tratante",
+    ]:
+        assert keep in res.text, keep
+    assert res.text.count("[EDAD: 46 años]") == 2
+
+
+def test_administrative_ids_anywhere_in_line():
+    doc = (
+        "12345678 Orden:AB0012345\n"
+        "87654321\n"
+        "CD0098765\n"
+        "SOLICITUD : 0000000001\n"
+        "Episodio : 9999999999 Habitación/Cama: XYZ123-Cama123\n"
+        "N° Paciente : 5555555\n"
+        "Glucosa 90 55 - 99 mg/dL\n"
+        "5 0 6"
+    )
+    res = Anonymizer().scrub(doc)
+    for leak in [
+        "12345678",
+        "AB0012345",
+        "87654321",
+        "CD0098765",
+        "0000000001",
+        "9999999999",
+        "XYZ123",
+        "5555555",
+    ]:
+        assert leak not in res.text, leak
+    assert "Glucosa 90 55 - 99 mg/dL" in res.text and "5 0 6" in res.text
+    assert len(res.text.splitlines()) == len(doc.splitlines())

@@ -122,3 +122,130 @@ def test_vault_encrypts_originals(tmp_path):
     assert v.get(name) == b"%PDF-1.4 contenido inventado"
     v.delete(name)
     assert not (tmp_path / name).exists()
+
+
+# --- Subir y revisar estudios (PDF generado aquí, datos inventados) ---
+
+from house.config import Config, ProviderConfig  # noqa: E402
+from house.providers import Router  # noqa: E402
+
+LAB_LINES = [
+    "Paciente: PEREZ FICTICIO JUAN",
+    "Fecha de Toma : 01/03/2026",
+    "QUIMICA",
+    "Glucosa 105 70 - 99 mg/dL",
+    "Colesterol HDL 45 40 - 60 mg/dL",
+    "EXAMEN GENERAL DE ORINA",
+    "Nitritos Positivo Negativo",
+    "pH 6.0 5.0 - 7.0",
+]
+
+
+def make_pdf(lines):
+    """PDF mínimo con texto real (sin dependencias)."""
+    content = (
+        "BT /F1 11 Tf 50 750 Td 14 TL "
+        + " ".join("(" + ln.replace("(", r"\(").replace(")", r"\)") + ") Tj T*" for ln in lines)
+        + " ET"
+    )
+    objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+        "/Resources << /Font << /F1 5 0 R >> >> >>",
+        f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    ]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n".encode("latin-1")
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return out
+
+
+@pytest.fixture
+def lab_client(tmp_path):
+    cfg = Config(tasks={"extract": "base"}, providers={"base": ProviderConfig(name="base", kind="mock")})
+    return TestClient(create_app(tmp_path, key_provider=lambda: KEY, router=Router(cfg)))
+
+
+def upload(client, pid, data, name="Estudio marzo.pdf"):
+    return client.post(
+        f"/api/people/{pid}/documents", files={"file": (name, data, "application/pdf")}, headers=H
+    )
+
+
+def test_upload_review_and_confirm(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    pid = c.post(
+        "/api/people",
+        json={
+            "display_name": "Juan",
+            "birth_date": "1980-05-05",
+            "sex_at_birth": "M",
+            "has_login": False,
+            "other_names": ["PEREZ FICTICIO JUAN"],
+        },
+        headers=H,
+    ).json()["id"]
+    pdf = make_pdf(LAB_LINES)
+    r = upload(c, pid, pdf)
+    assert r.status_code == 200, r.text
+    doc_id = r.json()["document_id"]
+    assert upload(c, pid, pdf).status_code == 409  # mismo archivo
+
+    rev = c.get(f"/api/documents/{doc_id}").json()
+    assert "PEREZ FICTICIO" not in rev["ai_saw"]
+    assert rev["document"]["collected_on"] == "2026-03-01"
+    by = {row["analyte_key"]: row for row in rev["rows"]}
+    assert by["glucose"]["value_num"] == 105 and by["glucose"]["status"] == "high"
+    assert by["urine_nitrite"]["value_text"] == "Positivo" and by["urine_nitrite"]["status"] == "abnormal"
+    assert c.get(f"/api/documents/{doc_id}/file").content == pdf
+
+    decisions = [
+        {"row_id": by["glucose"]["id"], "accept": True, "value_num": 98},  # corrige el valor
+        {"row_id": by["urine_nitrite"]["id"], "accept": True},
+        {"row_id": by["hdl"]["id"], "accept": False},
+    ]
+    r = c.post(
+        f"/api/documents/{doc_id}/review",
+        json={"collected_on": "2026-03-01", "decisions": decisions},
+        headers=H,
+    )
+    assert r.json() == {"saved": 2}
+    obs = {o["analyte_key"]: o for o in c.get(f"/api/people/{pid}/observations").json()}
+    assert set(obs) == {"glucose", "urine_nitrite"}
+    assert obs["glucose"]["value_num"] == 98 and obs["glucose"]["status"] == "ok"
+    assert obs["urine_nitrite"]["status"] == "abnormal"
+    again = c.post(
+        f"/api/documents/{doc_id}/review", json={"collected_on": "2026-03-01", "decisions": []}, headers=H
+    )
+    assert again.status_code == 409
+
+    c.delete(f"/api/documents/{doc_id}", headers=H).raise_for_status()
+    assert c.get(f"/api/people/{pid}/observations").json() == []
+
+
+def test_upload_rejects_non_pdf_and_scans(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    assert upload(c, me, b"hola", "nota.txt").status_code == 415
+    assert upload(c, me, make_pdf([]), "escaneo.pdf").status_code == 422
+
+
+def test_member_cannot_open_others_documents(lab_client):
+    c = lab_client
+    mid, _ = setup_family(c)
+    admin_id = c.get("/api/me").json()["id"]
+    doc_id = upload(c, admin_id, make_pdf(LAB_LINES)).json()["document_id"]
+    c.post("/api/logout", headers=H)
+    c.post("/api/login", json={"person_id": mid, "pin": "2468"}, headers=H).raise_for_status()
+    assert c.get(f"/api/documents/{doc_id}").status_code == 403
+    assert c.get(f"/api/documents/{doc_id}/file").status_code == 403
+    assert upload(c, admin_id, make_pdf(["Glucosa 90 70 - 99 mg/dL"])).status_code == 403

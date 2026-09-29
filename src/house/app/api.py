@@ -9,11 +9,14 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, field_validator
 
-from . import auth, store
+from ..config import Config, ProviderConfig
+from ..providers import ProviderError, Router
+from ..providers.registry import BudgetExceeded, UsageLedger
+from . import auth, ingest, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -25,6 +28,7 @@ class NewPerson(BaseModel):
     sex_at_birth: Literal["F", "M"]
     has_login: bool = True
     pin: str | None = None
+    other_names: list[str] = []  # como aparece en los estudios, para quitarlo antes de enviar a la IA
 
     @field_validator("birth_date")
     @classmethod
@@ -42,6 +46,42 @@ class PinReset(BaseModel):
     pin: str
 
 
+class Decision(BaseModel):
+    row_id: int
+    accept: bool
+    analyte_key: str | None = None
+    value_num: float | None = None
+    value_text: str | None = None
+
+
+class Review(BaseModel):
+    collected_on: str
+    decisions: list[Decision]
+
+
+# Por decisión de Eduardo, todo lo hace Claude. Un house.toml en la carpeta de datos lo cambia.
+DEFAULT_CONFIG = Config(
+    monthly_budget_usd=15.0,
+    tasks={"extract": "claude", "interpret": "claude", "verify": "claude"},
+    providers={
+        "claude": ProviderConfig(
+            name="claude",
+            kind="anthropic",
+            model="claude-opus-5-5",
+            effort="medium",
+            input_per_mtok=4.0,
+            output_per_mtok=20.0,
+        )
+    },
+)
+
+
+def default_router(data_dir: Path) -> Router:
+    toml = data_dir / "house.toml"
+    cfg = Config.load(toml) if toml.exists() else DEFAULT_CONFIG
+    return Router(cfg, ledger=UsageLedger(data_dir / "ai_usage.jsonl"))
+
+
 def _public(p: sqlite3.Row) -> dict:
     return {
         "id": p["id"],
@@ -53,9 +93,15 @@ def _public(p: sqlite3.Row) -> dict:
     }
 
 
-def create_app(data_dir: Path | None = None, key_provider: KeyProvider = keychain_key) -> FastAPI:
+def create_app(
+    data_dir: Path | None = None,
+    key_provider: KeyProvider = keychain_key,
+    router: Router | None = None,
+) -> FastAPI:
     data_dir = data_dir or store.default_data_dir()
     db = store.connect(data_dir)
+    db.executescript(ingest.SCHEMA)
+    router = router or default_router(data_dir)
     vault = Vault(data_dir / "originals", key_provider)
     app = FastAPI(title="House", docs_url=None, redoc_url=None, openapi_url=None)
     # Rechaza peticiones con otro Host (defensa contra DNS rebinding desde páginas externas).
@@ -168,6 +214,11 @@ def create_app(data_dir: Path | None = None, key_provider: KeyProvider = keychai
             "VALUES(?,?,?,0,?,?)",
             (body.display_name, body.birth_date, body.sex_at_birth, int(body.has_login), pin_hash),
         )
+        for name in body.other_names:
+            if name.strip():
+                db.execute(
+                    "INSERT INTO person_alias(person_id, name) VALUES(?,?)", (cur.lastrowid, name.strip())
+                )
         return {"id": cur.lastrowid}
 
     @app.put("/api/people/{person_id}/pin")
@@ -207,6 +258,77 @@ def create_app(data_dir: Path | None = None, key_provider: KeyProvider = keychai
             (person_id,),
         )
         return [dict(r) for r in rows]
+
+    def document(doc_id: int, actor: sqlite3.Row, action: str) -> sqlite3.Row:
+        doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+        if doc is None:
+            raise HTTPException(404, "Estudio no encontrado")
+        subject(doc["person_id"], actor, action)
+        return doc
+
+    @app.post("/api/people/{person_id}/documents")
+    async def upload(person_id: int, actor: Me, file: Annotated[UploadFile, File()]) -> dict:
+        person = subject(person_id, actor, "subir_estudio")
+        data = await file.read(ingest.MAX_BYTES + 1)
+        try:
+            done = ingest.ingest_pdf(db, vault, router, person, file.filename or "Estudio.pdf", data)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, {"message": e.message, "document_id": e.document_id}) from None
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            # El mensaje del proveedor no incluye contenido del documento (ver providers/base.py).
+            raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
+        return {"document_id": done.document_id, "rows": done.rows}
+
+    @app.get("/api/people/{person_id}/documents")
+    def list_documents(person_id: int, actor: Me) -> list[dict]:
+        subject(person_id, actor, "ver_estudios")
+        rows = db.execute(
+            "SELECT d.id, d.title, d.collected_on, d.review_state, d.uploaded_at, "
+            "(SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id) AS results "
+            "FROM document d WHERE person_id = ? ORDER BY COALESCE(collected_on, uploaded_at) DESC",
+            (person_id,),
+        )
+        return [dict(r) for r in rows]
+
+    @app.get("/api/documents/{doc_id}")
+    def get_document(doc_id: int, actor: Me) -> dict:
+        document(doc_id, actor, "ver_estudio")
+        return ingest.review_payload(db, doc_id)
+
+    @app.get("/api/documents/{doc_id}/file")
+    def get_file(doc_id: int, actor: Me) -> Response:
+        doc = document(doc_id, actor, "ver_original")
+        return Response(
+            vault.get(doc["file_path"]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline", "Cache-Control": "no-store"},
+        )
+
+    @app.post("/api/documents/{doc_id}/review")
+    def review(doc_id: int, body: Review, actor: Me) -> dict:
+        document(doc_id, actor, "revisar_estudio")
+        try:
+            saved = ingest.confirm_review(
+                db,
+                doc_id,
+                actor["id"],
+                body.collected_on,
+                [d.model_dump(exclude_unset=True) for d in body.decisions],
+            )
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        except ValueError:
+            raise HTTPException(422, "Fecha inválida (usa AAAA-MM-DD).") from None
+        return {"saved": saved}
+
+    @app.delete("/api/documents/{doc_id}")
+    def delete_document(doc_id: int, actor: Me) -> dict:
+        doc = document(doc_id, actor, "borrar_estudio")
+        db.execute("DELETE FROM document WHERE id = ?", (doc_id,))
+        vault.delete(doc["file_path"])
+        return {"ok": True}
 
     @app.get("/api/access-log")
     def access_log(actor: Me) -> list[dict]:
