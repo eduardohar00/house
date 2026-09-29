@@ -216,3 +216,36 @@ def test_only_suspended_medications_still_allow_confirming_no_current_ones(world
     assert "medication" in c.get(f"/api/people/{me}/clinical").json()["none"]
     add(c, me, "medication", name="Losartán").raise_for_status()  # ahora sí hay uno actual
     assert "medication" not in c.get(f"/api/people/{me}/clinical").json()["none"]
+
+
+def test_vaccine_brand_and_lot_dose_menu_and_one_time_brand_split(tmp_path):
+    import sqlite3
+
+    from house.app import clinical
+
+    # base anterior: sin columnas de marca ni lote, con la marca metida en el nombre
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.executescript(
+        "CREATE TABLE person(id INTEGER PRIMARY KEY);"
+        "CREATE TABLE vaccine(id INTEGER PRIMARY KEY, person_id INTEGER, name TEXT NOT NULL, given_on TEXT NOT NULL,"
+        " dose_label TEXT, place TEXT, notes TEXT);"
+        "INSERT INTO vaccine(person_id, name, given_on) VALUES"
+        " (1, 'COVID-19 Pfizer', '2021-05-20'), (1, 'Influenza estacional Vaxigrip Tetra', '2025-12-20'),"
+        " (1, 'Tétanos (Td)', '2020-01-01'), (1, 'Vacuna rara', '2019-01-01');"
+    )
+    clinical.migrate(db)
+    got = {r["given_on"]: (r["name"], r["brand"]) for r in db.execute("SELECT * FROM vaccine")}
+    assert got == {
+        "2021-05-20": ("COVID-19", "Pfizer"),
+        "2025-12-20": ("Influenza estacional", "Vaxigrip Tetra"),
+        "2020-01-01": ("Tétanos (Td)", None),
+        "2019-01-01": ("Vacuna rara", None),
+    }
+    db.execute("UPDATE vaccine SET name = 'COVID-19 Pfizer', brand = NULL WHERE given_on = '2021-05-20'")
+    clinical.migrate(db)  # solo una vez: lo que la persona escriba después no se reinterpreta
+    assert (
+        db.execute("SELECT name FROM vaccine WHERE given_on = '2021-05-20'").fetchone()["name"]
+        == "COVID-19 Pfizer"
+    )
+    assert "Refuerzo" in clinical.DOSE_OPTIONS and "Primera dosis" in clinical.DOSE_OPTIONS

@@ -808,8 +808,8 @@ const CLIN = {
     fields: [F('name', 'Procedimiento', 'text', { list: 'procedure' }), F('year', 'Año', 'text', { ph: '2012' }), F('notes', 'Notas (opcional)')],
     line: x => `<b>${esc(x.name)}</b>${x.year ? ` <span class="s">${esc(x.year)}</span>` : ''}`, sub: x => x.notes },
   vaccine: { key: 'vaccines', title: 'Vacunas', add: 'Agregar vacuna',
-    fields: [F('name', 'Vacuna', 'text', { list: 'vaccine' }), F('given_on', 'Fecha', 'date'), F('dose_label', 'Dosis (por ejemplo refuerzo)'), F('place', 'Dónde (opcional)')],
-    line: v => `<b>${esc(v.name)}</b> <span class="s">${fd(v.given_on)}</span>`, sub: v => [v.dose_label, v.place].filter(Boolean).join(' · ') },
+    fields: [F('name', 'Vacuna', 'text', { list: 'vaccine' }), F('brand', 'Marca (opcional)', 'text', { ph: 'Por ejemplo Pfizer' }), F('given_on', 'Fecha', 'date'), F('dose_label', 'Dosis', 'select', { options: 'dose_options', optional: true }), F('lot', 'Lote (opcional)'), F('place', 'Dónde (opcional)')],
+    line: v => `<b>${esc(v.name)}</b> <span class="s">${fd(v.given_on)}</span>`, sub: v => [v.dose_label, v.brand, v.place].filter(Boolean).join(' · ') },
   consultation: { key: 'consultations', title: 'Consultas', add: 'Agregar consulta',
     fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)')],
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
@@ -823,12 +823,24 @@ async function renderClinical() {
   S.sug = sug;
   const reload = () => renderClinical();
   const itemsOf = kind => c[CLIN[kind].key];
-  const row = (kind, it) => { const cfg = CLIN[kind], sub = cfg.sub(it);
+  const row = (kind, it, cfg = CLIN[kind]) => { const sub = cfg.sub(it);
     return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
       <span class="rowact">${cfg.badge ? cfg.badge(it) : ''}<button class="mini" data-edit="${kind}:${it.id}">Editar</button><button class="mini dn" data-del="${kind}:${it.id}">Quitar</button></span></li>`; };
+  // Vacunas agrupadas por vacuna: «COVID-19 · 2 dosis · última mayo 2022», con cada dosis al abrir.
+  const plainName = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const vaccineCard = (cfg, items) => {
+    const groups = new Map();
+    items.forEach(v => { const k = plainName(v.name); (groups.get(k) || groups.set(k, []).get(k)).push(v); });
+    const list = [...groups.values()].map(g => g.sort((a, b) => b.given_on.localeCompare(a.given_on))).sort((a, b) => b[0].given_on.localeCompare(a[0].given_on));
+    const dose = { line: v => `<b>${esc(v.dose_label || 'Dosis')}</b> <span class="s">${fd(v.given_on)}</span>`, sub: v => [v.brand, v.lot && 'lote ' + v.lot, v.place].filter(Boolean).join(' · ') };
+    return `<section class="card xc"><h3>${cfg.title}<button class="mini add-x" data-add="vaccine">${cfg.add}</button></h3>
+      ${list.map(g => `<details class="hist vgrp" ${g.length === 1 ? 'open' : ''}><summary><b>${esc(g[0].name)}</b> · ${g.length} ${g.length === 1 ? 'dosis' : 'dosis'} · última ${fd(g[0].given_on)}</summary>
+        <ul class="xl">${g.map(v => row('vaccine', v, dose)).join('')}</ul></details>`).join('')}</section>`;
+  };
   const card = kind => {
     const cfg = CLIN[kind]; let items = itemsOf(kind), past = [];
     if (kind === 'medication') { past = items.filter(m => !m.active); items = items.filter(m => m.active); }
+    if (kind === 'vaccine' && items.length) return vaccineCard(cfg, items);
     const confirmed = c.none.includes(kind);
     const empty = items.length ? '' : HAS_NONE.includes(kind)
       ? (confirmed ? `<div class="alg none">${esc(cfg.none)}</div><button class="link" data-none-off="${kind}">Quitar la confirmación</button>`
@@ -870,9 +882,13 @@ async function renderClinical() {
     const lists = [...new Set(cfg.fields.filter(f => f.list).map(f => f.list))];
     const input = f => {
       const v = it[f.name] ?? (f.type === 'check' ? 1 : '');
-      if (f.type === 'select') return `<select name="${f.name}">${c[f.options].map(o => `<option ${o === (it[f.name] || c[f.options][0]) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+      if (f.type === 'select') {
+        const cur = it[f.name] || (f.optional ? '' : c[f.options][0]);
+        const opts = [...(f.optional ? [''] : []), ...c[f.options], ...(cur && !c[f.options].includes(cur) ? [cur] : [])];  // lo ya guardado nunca se pierde
+        return `<select name="${f.name}">${opts.map(o => `<option value="${esc(o)}" ${o === cur ? 'selected' : ''}>${esc(o || 'Sin especificar')}</option>`).join('')}</select>`;
+      }
       if (f.type === 'check') return `<input type="checkbox" name="${f.name}" ${v ? 'checked' : ''}>`;
-      return `<input type="${f.type === 'date' ? 'date' : 'text'}" name="${f.name}" value="${esc(v)}" ${f.list ? `list="dl_${f.list}"` : ''} ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} autocomplete="off" style="width:100%">`;
+      return `<input type="${f.type === 'date' ? 'date' : 'text'}" name="${f.name}" value="${esc(v)}" ${f.list ? `list="dl_${f.list}"` : ''} ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} autocomplete="off" ${f.type === 'date' ? '' : 'spellcheck="true" lang="es"'} style="width:100%">`;
     };
     document.getElementById('clinform').innerHTML = `<form class="card cfg fg2" id="cf"><h2>${editing.item ? 'Editar' : cfg.add}</h2>
       ${lists.map(l => `<datalist id="dl_${l}">${(S.sug[l] || []).map(x => `<option value="${esc(x)}">`).join('')}</datalist>`).join('')}

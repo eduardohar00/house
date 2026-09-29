@@ -33,7 +33,8 @@ class ClinicalError(Exception):
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vaccine (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
-  name TEXT NOT NULL, given_on TEXT NOT NULL, dose_label TEXT, place TEXT, notes TEXT
+  name TEXT NOT NULL, given_on TEXT NOT NULL, dose_label TEXT, place TEXT, notes TEXT,
+  brand TEXT, lot TEXT
 );
 CREATE TABLE IF NOT EXISTS consultation (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
@@ -51,16 +52,31 @@ _EXTRA_COLUMNS = {
     "problem": {"notes": "TEXT"},
     "allergy": {"notes": "TEXT"},
     "procedure_history": {"notes": "TEXT"},
+    "vaccine": {"brand": "TEXT", "lot": "TEXT"},
 }
 
 
 def migrate(db) -> None:
     db.executescript(SCHEMA)
+    had_brand = "brand" in {r["name"] for r in db.execute("PRAGMA table_info(vaccine)")}
     for table, cols in _EXTRA_COLUMNS.items():
         have = {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}  # noqa: S608 - tablas fijas
         for col, typ in cols.items():
             if have and col not in have:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")  # noqa: S608
+    if not had_brand:
+        _split_vaccine_brands(db)
+
+
+def _split_vaccine_brands(db) -> None:
+    """Una sola vez, al agregar la marca: «COVID-19 Pfizer» pasa a vacuna «COVID-19» con marca «Pfizer»."""
+    bases = sorted(SUGGESTIONS["vaccine"], key=len, reverse=True)
+    for v in db.execute("SELECT id, name FROM vaccine").fetchall():
+        for base in bases:
+            rest = v["name"][len(base) :].strip()
+            if v["name"].lower().startswith(base.lower() + " ") and rest:
+                db.execute("UPDATE vaccine SET name = ?, brand = ? WHERE id = ?", (base, rest, v["id"]))
+                break
 
 
 # ---------- Tipos de dato ----------
@@ -74,6 +90,8 @@ class Field:
     options: tuple[str, ...] = ()
     default: Any = None
 
+
+DOSE_OPTIONS = ("Dosis única", "Primera dosis", "Segunda dosis", "Tercera dosis", "Refuerzo", "Anual")
 
 SPECS: dict[str, tuple[str, dict[str, Field]]] = {
     "allergy": ("allergy", {
@@ -94,7 +112,8 @@ SPECS: dict[str, tuple[str, dict[str, Field]]] = {
     }),
     "vaccine": ("vaccine", {
         "name": Field("text", True), "given_on": Field("date", True), "dose_label": Field("text"),
-        "place": Field("text"), "notes": Field("text", max=1000),
+        "brand": Field("text"), "lot": Field("text"), "place": Field("text"),
+        "notes": Field("text", max=1000),
     }),
     "consultation": ("consultation", {
         "occurred_on": Field("date", True), "reason": Field("text", True), "doctor": Field("text"),
@@ -218,7 +237,7 @@ def timeline(db, person_id: int) -> list[dict]:
             {"kind": "consulta", "date": c["occurred_on"], "title": c["reason"], "subtitle": sub, "ref": None}
         )
     for v in _rows(db, "vaccine", person_id, "given_on"):
-        sub = " · ".join(x for x in (v["dose_label"], v["place"]) if x)
+        sub = " · ".join(x for x in (v["dose_label"], v["brand"], v["place"]) if x)
         ev.append({"kind": "vacuna", "date": v["given_on"], "title": v["name"], "subtitle": sub, "ref": None})
     for p in _rows(db, "procedure_history", person_id, "id"):
         if p["year"]:
@@ -280,6 +299,7 @@ def overview(db, person_id: int) -> dict:
         ],
         "timeline": timeline(db, person_id),
         "statuses": list(PROBLEM_STATUSES),
+        "dose_options": list(DOSE_OPTIONS),
     }
 
 
