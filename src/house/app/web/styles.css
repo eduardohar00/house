@@ -270,3 +270,6 @@ details.quiet .sys{border-top:1px solid var(--line);background:var(--bg)}
 .about{background:var(--accent-soft);border-radius:10px;padding:10px 14px}
 .about b{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .about p{margin:2px 0 0;font-size:15px}
+.alert{border:2px solid var(--crit);background:color-mix(in srgb,var(--crit) 8%,var(--surface));border-radius:14px;padding:14px 16px;display:grid;gap:8px}
+.alert h2{margin:0;font-size:18px;color:var(--crit)}
+.alert p{margin:0;font-size:14px}

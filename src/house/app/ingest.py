@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 from ..extract import Row, convert_ref, extract_document
 from ..imaging import ImagingReport, looks_like_lab, parse_reports
-from ..normalize import ranges, terminology, units
+from ..normalize import critical, ranges, terminology, units
 from ..privacy import Anonymizer
 from ..providers import Router
 from . import ocr
@@ -401,12 +401,15 @@ def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
     rows = []
     for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ? ORDER BY id", (doc_id,)):
         a = terminology.BY_KEY.get(r["analyte_key"] or "")
+        problems = json.loads(r["problems"])
+        if critical.check(r["analyte_key"], r["value_num"], r["qualifier"]):
+            problems.append("valor_critico")
         rows.append(
             {
                 **dict(r),
                 "name": a.name if a else None,
-                "problems": json.loads(r["problems"]),
-                "needs_attention": bool(json.loads(r["problems"])) or bool(r["converted"]),
+                "problems": problems,
+                "needs_attention": bool(problems) or bool(r["converted"]),
             }
         )
     imaging = [

@@ -21,10 +21,13 @@ import unicodedata
 from datetime import date, timedelta
 from typing import Any
 
+from . import critical
+
 RECENT_DAYS = 365
 STALE_STUDY_DAYS = 365
 OUT = {"low", "high", "abnormal"}
 PERSISTENT_STREAK = 3
+CRITICAL_DAYS = 30  # solo se alerta por resultados del estudio más reciente (30 días antes)
 
 # Se calculan a partir de otros resultados: si están fuera de rango casi siempre es por sus componentes.
 DERIVED_KEYS = {
@@ -199,6 +202,7 @@ def summarize(observations: list[Obs], today: date | None = None) -> dict:
             "reference_date": None,
             "study_age_days": None,
             "study_is_old": False,
+            "critical": [],
             "attention": [],
             "watch": [],
             "improved": [],
@@ -209,7 +213,7 @@ def summarize(observations: list[Obs], today: date | None = None) -> dict:
         }
     reference = max(_date(o) for o in observations)
     cutoff = reference - timedelta(days=RECENT_DAYS)
-    attention, watch, improved, history = [], [], [], []
+    attention, watch, improved, history, alerts = [], [], [], [], []
     recent_keys: list[str] = []
     last_status: dict[str, dict] = {}
 
@@ -220,6 +224,10 @@ def summarize(observations: list[Obs], today: date | None = None) -> dict:
         last_status[key] = {"status": last["status"], "ref_from": last.get("ref_from")}
         if recent:
             recent_keys.append(key)
+        if _date(last) >= reference - timedelta(days=CRITICAL_DAYS) and (
+            hit := critical.check(key, last["value_num"], last.get("qualifier"))
+        ):
+            alerts.append({"key": key, "last": _brief(last), **hit})
         entry = {
             "key": key,
             "last": _brief(last),
@@ -266,6 +274,7 @@ def summarize(observations: list[Obs], today: date | None = None) -> dict:
         "reference_date": reference.isoformat(),
         "study_age_days": (today - reference).days,
         "study_is_old": (today - reference).days > STALE_STUDY_DAYS,
+        "critical": alerts,
         "attention": attention,
         "watch": sorted(watch, key=lambda w: w["margin"]),
         "improved": improved,

@@ -130,3 +130,24 @@ def test_borrowed_reference_points_to_the_study_that_printed_it():
         obs("hdl", "2026-02-08", 24.0, None),
     ]
     assert summarize(data, TODAY)["attention"][0]["last"]["ref_from"] == "2025-06-01"
+
+
+def test_critical_values_alert_only_for_the_latest_study_and_never_for_censored_values():
+    from house.normalize import critical
+
+    assert critical.check("potassium", 6.9) == {"side": "high", "limit": 6.5}
+    assert critical.check("hemoglobin", 6.2) == {"side": "low", "limit": 7.0}
+    assert critical.check("potassium", 5.2) is None and critical.check("hdl", 5) is None
+    assert critical.check("glucose", 30, "<") is None  # límite del método, no un valor medido
+    assert critical.check("glucose", None) is None
+
+    def obs(key, value, day, unit="mmol/L"):
+        return {
+            "analyte_key": key, "value_num": value, "value_text": None, "unit": unit, "collected_on": day,
+            "ref_low": 3.5, "ref_high": 5.1, "status": "high", "qualifier": None, "method": None,
+        }  # fmt: skip
+
+    old = summarize([obs("potassium", 7.0, "2024-01-10"), obs("sodium", 140, "2026-03-01")], date(2026, 3, 5))
+    assert old["critical"] == []  # el crítico es de hace 2 años: historial, no alarma
+    now = summarize([obs("potassium", 7.0, "2026-03-01"), obs("sodium", 140, "2026-03-01")], date(2026, 3, 5))
+    assert [c["key"] for c in now["critical"]] == ["potassium"] and now["critical"][0]["side"] == "high"

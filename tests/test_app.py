@@ -513,3 +513,18 @@ def test_censored_value_survives_review_and_repair(lab_client):
 
     assert ingest.repair_references(c.app.state.db) == 0  # sigue igual: el signo se respeta al reparar
     c.post(f"/api/documents/{doc_id}/review", headers=H, json={"collected_on": "2026-03-01", "decisions": []})
+
+
+def test_review_flags_a_critical_value_so_a_misread_is_caught_before_saving(client):
+    client.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = client.get("/api/me").json()["id"]
+    lines = [
+        "Informe de Resultados de Laboratorio",
+        "Fecha de Toma : 01/03/2026",
+        "Potasio 7.2 3.5 - 5.1 mmol/L",
+        "Sodio 140 135 - 145 mmol/L",
+    ]
+    doc = upload(client, me, make_pdf(lines)).json()["document_id"]
+    rows = {r["analyte_key"]: r for r in client.get(f"/api/documents/{doc}").json()["rows"]}
+    assert "valor_critico" in rows["potassium"]["problems"] and rows["potassium"]["needs_attention"]
+    assert "valor_critico" not in rows["sodium"]["problems"]

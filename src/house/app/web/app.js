@@ -211,7 +211,10 @@ async function renderSummary() {
   const nDocs = new Set(obs.map(o => o.document_id)).size;
   const pct = n => nRecent ? Math.round(100 * n / nRecent) : 0;
 
-  const hero = `<section class="card hero">
+  const critBox = (sm.critical || []).length ? `<section class="alert" role="alert"><h2>${sm.critical.length === 1 ? 'Un resultado' : sm.critical.length + ' resultados'} muy alejado${sm.critical.length === 1 ? '' : 's'} de lo normal</h2>
+      ${sm.critical.map(c => `<button class="fr" data-k="${esc(c.key)}"><span class="tag at">${c.side === 'high' ? 'Muy alto' : 'Muy bajo'}</span><span class="fm">${esc(name(c.key))} · ${valTxt(c.last)}</span><span class="fs">${fd(c.last.collected_on)} · límite ${fnum(c.limit)} ${esc(c.last.unit)}</span></button>`).join('')}
+      <p>Un resultado así conviene comentarlo con un médico pronto. Antes, confirma en el original que el valor esté bien leído. Esto no es un diagnóstico.</p></section>` : '';
+  const hero = `${critBox}<section class="card hero">
     <div class="hero-main">
       <p class="eyebrow">Al ${fd(sm.reference_date)} · ${nDocs} ${nDocs === 1 ? 'estudio' : 'estudios'}</p>
       <h2 class="hero-title ${nOut ? '' : 'good'}">${nOut ? `${nOut} ${nOut === 1 ? 'resultado fuera de rango' : 'resultados fuera de rango'}` : 'Todo en orden'}</h2>
@@ -588,6 +591,7 @@ async function uploadFiles(files) {
 }
 
 const PROBLEMS = {
+  valor_critico: 'Valor muy fuera de lo normal: confirma que esté bien leído',
   no_respaldada_por_el_documento: 'No aparece tal cual en el documento',
   analito_desconocido: 'Análisis no reconocido',
   unidad_no_reconocida: 'Unidad no reconocida',
