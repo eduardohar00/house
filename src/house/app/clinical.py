@@ -482,6 +482,17 @@ def timeline(db, person_id: int) -> list[dict]:
     ):
         ev.append({"kind": "receta", "date": d["collected_on"], "title": f"Receta · {d['n']} medicamento(s)",
                    "subtitle": d["names"] or "", "ref": {"type": "document", "id": d["id"]}})  # fmt: skip
+    for d in db.execute(
+        "SELECT d.id, d.collected_on, COUNT(m.id) AS n FROM body_scan b "
+        "JOIN document d ON d.id = b.document_id LEFT JOIN measurement m ON m.document_id = d.id "
+        "WHERE b.person_id = ? AND b.confirmed = 1 AND d.collected_on IS NOT NULL GROUP BY d.id",
+        (person_id,),
+    ):
+        ref = {"type": "document", "id": d["id"]}
+        ev.append(
+            {"kind": "cuerpo", "date": d["collected_on"], "title": "Composición corporal",
+             "subtitle": f"{d['n']} medidas del reporte", "ref": ref}
+        )  # fmt: skip
     labs = db.execute(
         "SELECT d.id, d.title, d.collected_on, COUNT(o.id) AS n, "
         "COALESCE(SUM(o.status IN ('low','high','abnormal')), 0) AS n_out "

@@ -17,7 +17,7 @@ from ..normalize import reference_ranges, terminology
 from ..normalize import summary as summary_mod
 from ..privacy import Anonymizer
 from ..providers import Router
-from . import health
+from . import bodyscan, health
 
 MAX_TURNS = 20
 MAX_CHARS = 2000
@@ -464,6 +464,19 @@ class Toolbox:
                 for m in h["measurements"]
             ],
             "bmi": h["bmi"],
+            "body_composition_reports": [
+                {
+                    "date": sc["measured_on"],
+                    "device": sc.get("device"),
+                    "metrics": [
+                        {k: m[k] for k in ("name", "value", "unit", "normal_low", "normal_high", "evaluation")}
+                        for m in sc["metrics"]
+                    ],
+                    "segments": sc["segments"],
+                    "notes": sc.get("notes"),
+                }
+                for sc in bodyscan.scans(self.db, self.person_id, 4)
+            ],
         }  # fmt: skip
 
     def person_context(self) -> str:
@@ -481,6 +494,20 @@ class Toolbox:
         if "blood_pressure" in latest:
             b = latest["blood_pressure"]
             bits.append(f"presión {b['value']:g}/{b['value2']:g} ({b['date']})")
+        if h["body_composition_reports"]:
+            sc = h["body_composition_reports"][0]
+            vals = {m["name"]: m for m in sc["metrics"]}
+            parts = [
+                f"{n.lower()} {vals[n]['value']:g} {vals[n]['unit']}".strip()
+                for n in (
+                    "Masa muscular esquelética",
+                    "Porcentaje de grasa corporal",
+                    "Relación cintura-cadera",
+                )
+                if n in vals
+            ]
+            if parts:
+                bits.append(f"composición corporal ({sc['date']}): " + ", ".join(parts))
         for label, key in (("tabaquismo", "smoking"), ("alcohol", "alcohol"), ("ejercicio", "exercise")):
             if p.get(key):
                 extra = p.get(f"{key}_detail")

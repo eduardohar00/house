@@ -19,10 +19,10 @@ CREATE TABLE IF NOT EXISTS health_profile (
 );
 CREATE TABLE IF NOT EXISTS measurement (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL
-    CHECK (kind IN ('weight_kg', 'blood_pressure', 'heart_rate', 'waist_cm', 'body_fat_pct')),
+  kind TEXT NOT NULL,                                  -- se valida en código (ver KINDS)
   value REAL NOT NULL, value2 REAL,                    -- presión: value = sistólica, value2 = diastólica
-  measured_on TEXT NOT NULL, notes TEXT
+  measured_on TEXT NOT NULL, notes TEXT,
+  document_id INTEGER                                  -- reporte del que salió (p. ej. InBody)
 );
 CREATE INDEX IF NOT EXISTS idx_measurement ON measurement (person_id, kind, measured_on);
 """
@@ -42,6 +42,18 @@ KINDS = {  # tipo: (rango del valor, rango del segundo valor, unidad)
     "heart_rate": ((25, 250), None, "lpm"),
     "waist_cm": ((30, 250), None, "cm"),
     "body_fat_pct": ((2, 70), None, "%"),
+    # Composición corporal (bioimpedancia, p. ej. InBody)
+    "skeletal_muscle_kg": ((5, 120), None, "kg"),
+    "body_fat_kg": ((1, 200), None, "kg"),
+    "lean_mass_kg": ((10, 200), None, "kg"),
+    "fat_free_mass_kg": ((10, 200), None, "kg"),
+    "body_water_l": ((10, 120), None, "L"),
+    "protein_kg": ((1, 40), None, "kg"),
+    "mineral_kg": ((0.5, 15), None, "kg"),
+    "bone_mineral_kg": ((0.3, 8), None, "kg"),
+    "bmr_kcal": ((500, 4500), None, "kcal"),
+    "whr": ((0.5, 1.6), None, ""),
+    "fitness_score": ((0, 100), None, "puntos"),
 }
 
 
@@ -61,6 +73,21 @@ def _num(v: Any, label: str, lo: float, hi: float) -> float | None:
     if not lo <= n <= hi:
         raise HealthError(422, f"{label}: debe estar entre {lo:g} y {hi:g}.")
     return n
+
+
+def migrate(db: sqlite3.Connection) -> None:
+    """Bases anteriores: `measurement` solo admitía 5 tipos (CHECK) y no ligaba el reporte de origen."""
+    row = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'measurement'").fetchone()
+    if row is not None and ("CHECK" in row["sql"] or "document_id" not in row["sql"]):
+        db.execute("ALTER TABLE measurement RENAME TO measurement_old")
+        db.execute("DROP INDEX IF EXISTS idx_measurement")
+        db.executescript(SCHEMA)
+        db.execute(
+            "INSERT INTO measurement(id, person_id, kind, value, value2, measured_on, notes) "
+            "SELECT id, person_id, kind, value, value2, measured_on, notes FROM measurement_old"
+        )
+        db.execute("DROP TABLE measurement_old")
+    db.executescript(SCHEMA)
 
 
 def save_profile(db: sqlite3.Connection, person_id: int, data: dict) -> None:
@@ -89,7 +116,9 @@ def save_profile(db: sqlite3.Connection, person_id: int, data: dict) -> None:
     )
 
 
-def add_measurement(db: sqlite3.Connection, person_id: int, data: dict) -> int:
+def add_measurement(
+    db: sqlite3.Connection, person_id: int, data: dict, document_id: int | None = None
+) -> int:
     kind = data.get("kind")
     if kind not in KINDS:
         raise HealthError(422, "Tipo de medida desconocido.")
@@ -113,8 +142,9 @@ def add_measurement(db: sqlite3.Connection, person_id: int, data: dict) -> int:
         raise HealthError(422, "La fecha no puede ser futura.")
     notes = " ".join(str(data.get("notes") or "").split())[:300] or None
     cur = db.execute(
-        "INSERT INTO measurement(person_id, kind, value, value2, measured_on, notes) VALUES(?,?,?,?,?,?)",
-        (person_id, kind, value, value2, when, notes),
+        "INSERT INTO measurement(person_id, kind, value, value2, measured_on, notes, document_id) "
+        "VALUES(?,?,?,?,?,?,?)",
+        (person_id, kind, value, value2, when, notes, document_id),
     )
     return cur.lastrowid
 

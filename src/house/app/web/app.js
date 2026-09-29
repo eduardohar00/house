@@ -567,6 +567,13 @@ async function renderDocs() {
         <input type="file" id="rxfile" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" hidden></label>
       <div id="rxup"></div>
     </section>
+    <section class="card cfg">
+      <h2>Subir composición corporal (InBody)</h2>
+      <label class="drop" id="bsdrop"><b>Foto o PDF del reporte de una báscula de bioimpedancia</b>
+        <span class="tip">Claude lee peso, masa muscular, grasa, agua, metabolismo basal, etc. y te propone las medidas; tú las revisas y confirmas. Se envía la imagen a Claude, y ahí se ven datos personales impresos.</span>
+        <input type="file" id="bsfile" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" hidden></label>
+      <div id="bsup"></div>
+    </section>
     <section class="card cfg"><div class="bar"><h2>Estudios</h2></div>
       ${docs.length ? `<div class="tblwrap"><table><thead><tr><th>Estudio</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
         ${docs.map(d => `<tr><td><b>${esc(d.title)}</b>${d.filename && d.filename.replace(/\.(pdf|png|jpe?g)$/i, '') !== d.title ? `<small class="fname" style="display:block" title="Nombre del archivo que subiste">Archivo: ${esc(d.filename)}</small>` : ''}<small style="display:block;color:var(--muted)">${{ imagen: 'Informe de estudio', receta: 'Receta' }[d.doc_type] || 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
@@ -583,6 +590,11 @@ async function renderDocs() {
   rxDrop.ondragover = e => { e.preventDefault(); rxDrop.classList.add('over'); };
   rxDrop.ondragleave = () => rxDrop.classList.remove('over');
   rxDrop.ondrop = e => { e.preventDefault(); rxDrop.classList.remove('over'); if (e.dataTransfer.files[0]) uploadPrescription(e.dataTransfer.files[0]); };
+  const bsIn = document.getElementById('bsfile'), bsDrop = document.getElementById('bsdrop');
+  bsIn.onchange = () => bsIn.files[0] && uploadBodyScan(bsIn.files[0]);
+  bsDrop.ondragover = e => { e.preventDefault(); bsDrop.classList.add('over'); };
+  bsDrop.ondragleave = () => bsDrop.classList.remove('over');
+  bsDrop.ondrop = e => { e.preventDefault(); bsDrop.classList.remove('over'); if (e.dataTransfer.files[0]) uploadBodyScan(e.dataTransfer.files[0]); };
   const drop = document.getElementById('drop'), input = document.getElementById('file');
   input.onchange = () => uploadFiles([...input.files]);
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
@@ -613,6 +625,20 @@ async function renderDocs() {
     if (!confirm(`¿Borrar «${b.dataset.t}» y todos sus resultados? Si es una receta, los medicamentos que guardaste se conservan. No se puede deshacer.`)) return;
     await api(`/api/documents/${b.dataset.del}`, { method: 'DELETE' }); toast('Estudio borrado.'); renderDocs();
   });
+}
+
+async function uploadBodyScan(f) {
+  const up = document.getElementById('bsup');
+  if (!confirm('Se enviará la imagen del reporte a Claude para leerla. Ahí se ven datos personales impresos (nombre, ID…). ¿Continuar?')) return;
+  up.innerHTML = `<p class="tip"><span class="spin"></span>Claude está leyendo «${esc(f.name)}»… (unos 15 segundos)</p>`;
+  const form = new FormData(); form.append('file', f);
+  try {
+    const r = await api(`/api/people/${S.subject}/body-scans`, { method: 'POST', form });
+    up.innerHTML = ''; toast(`Leí ${r.metrics} medidas. Revísalas antes de guardar.`); openReview(r.document_id);
+  } catch (e) {
+    if (e.status === 409 && e.detail?.document_id) { up.innerHTML = ''; toast('Ese reporte ya estaba cargado.'); return; }
+    up.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+  }
 }
 
 async function uploadPrescription(f) {
@@ -682,6 +708,7 @@ async function openReview(id, opts = {}) {
   const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
   if (d.document.doc_type === 'imagen') return openImagingReview(id, d, layout);
   if (d.document.doc_type === 'receta') return openPrescriptionReview(id, d);
+  if (d.body_scan) return openBodyScanReview(id, d);
   const rows = d.rows.filter(r => !complete || r.unsaved).map(r => ({ ...r, accept: !!r.analyte_key && !(complete && r.problems.includes('aparece_mas_de_una_vez')) && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
   let onlyFlags = false, showAi = false, active = null, addOpen = false;
   const manual = [];  // resultados que faltaban y la persona agregó a mano
@@ -857,7 +884,7 @@ const CLIN = {
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
-const EV_KIND = { consulta: 'Consulta', receta: 'Receta', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
+const EV_KIND = { consulta: 'Consulta', receta: 'Receta', cuerpo: 'Composición corporal', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
 
 // Un mismo medicamento (misma sustancia activa) que aparece en varias recetas se muestra en una sola fila.
 const medKey = m => String(m.active_ingredient || m.name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -994,7 +1021,10 @@ async function renderClinical() {
   // ---- Perfil de salud y medidas
   const subj = S.people.find(p => p.id === S.subject) || S.me;
   const ageOf = b => { if (!b) return null; const d = new Date(b), t = new Date(); let a = t.getFullYear() - d.getFullYear(); if (t < new Date(t.getFullYear(), d.getMonth(), d.getDate())) a--; return a; };
-  const MEAS = { weight_kg: ['Peso', 'kg'], blood_pressure: ['Presión arterial', 'mmHg'], heart_rate: ['Frecuencia cardiaca', 'lpm'], waist_cm: ['Cintura', 'cm'], body_fat_pct: ['Grasa corporal', '%'] };
+  const MEAS = { weight_kg: ['Peso', 'kg'], blood_pressure: ['Presión arterial', 'mmHg'], heart_rate: ['Frecuencia cardiaca', 'lpm'], waist_cm: ['Cintura', 'cm'], body_fat_pct: ['Grasa corporal', '%'],
+    skeletal_muscle_kg: ['Masa muscular esquelética', 'kg'], body_fat_kg: ['Masa grasa', 'kg'], lean_mass_kg: ['Masa magra', 'kg'], fat_free_mass_kg: ['Masa libre de grasa', 'kg'], body_water_l: ['Agua corporal total', 'L'],
+    protein_kg: ['Proteínas', 'kg'], mineral_kg: ['Minerales', 'kg'], bone_mineral_kg: ['Mineral óseo', 'kg'], bmr_kcal: ['Metabolismo basal', 'kcal'], whr: ['Relación cintura-cadera', ''], fitness_score: ['Puntuación de fitness', 'puntos'] };
+  const MANUAL = ['weight_kg', 'blood_pressure', 'heart_rate', 'waist_cm', 'body_fat_pct'];
   const mval = m => m.kind === 'blood_pressure' ? `${m.value}/${m.value2}` : m.value;
   const basicsHtml = () => {
     const p = hl.profile, l = hl.latest, age = ageOf(subj.birth_date);
@@ -1002,10 +1032,18 @@ async function renderClinical() {
     const habits = [p.smoking && 'tabaco: ' + p.smoking.toLowerCase(), p.alcohol && 'alcohol: ' + p.alcohol.toLowerCase(), p.exercise && 'ejercicio: ' + p.exercise.toLowerCase()].filter(Boolean);
     return `<p style="margin:0">${esc(bits.join(' · '))}</p>${habits.length ? `<p class="s" style="margin:4px 0 0">${esc(habits.join(' · '))}</p>` : '<p class="tip" style="margin:4px 0 0">Aún sin hábitos registrados.</p>'}`;
   };
+  const bodyCard = scans => {
+    const sc = scans[0], key = ['weight_kg', 'skeletal_muscle_kg', 'body_fat_kg', 'body_fat_pct', 'waist_hip_ratio', 'total_body_water_l', 'bmr_kcal', 'fitness_score'];
+    const pick = sc.metrics.filter(m => key.includes(m.key)).sort((a, b) => key.indexOf(a.key) - key.indexOf(b.key));
+    return `<section class="card xc" style="margin-top:12px"><h3>Composición corporal · ${fd(sc.measured_on)}<a class="mini" href="/api/documents/${sc.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver original</a></h3>
+      <div class="famrow" style="grid-template-columns:1fr"><div class="plw" style="margin:0">${pick.map(m => `<span class="lchip"><span class="lt"><b>${esc(m.name)}</b> ${m.value} ${esc(m.unit)}${rangeText(m) ? ` <span class="s">(normal ${rangeText(m)})</span>` : ''}</span>${EVAL_PILL(m.evaluation)}</span>`).join('')}</div></div>
+      ${segTable(sc.segments)}${sc.notes ? `<p class="tip" style="margin:0">${esc(sc.notes)}</p>` : ''}
+      ${scans.length > 1 ? `<p class="tip" style="margin:0">Reportes anteriores: ${scans.slice(1).map(x => `<a href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener">${fd(x.measured_on)}</a>`).join(' · ')}</p>` : ''}</section>`;
+  };
   const perPanel = () => {
     const p = hl.profile, ch = hl.choices, sel = (name, list) => `<select name="${name}"><option value="">Sin especificar</option>${list.map(o => `<option ${p[name] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
     const txt = (name, ph = '') => `<input type="text" name="${name}" value="${esc(p[name] || '')}" maxlength="500" placeholder="${esc(ph)}" spellcheck="true" lang="es" style="width:100%">`;
-    const grouped = Object.keys(MEAS).map(k => [k, hl.measurements.filter(m => m.kind === k)]).filter(([, a]) => a.length);
+    const grouped = MANUAL.map(k => [k, hl.measurements.filter(m => m.kind === k)]).filter(([, a]) => a.length);  // las de composición corporal salen en su tarjeta
     return `<div class="xpanel"><section class="card xc"><h3>Datos básicos y hábitos</h3>
       <p class="tip" style="margin:0">${esc(basicsHtml().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())}</p>
       <p class="tip" style="margin:0">Estos datos ayudan al asistente a orientarte (qué estudios o cuidados tienen sentido para tu edad y hábitos). Solo se envía a Claude lo que necesita, sin tu nombre.</p>
@@ -1020,9 +1058,10 @@ async function renderClinical() {
         <label>Ocupación${txt('occupation', 'trabajo de escritorio, turnos, exposición a químicos…')}</label>
         <label>Otras notas${txt('notes')}</label>
         <p class="err" id="hfe"></p><div class="bar"><span></span><button class="btn">Guardar</button></div></form></section>
+      ${hl.body_scans.length ? bodyCard(hl.body_scans) : ''}
       <section class="card xc" style="margin-top:12px"><h3>Medidas con fecha</h3>
         <form id="mf2" class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
-          <label>Medida<select name="kind">${Object.entries(MEAS).map(([k, [n]]) => `<option value="${k}">${n}</option>`).join('')}</select></label>
+          <label>Medida<select name="kind">${MANUAL.map(k => `<option value="${k}">${MEAS[k][0]}</option>`).join('')}</select></label>
           <label>Valor<input type="text" name="value" inputmode="decimal" required placeholder="82"></label>
           <label id="v2l" hidden>Diastólica<input type="text" name="value2" inputmode="decimal" placeholder="80"></label>
           <label>Fecha<input type="date" name="measured_on" value="${new Date().toISOString().slice(0, 10)}"></label>
@@ -1307,6 +1346,55 @@ function openViewer(images, start) {
     apply();
   };
   document.addEventListener('keydown', key);
+  draw();
+}
+
+// Composición corporal: Claude transcribe el reporte; la persona elige qué medidas guardar.
+const EVAL_PILL = e => !e ? '' : `<span class="pill ${['normal', 'fuerte'].includes(e) ? 'ok' : e === 'bajo' ? 'na' : 'out'}">${esc(e.charAt(0).toUpperCase() + e.slice(1))}</span>`;
+const REGION = { brazo_izquierdo: 'Brazo izquierdo', brazo_derecho: 'Brazo derecho', tronco: 'Tronco', pierna_izquierda: 'Pierna izquierda', pierna_derecha: 'Pierna derecha' };
+const rangeText = m => m.normal_low != null && m.normal_high != null ? `${m.normal_low} – ${m.normal_high}` : '';
+const segTable = segs => !segs.length ? '' : `<div class="tblwrap"><table><thead><tr><th>Región</th><th>Masa magra</th><th>Grasa</th></tr></thead><tbody>${segs.map(x => `<tr><td>${REGION[x.region]}</td><td>${x.lean_kg != null ? x.lean_kg + ' kg' : '—'} ${EVAL_PILL(x.lean_evaluation)}</td><td>${x.fat_pct != null ? x.fat_pct + ' %' : ''}${x.fat_kg != null ? ' · ' + x.fat_kg + ' kg' : ''} ${EVAL_PILL(x.fat_evaluation)}</td></tr>`).join('')}</tbody></table></div>`;
+function openBodyScanReview(id, d) {
+  const sc = d.body_scan;
+  if (sc.confirmed) { toast('Este reporte ya fue revisado.'); return renderDocs(); }
+  const head = { date: sc.measured_on || '', height: true };
+  const metrics = sc.metrics.map(m => ({ ...m, accept: m.key !== 'bmi' }));
+  const heightDiffers = sc.height_cm && Number(d.current_height_cm) !== Number(sc.height_cm);
+  view().innerHTML = `<div class="rv"><div class="pages" id="pages" aria-label="Reporte original">
+      ${sc.file_kind === 'pdf' ? `<iframe class="pdf" src="/api/documents/${id}/file" title="Reporte original"></iframe>` : `<div class="pg"><img src="/api/documents/${id}/file" alt="Reporte original"></div>`}</div>
+    <section class="card cfg" id="side"></section></div>`;
+  const draw = () => {
+    const n = metrics.filter(m => m.accept).length;
+    document.getElementById('side').innerHTML = `
+      <div class="bar"><h2>Revisa el reporte de composición corporal</h2><div style="display:flex;gap:6px"><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir original</a><button class="mini" id="back">Volver</button></div></div>
+      <p class="tip">Claude leyó este reporte${sc.device ? ' (' + esc(sc.device) + ')' : ''}. Compara con el original; solo lo que elijas entra a tus medidas.</p>
+      ${sc.warnings.map(w => `<span class="flag">${esc(w)}</span>`).join('')}
+      <div class="fg2"><label>Fecha del reporte<input type="date" id="bd" value="${esc(head.date)}"></label>
+        ${sc.date_printed ? `<span class="tip" style="align-self:end">Impreso: ${esc(sc.date_printed)} (día.mes.año)</span>` : ''}</div>
+      ${heightDiffers ? `<label><input type="checkbox" id="bh" ${head.height ? 'checked' : ''}> Actualizar mi talla en el perfil a <b>${sc.height_cm} cm</b>${d.current_height_cm ? ` (hoy: ${d.current_height_cm} cm)` : ''}</label>` : ''}
+      <div class="tblwrap"><table class="rt"><thead><tr><th></th><th>Medida</th><th>Valor</th><th>Normal</th><th></th></tr></thead><tbody>
+        ${metrics.map((m, i) => `<tr class="${m.accept ? '' : 'skip'}"><td><input type="checkbox" data-bm="${i}" ${m.accept ? 'checked' : ''} aria-label="Guardar ${esc(m.name)}"></td><td><b>${esc(m.name)}</b></td><td>${m.value} ${esc(m.unit)}</td><td>${esc(rangeText(m))}</td><td>${EVAL_PILL(m.evaluation)}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${sc.segments.length ? `<h3 style="margin:8px 0 0;font-size:15px">Por región del cuerpo</h3>${segTable(sc.segments)}` : ''}
+      ${sc.notes ? `<p class="tip"><b>Notas del reporte:</b> ${esc(sc.notes)}</p>` : ''}
+      <p class="tip">El IMC del reporte no se guarda como medida: House lo calcula con tu talla y tu peso.</p>
+      <p class="err" id="e"></p>
+      <div class="bar"><button class="btn danger" id="discard">Descartar</button><button class="btn" id="ok" ${n ? '' : 'disabled'}>Guardar ${n} ${n === 1 ? 'medida' : 'medidas'}</button></div>`;
+    document.getElementById('back').onclick = () => renderDocs();
+    view().querySelectorAll('[data-bm]').forEach(c => c.onchange = () => { metrics[c.dataset.bm].accept = c.checked; draw(); });
+    document.getElementById('bd').oninput = document.getElementById('bd').onchange = e => { head.date = e.target.value; };
+    const bh = document.getElementById('bh'); if (bh) bh.onchange = () => { head.height = bh.checked; };
+    document.getElementById('discard').onclick = async () => {
+      if (!confirm('¿Descartar este reporte? Se borra el original y no se guarda nada.')) return;
+      await api(`/api/documents/${id}`, { method: 'DELETE' }); toast('Reporte descartado.'); renderDocs();
+    };
+    document.getElementById('ok').onclick = async () => {
+      try {
+        const res = await api(`/api/documents/${id}/review-body-scan`, { method: 'POST', body: { measured_on: head.date || null, keys: metrics.filter(m => m.accept).map(m => m.key), update_height: !!(heightDiffers && head.height), height_cm: sc.height_cm } });
+        toast(`Guardé ${res.saved} ${res.saved === 1 ? 'medida' : 'medidas'} en tu perfil.`); S.tab = 'exp'; S.expSec = 'per'; renderShell();
+      } catch (err) { document.getElementById('e').textContent = err.message; }
+    };
+  };
   draw();
 }
 

@@ -22,7 +22,7 @@ from ..normalize import explanations, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import assistant, auth, backup, clinical, drugs, health, ingest, naming, reviews, store
+from . import assistant, auth, backup, bodyscan, clinical, drugs, health, ingest, naming, reviews, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -202,7 +202,7 @@ def create_app(
     ingest.migrate_imaging(db)
     ingest.migrate_observation(db)
     ingest.migrate_document(db)
-    db.executescript(health.SCHEMA)
+    health.migrate(db)
     db.executescript(reviews.SCHEMA)
     reviews.interrupted(db)
     ingest.load_custom(db)
@@ -549,6 +549,39 @@ def create_app(
         name_after_upload(person_id, done.document_id)
         return {"document_id": done.document_id, "medications": done.rows, "kind": "receta"}
 
+    class BodyReview(BaseModel):
+        measured_on: str | None = None
+        keys: list[str]
+        update_height: bool = False
+        height_cm: float | None = None
+
+    @app.post("/api/people/{person_id}/body-scans")
+    async def upload_body_scan(person_id: int, actor: Me, file: Annotated[UploadFile, File()]) -> dict:
+        """Reporte de composición corporal (InBody) en foto o PDF: Claude lo transcribe y tú lo confirmas."""
+        person = subject(person_id, actor, "subir_estudio")
+        data = await file.read(ingest.MAX_BYTES + 1)
+        router = assistant_router()
+        if router is None:
+            raise HTTPException(409, "Leer este reporte necesita Claude: conecta tu clave en Configuración.")
+        try:
+            done = ingest.ingest_body_scan(db, vault, router, person, file.filename or "Composición", data)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, {"message": e.message, "document_id": e.document_id}) from None
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo leer con Claude: {e}") from None
+        return {"document_id": done.document_id, "metrics": done.rows, "kind": "composicion"}
+
+    @app.post("/api/documents/{doc_id}/review-body-scan")
+    def review_body_scan(doc_id: int, body: BodyReview, actor: Me) -> dict:
+        doc = document(doc_id, actor, "revisar_estudio")
+        try:
+            saved = ingest.confirm_body_scan(db, doc_id, doc["person_id"], body.model_dump())
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        return {"saved": saved}
+
     @app.post("/api/documents/{doc_id}/review-prescription")
     def review_prescription(doc_id: int, body: RxReview, actor: Me) -> dict:
         doc = document(doc_id, actor, "revisar_estudio")
@@ -566,7 +599,8 @@ def create_app(
             "d.uploaded_at, "
             "(SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id) "
             "+ (SELECT COUNT(*) FROM imaging_study i WHERE i.document_id = d.id) "
-            "+ (SELECT COUNT(*) FROM medication m WHERE m.document_id = d.id) AS results "
+            "+ (SELECT COUNT(*) FROM medication m WHERE m.document_id = d.id) "
+            "+ (SELECT COUNT(*) FROM measurement q WHERE q.document_id = d.id) AS results "
             "FROM document d WHERE person_id = ? ORDER BY COALESCE(collected_on, uploaded_at) DESC",
             (person_id,),
         )
@@ -695,7 +729,7 @@ def create_app(
     @app.get("/api/people/{person_id}/health")
     def health_overview(person_id: int, actor: Me) -> dict:
         subject(person_id, actor, "ver_expediente")
-        return health.overview(db, person_id)
+        return {**health.overview(db, person_id), "body_scans": bodyscan.scans(db, person_id)}
 
     @app.put("/api/people/{person_id}/health/profile")
     def health_save(person_id: int, actor: Me, data: Annotated[dict, Body()]) -> dict:
@@ -970,6 +1004,7 @@ def create_app(
         db.execute(
             "UPDATE medication SET document_id = NULL WHERE document_id = ?", (doc_id,)
         )  # se conservan
+        db.execute("UPDATE measurement SET document_id = NULL WHERE document_id = ?", (doc_id,))
         db.execute("DELETE FROM document WHERE id = ?", (doc_id,))
         vault.delete(doc["file_path"])
         return {"ok": True}

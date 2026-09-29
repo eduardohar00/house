@@ -22,7 +22,7 @@ from ..imaging import ImagingReport, looks_like_lab, parse_reports
 from ..normalize import critical, ranges, terminology, units
 from ..privacy import Anonymizer
 from ..providers import BudgetExceeded, ProviderError, Router
-from . import clinical, ocr, prescriptions, tables
+from . import bodyscan, clinical, health, ocr, prescriptions, tables
 from .vault import Vault
 
 MAX_BYTES = 25 * 1024 * 1024
@@ -148,6 +148,7 @@ def migrate_imaging(db: sqlite3.Connection) -> None:
     db.executescript(IMAGE_SCHEMA)
     db.executescript(LINK_SCHEMA)
     db.executescript(PRESCRIPTION_SCHEMA)
+    db.executescript(bodyscan.SCHEMA)
     db.executescript(CUSTOM_SCHEMA)
     have = {r["name"] for r in db.execute("PRAGMA table_info(imaging_study)")}
     for col, typ in _IMAGING_COLUMNS.items():
@@ -819,6 +820,61 @@ def ingest_prescription(
     return Ingested(cur.lastrowid, len(result["medications"]), "receta")
 
 
+def ingest_body_scan(
+    db: sqlite3.Connection, vault: Vault, router: Router, person: sqlite3.Row, filename: str, data: bytes
+) -> Ingested:
+    """Reporte de composición corporal (InBody): Claude transcribe y la persona confirma antes de guardar."""
+    if len(data) > MAX_BYTES:
+        raise IngestError(413, "El archivo pesa más de 25 MB.")
+    sha = hashlib.sha256(data).hexdigest()
+    dup = db.execute(
+        "SELECT id FROM document WHERE person_id = ? AND file_sha256 = ?", (person["id"], sha)
+    ).fetchone()
+    if dup:
+        raise IngestError(409, "Este reporte ya estaba cargado.", dup["id"])
+    images, kind = prescription_images(data)
+    result = bodyscan.read_scan(router, images)
+    if not result["metrics"]:
+        raise IngestError(
+            422, "No encontré datos de composición corporal. ¿Se ve completo y derecho el reporte?"
+        )
+    result["file_kind"] = kind
+    cur = db.execute(
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256, filename, "
+        "name_source) VALUES(?, 'otro', ?, ?, ?, ?, ?, 'ia')",
+        (person["id"], "Composición corporal", result["measured_on"], vault.put(data), sha, filename),
+    )
+    db.execute(
+        "INSERT INTO body_scan(document_id, person_id, measured_on, confirmed, data) VALUES(?,?,?,0,?)",
+        (cur.lastrowid, person["id"], result["measured_on"], json.dumps(result, ensure_ascii=False)),
+    )
+    return Ingested(cur.lastrowid, len(result["metrics"]), "composicion")
+
+
+def confirm_body_scan(db: sqlite3.Connection, doc_id: int, person_id: int, body: dict) -> int:
+    doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    scan = db.execute("SELECT confirmed FROM body_scan WHERE document_id = ?", (doc_id,)).fetchone()
+    if scan is None:
+        raise IngestError(422, "Este documento no es un reporte de composición corporal.")
+    if scan["confirmed"] or doc["review_state"] != "pendiente":
+        raise IngestError(409, "Este reporte ya fue revisado.")
+    when = (body.get("measured_on") or "").strip()
+    try:
+        date.fromisoformat(when)
+    except ValueError:
+        raise IngestError(422, "Indica la fecha del reporte (AAAA-MM-DD).") from None
+    keys = [k for k in body.get("keys", []) if k in bodyscan.METRICS]
+    if not keys:
+        raise IngestError(422, "Elige al menos una medida para guardar.")
+    height = body.get("height_cm") if body.get("update_height") else None
+    try:
+        saved = bodyscan.save_confirmed(db, person_id, doc_id, when, keys, float(height) if height else None)
+    except health.HealthError as e:
+        raise IngestError(e.status, e.message) from None
+    db.execute("UPDATE document SET review_state = 'revisada', collected_on = ? WHERE id = ?", (when, doc_id))
+    return saved
+
+
 def confirm_prescription(db: sqlite3.Connection, doc_id: int, person_id: int, body: dict) -> int:
     """Guarda como medicamentos solo lo aceptado (corregido por la persona) y lo liga a un padecimiento."""
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
@@ -876,6 +932,20 @@ def confirm_prescription(db: sqlite3.Connection, doc_id: int, person_id: int, bo
 
 def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    scan = db.execute("SELECT data, confirmed FROM body_scan WHERE document_id = ?", (doc_id,)).fetchone()
+    if scan is not None:
+        prof = health.overview(db, doc["person_id"])["profile"]
+        return {
+            "document": {
+                k: doc[k] for k in ("id", "person_id", "doc_type", "title", "collected_on", "review_state")
+            },
+            "ai_saw": "",
+            "redactions": {},
+            "rows": [],
+            "imaging": [],
+            "body_scan": {**json.loads(scan["data"]), "confirmed": bool(scan["confirmed"])},
+            "current_height_cm": prof.get("height_cm"),
+        }
     if doc["doc_type"] == "receta":
         row = db.execute("SELECT data FROM prescription_draft WHERE document_id = ?", (doc_id,)).fetchone()
         draft = json.loads(row["data"]) if row else None

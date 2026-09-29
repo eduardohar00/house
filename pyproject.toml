@@ -38,3 +38,4 @@ select = ["E", "F", "I", "B", "UP"]
 "src/house/normalize/explanations.py" = ["E501"]  # textos para personas, una línea por análisis
 "src/house/app/assistant.py" = ["E501"]  # instrucciones y descripciones de herramientas en prosa
 "src/house/app/reviews.py" = ["E501"]  # la instrucción de la revisión es prosa
+"src/house/app/bodyscan.py" = ["E501"]  # instrucciones para Claude en prosa
