@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS study_image (
 );
 """
 
+CUSTOM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS custom_analyte (
+  key        TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  unit       TEXT NOT NULL DEFAULT '',
+  kind       TEXT NOT NULL CHECK (kind IN ('num', 'qual')),
+  alias      TEXT,                                  -- nombre impreso con el que se creó
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 LINK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS study_link (
   a INTEGER NOT NULL REFERENCES imaging_study(id) ON DELETE CASCADE,
@@ -127,6 +138,7 @@ def migrate_imaging(db: sqlite3.Connection) -> None:
     db.executescript(IMAGING_SCHEMA)
     db.executescript(IMAGE_SCHEMA)
     db.executescript(LINK_SCHEMA)
+    db.executescript(CUSTOM_SCHEMA)
     have = {r["name"] for r in db.execute("PRAGMA table_info(imaging_study)")}
     for col, typ in _IMAGING_COLUMNS.items():
         if col not in have:
@@ -141,6 +153,8 @@ def migrate_observation(db: sqlite3.Connection) -> None:
     if have and "qualifier" not in have:
         db.execute("ALTER TABLE observation ADD COLUMN qualifier TEXT")
     have_rows = {r["name"] for r in db.execute("PRAGMA table_info(extraction_row)")}
+    if have_rows and "ignored" not in have_rows:
+        db.execute("ALTER TABLE extraction_row ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0")
     if have_rows and "qualifier" not in have_rows:
         db.execute("ALTER TABLE extraction_row ADD COLUMN qualifier TEXT")
 
@@ -215,6 +229,44 @@ def ingest_image(
         (person["id"], title, _filename_date(filename), media, vault.put(data), sha),
     )
     return cur.lastrowid
+
+
+def load_custom(db: sqlite3.Connection) -> None:
+    """Carga al catálogo en uso los análisis propios guardados (y quita los de otra base en este proceso)."""
+    terminology.clear_custom()
+    for r in db.execute("SELECT * FROM custom_analyte ORDER BY created_at, key"):
+        terminology.register_custom(_custom_analyte(r["key"], r["name"], r["unit"], r["kind"], r["alias"]))
+
+
+def _custom_analyte(key: str, name: str, unit: str, kind: str, alias: str | None) -> terminology.Analyte:
+    return terminology.Analyte(key, name, "", unit, "otros", (alias,) if alias else (), kind)
+
+
+def create_custom(
+    db: sqlite3.Connection, name: str, unit: str, kind: str, alias: str | None = None
+) -> terminology.Analyte:
+    """Crea un análisis propio para lo que el catálogo no trae. Aparece en el menú y tiene su gráfica."""
+    name, unit, alias = name.strip(), (unit or "").strip(), (alias or "").strip() or None
+    if not 2 <= len(name) <= 80:
+        raise IngestError(422, "Escribe un nombre de entre 2 y 80 letras.")
+    if len(unit) > 20:
+        raise IngestError(422, "La unidad es muy larga (máximo 20 caracteres).")
+    if kind not in ("num", "qual"):
+        raise IngestError(422, "El resultado es un número (num) o un texto (qual).")
+    if terminology.is_standard_name(name):
+        raise IngestError(409, f"«{name}» ya está en el catálogo: elígelo del menú.")
+    base = terminology.CUSTOM_PREFIX + terminology.slug(name)
+    key, n = base, 1
+    while key in terminology.BY_KEY:
+        n += 1
+        key = f"{base}_{n}"
+    db.execute(
+        "INSERT INTO custom_analyte(key, name, unit, kind, alias) VALUES(?,?,?,?,?)",
+        (key, name, "" if kind == "qual" else unit, kind, alias),
+    )
+    analyte = _custom_analyte(key, name, "" if kind == "qual" else unit, kind, alias)
+    terminology.register_custom(analyte)
+    return analyte
 
 
 class IngestError(Exception):
@@ -530,13 +582,16 @@ def refresh_missing(
     )
     saved = _saved_counter(db, doc_id)
     keep = Counter(saved)
+    ignored = set()
     for r in db.execute(
-        "SELECT id, printed_name, value_printed FROM extraction_row WHERE document_id = ?", (doc_id,)
+        "SELECT id, printed_name, value_printed, ignored FROM extraction_row WHERE document_id = ?", (doc_id,)
     ):
         k = (r["printed_name"], r["value_printed"])
         if keep[k] > 0:
             keep[k] -= 1  # este renglón es un resultado guardado
         else:
+            if r["ignored"]:
+                ignored.add(k)
             db.execute("DELETE FROM extraction_row WHERE id = ?", (r["id"],))
     for r in outcome.rows:
         k = (r.printed_name, r.value_text)
@@ -544,6 +599,12 @@ def refresh_missing(
             saved[k] -= 1
             continue
         _save_row(db, doc_id, r)
+        if k in ignored:
+            db.execute(
+                "UPDATE extraction_row SET ignored = 1 WHERE document_id = ? AND printed_name = ? "
+                "AND value_printed = ?",
+                (doc_id, r.printed_name, r.value_text),
+            )
     return len(not_saved_rows(db, doc_id, True))
 
 
@@ -556,6 +617,8 @@ def not_saved_rows(db: sqlite3.Connection, doc_id: int, reviewed: bool) -> list[
     saved = _saved_counter(db, doc_id) if reviewed else Counter()
     out = []
     for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ? ORDER BY id", (doc_id,)):
+        if r["ignored"]:
+            continue  # la persona indicó que no es un resultado (control, leyenda...)
         problems = json.loads(r["problems"])
         reason, lost = None, True
         for p in problems:
@@ -725,6 +788,8 @@ def confirm_review(
             raise IngestError(
                 422, "Ese renglón ya está guardado o no existe." if complete else "Fila desconocida."
             )
+        if d.get("ignore") and not d.get("accept"):
+            db.execute("UPDATE extraction_row SET ignored = 1 WHERE id = ?", (r["id"],))
         if not d.get("accept"):
             continue
         key = d.get("analyte_key") or r["analyte_key"]

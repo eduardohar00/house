@@ -666,3 +666,63 @@ ANTIGENO DE Giardia: NEGATIVO
         rows["cryptosporidium_antigen"].value_label == "NEGATIVO"
         and rows["giardia_antigen"].value_label == "NEGATIVO"
     )
+
+
+def test_custom_analyte_ignore_and_persistence(tmp_path):
+    from house.normalize import terminology
+
+    cfg = Config(tasks={"extract": "base"}, providers={"base": ProviderConfig(name="base", kind="mock")})
+    c = TestClient(create_app(tmp_path, key_provider=lambda: KEY, router=Router(cfg)))
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    lines = ["Informe de Resultados de Laboratorio", "Fecha de Toma : 01/03/2026", "Glucosa 105 70 - 99 mg/dL",
+             "Análisis Inventado XYZ 12.5 mg/dL 10 - 20", "Otro Inventado ABC 7.5 mg/dL 1 - 9"]  # fmt: skip
+    doc = upload(c, me, make_pdf(lines)).json()["document_id"]
+    rows = {r["printed_name"]: r for r in c.get(f"/api/documents/{doc}").json()["rows"]}
+
+    assert (
+        c.post("/api/catalog/custom", json={"name": "Glucosa en ayunas"}, headers=H).status_code == 409
+    )  # ya existe
+    assert c.post("/api/catalog/custom", json={"name": "x"}, headers=H).status_code == 422
+    made = c.post(
+        "/api/catalog/custom",
+        json={
+            "name": "Análisis Inventado XYZ",
+            "unit": "mg/dL",
+            "kind": "num",
+            "alias": "Análisis Inventado XYZ",
+        },
+        headers=H,
+    )
+    key = made.json()["key"]
+    assert key == "custom_analisis_inventado_xyz" and made.json()["info"]["custom"] is True
+    assert c.get("/api/catalog").json()[key]["name"] == "Análisis Inventado XYZ"
+
+    decisions = [
+        {"row_id": rows["Glucosa"]["id"], "accept": True},
+        {
+            "row_id": rows["Análisis Inventado XYZ"]["id"],
+            "accept": True,
+            "analyte_key": key,
+            "printed_value": "12.5",
+        },
+    ]
+    ctl = [rows["Otro Inventado ABC"]]
+    decisions += [{"row_id": r["id"], "accept": False, "ignore": True} for r in ctl]
+    body = {"collected_on": "2026-03-01", "decisions": decisions}
+    assert c.post(f"/api/documents/{doc}/review", json=body, headers=H).json() == {"saved": 2}
+    obs = {o["analyte_key"]: o for o in c.get(f"/api/people/{me}/observations").json()}
+    assert (obs[key]["value_num"], obs[key]["unit"], obs[key]["status"]) == (12.5, "mg/dL", "ok")
+    (item,) = c.get(f"/api/people/{me}/documents").json()
+    assert item["not_saved"] == []  # lo ignorado no se reclama como pérdida
+
+    # sobrevive al reinicio y el siguiente estudio ya reconoce el nombre
+    c2 = TestClient(create_app(tmp_path, key_provider=lambda: KEY, router=Router(cfg)))
+    c2.post("/api/login", json={"person_id": me, "pin": ADMIN["pin"]}, headers=H).raise_for_status()
+    assert key in c2.get("/api/catalog").json()
+    other = upload(
+        c2, me, make_pdf(lines[:2] + ["Análisis Inventado XYZ 30.1 mg/dL 10 - 20"]), "otro.pdf"
+    ).json()["document_id"]
+    (r2,) = [r for r in c2.get(f"/api/documents/{other}").json()["rows"]]
+    assert r2["analyte_key"] == key
+    terminology.clear_custom()

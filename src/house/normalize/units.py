@@ -105,7 +105,7 @@ def same_unit(key: str, unit_text: str | None, canonical_unit: str) -> bool:
 def to_canonical(key: str, value: float, unit_text: str | None, canonical_unit: str) -> tuple[float, str]:
     """Devuelve (valor, unidad canónica). Lanza UnknownUnit si no sabe convertir."""
     u = norm_unit(unit_text)
-    if (key, u) in _SAME_VALUE:
+    if (key, u) in _SAME_VALUE or (u and u == norm_unit(canonical_unit)):
         return value, canonical_unit
     if u == "" and canonical_unit == "":
         return value, canonical_unit

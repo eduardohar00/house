@@ -58,6 +58,7 @@ class Decision(BaseModel):
     value_num: float | None = None
     value_text: str | None = None
     printed_value: str | None = None  # al indicar el análisis de una fila no reconocida: lo que dice el PDF
+    ignore: bool = False  # no es un resultado (control del laboratorio, leyenda): no se guarda ni se reclama
 
 
 class ManualResult(BaseModel):
@@ -169,6 +170,7 @@ def create_app(
     db.executescript(ingest.SCHEMA)
     ingest.migrate_imaging(db)
     ingest.migrate_observation(db)
+    ingest.load_custom(db)
     db.executescript(backup.SETTINGS_SCHEMA)
     clinical.migrate(db)
     ingest.repair_references(db)
@@ -652,8 +654,34 @@ def create_app(
                 "group": a.group,
                 "kind": a.kind,
                 "about": explanations.about(a.key),
+                "custom": a.key.startswith(terminology.CUSTOM_PREFIX),
             }
-            for a in terminology.CATALOG
+            for a in terminology.BY_KEY.values()
+        }
+
+    class CustomAnalyte(BaseModel):
+        name: str
+        unit: str = ""
+        kind: str = "num"
+        alias: str | None = None
+
+    @app.post("/api/catalog/custom")
+    def create_custom_analyte(body: CustomAnalyte, actor: Me) -> dict:
+        """Análisis que el catálogo no trae: la persona lo crea y aparece en el menú con su gráfica."""
+        try:
+            a = ingest.create_custom(db, body.name, body.unit, body.kind, body.alias)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        return {
+            "key": a.key,
+            "info": {
+                "name": a.name,
+                "unit": a.unit,
+                "group": a.group,
+                "kind": a.kind,
+                "about": None,
+                "custom": True,
+            },
         }
 
     @app.get("/api/settings")

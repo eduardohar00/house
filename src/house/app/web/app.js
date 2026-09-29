@@ -619,6 +619,21 @@ const PROBLEMS = {
   aparece_mas_de_una_vez: 'Aparece más de una vez en este estudio',
 };
 
+// Renglón que House no reconoció: elegir del menú, ignorarlo (control, leyenda) o crear un análisis propio.
+const titleCase = t => { const l = String(t || '').toLowerCase().trim(); return l.charAt(0).toUpperCase() + l.slice(1); };
+function unknownTools(r) {
+  if (r.assigned) return '';
+  if (r.ignore) return `<span class="flag">Ignorado: no es un resultado</span> <button class="mini" data-unignore="${r.id}">Deshacer</button>`;
+  const numeric = r.value_num != null || /^[<>]?\s*\d+([.,]\d+)?$/.test(String(r.value_printed || '').trim());
+  const form = r.newOpen ? `<div class="newan"><label>Nombre<input type="text" id="nn-${r.id}" value="${esc(titleCase(r.printed_name.replace(/\(.*?\)/g, '')))}" maxlength="80"></label>
+      <label>Unidad<input type="text" id="nu-${r.id}" value="${esc(r.unit_printed || '')}" maxlength="20" placeholder="Por ejemplo mg/dL"></label>
+      <label>Tipo<select id="nk-${r.id}"><option value="num" ${numeric ? 'selected' : ''}>Un número</option><option value="qual" ${numeric ? '' : 'selected'}>Un texto (Negativo, Normal…)</option></select></label>
+      ${r.newErr ? `<span class="err">${esc(r.newErr)}</span>` : ''}
+      <span style="display:flex;gap:6px"><button class="mini" data-newsave="${r.id}">Crear y usar</button><button class="mini" data-newcancel="${r.id}">Cancelar</button></span></div>` : '';
+  return `<span class="flag">No reconocido: elige qué análisis es, ignóralo o crea uno nuevo</span>
+    <span class="rowact"><button class="mini" data-ignore="${r.id}">Ignorar</button><button class="mini" data-newan="${r.id}">Crear análisis nuevo</button></span>${form}`;
+}
+
 async function openReview(id, opts = {}) {
   const complete = !!opts.complete;  // estudio ya revisado: solo se muestra lo que no quedó guardado
   const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
@@ -664,7 +679,7 @@ async function openReview(id, opts = {}) {
         ${shown.map(r => `<tr data-row="${r.id}" class="${r.accept ? (r.needs_attention ? 'fl2' : '') : 'skip'} ${r.id === active ? 'active' : ''}">
           <td><input type="checkbox" data-acc="${r.id}" ${r.accept ? 'checked' : ''} ${(r.assigned || r.analyte_key) ? '' : 'disabled'} aria-label="Guardar"></td>
           <td><b>${esc(r.assigned ? S.catalog[r.assigned].name : (r.name || r.printed_name))}</b><small>${esc(r.printed_name)}${r.section ? ' · ' + esc(r.section) : ''}${layout.boxes[r.id] ? ` · pág. ${layout.boxes[r.id].page}` : ''}</small>
-            ${r.analyte_key ? '' : `<input list="catlist" data-assign="${r.id}" placeholder="¿Qué análisis es? Escribe para buscar" value="${r.assigned ? esc(S.catalog[r.assigned].name) : ''}" style="width:100%;margin-top:4px">${r.assigned ? '' : '<span class="flag">No reconocido: dime qué análisis es o no se guardará</span>'}`}
+            ${r.analyte_key ? '' : `<input list="catlist" data-assign="${r.id}" placeholder="¿Qué análisis es? Escribe para buscar" value="${r.assigned ? esc(S.catalog[r.assigned].name) : ''}" style="width:100%;margin-top:4px">${unknownTools(r)}`}
             ${r.problems.filter(p => p !== 'analito_desconocido').map(p => `<span class="flag">${esc(PROBLEMS[p] || p)}</span>`).join('')}
             ${r.converted ? `<span class="flag">Convertido de ${esc(r.value_printed)} ${esc(r.unit_printed || '')}</span>` : ''}</td>
           <td>${r.qualifier ? `<span title="El laboratorio imprimió ${esc(r.qualifier)} antes del valor: es un límite del método">${esc(r.qualifier)}</span> ` : ''}<input type="text" data-val="${r.id}" value="${esc(r.edited ?? (r.assigned ? r.value_printed : r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed))}"> ${esc(r.assigned ? (r.unit_printed || '') : (r.unit || ''))}</td>
@@ -687,6 +702,19 @@ async function openReview(id, opts = {}) {
       catch (err) { document.getElementById('e').textContent = err.message; b.disabled = false; b.textContent = 'Volver a leer'; }
     };
     document.getElementById('only').onchange = e => { onlyFlags = e.target.checked; draw(); };
+    const row = el => rows.find(x => x.id == el.dataset[Object.keys(el.dataset)[0]]);
+    view().querySelectorAll('[data-ignore]').forEach(b => b.onclick = () => { const r = row(b); r.ignore = true; r.accept = false; draw(); });
+    view().querySelectorAll('[data-unignore]').forEach(b => b.onclick = () => { row(b).ignore = false; draw(); });
+    view().querySelectorAll('[data-newan]').forEach(b => b.onclick = () => { row(b).newOpen = true; draw(); });
+    view().querySelectorAll('[data-newcancel]').forEach(b => b.onclick = () => { const r = row(b); r.newOpen = false; r.newErr = ''; draw(); });
+    view().querySelectorAll('[data-newsave]').forEach(b => b.onclick = async () => {
+      const r = row(b), name = document.getElementById(`nn-${r.id}`).value.trim();
+      try {
+        const made = await api('/api/catalog/custom', { method: 'POST', body: { name, unit: document.getElementById(`nu-${r.id}`).value.trim(), kind: document.getElementById(`nk-${r.id}`).value, alias: r.printed_name } });
+        S.catalog[made.key] = made.info; byName.set(made.info.name.toLowerCase(), made.key);
+        r.assigned = made.key; r.accept = true; r.newOpen = false; r.newErr = ''; toast(`Análisis «${made.info.name}» creado.`); draw();
+      } catch (err) { r.newErr = err.message; draw(); }
+    });
     view().querySelectorAll('[data-assign]').forEach(i => i.onchange = () => {
       const r = rows.find(x => x.id == i.dataset.assign), k = keyFromName(i.value);
       r.assigned = k; r.accept = !!k; draw();
@@ -727,6 +755,7 @@ async function openReview(id, opts = {}) {
       const decisions = [];
       for (const r of rows) {
         const dd = { row_id: r.id, accept: r.accept };
+        if (r.ignore) { dd.accept = false; dd.ignore = true; decisions.push(dd); continue; }
         if (r.accept && r.assigned) { dd.analyte_key = r.assigned; dd.printed_value = (r.edited ?? r.value_printed).trim(); decisions.push(dd); continue; }
         if (r.accept && r.edited != null) {
           if (r.value_num != null) {

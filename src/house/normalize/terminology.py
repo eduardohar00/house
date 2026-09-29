@@ -720,6 +720,32 @@ _INDEX = {_norm(a): an for an in CATALOG for a in (*an.aliases, an.name)}
 BY_KEY = {a.key: a for a in CATALOG}
 
 
+CUSTOM_PREFIX = "custom_"
+
+
+def register_custom(a: Analyte) -> None:
+    """Análisis propio (creado por la persona): entra al catálogo en uso, sin desplazar a los estándar."""
+    BY_KEY[a.key] = a
+    for alias in (a.name, *a.aliases):
+        _INDEX.setdefault(_norm(alias), a)
+
+
+def clear_custom() -> None:
+    for key in [k for k in BY_KEY if k.startswith(CUSTOM_PREFIX)]:
+        BY_KEY.pop(key)
+    for name in [n for n, a in _INDEX.items() if a.key.startswith(CUSTOM_PREFIX)]:
+        del _INDEX[name]
+
+
+def is_standard_name(name: str) -> bool:
+    found = _INDEX.get(_norm(name))
+    return found is not None and not found.key.startswith(CUSTOM_PREFIX)
+
+
+def slug(name: str) -> str:
+    return _norm(name).replace(" ", "_")[:40] or "analisis"
+
+
 def match_analyte(printed_name: str, unit: str | None = None, section: str | None = None) -> Analyte | None:
     name = _norm(printed_name)
     for ctx in section_context(section):
