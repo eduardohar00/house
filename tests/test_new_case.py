@@ -159,3 +159,10 @@ def test_percent_analyte_without_unit_is_not_assumed_percent():
 
     with pytest.raises(units.UnknownUnit):
         units.to_canonical("lymph_pct", 1.5, None, "%")
+
+
+def test_collected_on_from_short_date_but_not_birth_date():
+    from house.bench.new_case import prefill_expected
+
+    text = "Fecha de nacimiento:01/02/1990\nFecha: 05/06/19 08:54 Edad:29 años\nGlucosa 90 55 - 99 mg/dL"
+    assert prefill_expected(text)[0]["collected_on"] == "2019-06-05"

@@ -28,6 +28,7 @@ _LINE = re.compile(
 # Unidad sola en el renglón siguiente (Chopo parte "4.70-5.80 / millones/µL").
 _UNIT_LINE = re.compile(rf"^\s*(?:{_UNIT}|{_WORD_UNIT})\s*$")
 _DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
+_SHORT_DATE = re.compile(r"(\d{2})/(\d{2})/(\d{4}|\d{2})\b")
 
 
 class BaselineRegexProvider:
@@ -36,7 +37,7 @@ class BaselineRegexProvider:
 
     def complete_json(self, req: LLMRequest) -> LLMResponse:
         t0 = time.monotonic()
-        rows, collected, registered = [], None, None
+        rows, collected, registered, dated = [], None, None, None
         lines = req.user.splitlines()
         for i, line in enumerate(lines):
             if collected is None and re.search(r"toma|recolecci|muestra", line, re.I):
@@ -47,6 +48,12 @@ class BaselineRegexProvider:
                 m = _DATE.search(line)
                 if m:
                     registered = f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+            # Último recurso: una "Fecha:" cualquiera que no sea de nacimiento (año de 2 o 4 cifras).
+            if dated is None and re.search(r"\bfecha\b", line, re.I) and not re.search(r"nac", line, re.I):
+                m = _SHORT_DATE.search(line)
+                if m:
+                    year = m.group(3) if len(m.group(3)) == 4 else f"20{m.group(3)}"
+                    dated = f"{year}-{m.group(2)}-{m.group(1)}"
             m = _LINE.match(line)
             if m:
                 unit = m.group("unit") or m.group("unit_after")
@@ -63,7 +70,7 @@ class BaselineRegexProvider:
                 )
         data = {
             "document_type": "laboratorio" if rows else "otro",
-            "collected_on": collected or registered,
+            "collected_on": collected or registered or dated,
             "lab_name": None,
             "rows": rows,
         }

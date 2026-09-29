@@ -378,6 +378,7 @@ _CHOPO: tuple[Analyte, ...] = (
         "psa total",
     ),
     _a("urine_bilirubin", "Bilirrubina (orina)", "", "mg/dL", "orina"),
+    _a("urine_urobilinogen", "Urobilinógeno (orina)", "", "mg/dL", "orina", "urobilinogeno"),
     # Espermatobioscopía. "Volumen" y "pH" sin contexto se confunden con otros estudios: sin alias.
     _a("semen_abstinence", "Días de abstinencia", "", "días", "seminal", "dias de abstinencia"),
     _a("semen_volume", "Volumen seminal", "", "mL", "seminal"),
