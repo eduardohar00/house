@@ -412,3 +412,9 @@ button.lchip.add{cursor:pointer;padding:3px 10px;font-size:12.5px;font-weight:60
 .rvcheck input:checked+span{color:var(--muted);text-decoration:line-through}
 .rvsecbody h5{margin:14px 0 4px;font-size:14px}
 @media (max-width:600px){.rvdoc{font-size:15px}.rvsecbody,.rvbody{padding-left:10px;padding-right:10px}}
+.notes-area{width:100%;min-height:9em;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;font-size:15px;line-height:1.55;resize:vertical;white-space:pre-wrap}
+.notes-area:focus{outline:2px solid var(--accent);outline-offset:1px}
+label.wide{grid-column:1/-1}
+.ntv{margin-top:4px}
+.ntv>summary{cursor:pointer;color:var(--muted);font-size:13px}
+.ntb{white-space:pre-line;margin-top:6px;padding:10px 12px;border-left:3px solid var(--line);background:var(--bg);border-radius:0 8px 8px 0;font-size:14.5px;line-height:1.55;color:var(--ink)}

@@ -148,7 +148,7 @@ SPECS: dict[str, tuple[str, dict[str, Field]]] = {
     }),
     "problem": ("problem", {
         "name": Field("text", True), "status": Field("enum", True, options=PROBLEM_STATUSES),
-        "since_year": Field("year"), "notes": Field("text", max=1000),
+        "since_year": Field("year"), "notes": Field("text", max=4000),
     }),
     "medication": ("medication", {
         "name": Field("text"), "active_ingredient": Field("text"), "brand": Field("text"),

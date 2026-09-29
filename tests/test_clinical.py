@@ -544,3 +544,13 @@ def test_sintomas_y_reaccion_a_medicamento(world):
     assert any(e["kind"] == "sintoma" and "ibuprofeno" in e["subtitle"] for e in data["timeline"])
     c.delete(f"/api/people/{me}/clinical/symptom/{data['symptoms'][0]['id']}", headers=H).raise_for_status()
     assert c.get(f"/api/people/{me}/clinical").json()["symptoms"] == []
+
+
+def test_notas_largas_de_padecimiento(world):
+    c, me, _ = world
+    texto = "Primera línea.\n\n" + "x" * 3000
+    add(c, me, "problem", name="Prueba", status="En control", notes=texto).raise_for_status()
+    assert (
+        c.get(f"/api/people/{me}/clinical").json()["problems"][0]["notes"] == texto
+    )  # conserva los saltos de línea
+    assert add(c, me, "problem", name="Otra", status="En control", notes="x" * 4001).status_code == 422

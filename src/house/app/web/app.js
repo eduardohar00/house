@@ -853,10 +853,10 @@ const F = (name, label, type = 'text', extra = {}) => ({ name, label, type, ...e
 const STCLS = { 'En control': 'c', 'En tratamiento': 'a', 'Seguimiento': 'a', 'Resuelta': 'r' };
 const CLIN = {
   allergy: { key: 'allergies', title: 'Alergias', pendingLabel: 'Alergias a medicamentos', add: 'Agregar alergia', none: 'Sin alergias a medicamentos conocidas',
-    fields: [F('category', 'Tipo de alergia', 'select', { options: 'allergy_categories' }), F('substance', 'Sustancia', 'text', { list: 'allergy' }), F('reaction', 'Reacción (opcional)'), F('notes', 'Notas (opcional)')],
+    fields: [F('category', 'Tipo de alergia', 'select', { options: 'allergy_categories' }), F('substance', 'Sustancia', 'text', { list: 'allergy' }), F('reaction', 'Reacción (opcional)'), F('notes', 'Notas (opcional)', 'area')],
     line: a => `<b>${esc(a.substance)}</b>${a.reaction ? ' · ' + esc(a.reaction) : ''}`, sub: a => a.notes },
   problem: { key: 'problems', title: 'Problemas de salud', add: 'Agregar problema', none: 'Sin problemas de salud conocidos',
-    fields: [F('name', 'Problema', 'text', { list: 'problem' }), F('status', 'Estado', 'select', { options: 'statuses' }), F('since_year', 'Desde (año)', 'text', { ph: '2021' }), F('notes', 'Notas (opcional)')],
+    fields: [F('name', 'Problema', 'text', { list: 'problem' }), F('status', 'Estado', 'select', { options: 'statuses' }), F('since_year', 'Desde (año)', 'text', { ph: '2021' }), F('notes', 'Notas (opcional)', 'area')],
     line: p => `<b>${esc(p.name)}</b>${p.since_year ? ` <span class="s">desde ${esc(p.since_year)}</span>` : ''}`, sub: p => p.notes,
     badge: p => `<span class="sp ${STCLS[p.status] || 'c'}">${esc(p.status)}</span>` },
   medication: { key: 'medications', title: 'Medicamentos', add: 'Agregar medicamento', none: 'Sin medicamentos actuales',
@@ -875,16 +875,16 @@ const CLIN = {
     fields: [F('relative', 'Parentesco', 'text', { list: 'relative' }), F('condition', 'Condición', 'text', { list: 'problem' })],
     line: f => `<b>${esc(f.relative)}</b> · ${esc(f.condition)}`, sub: () => '' },
   procedure: { key: 'procedures', title: 'Cirugías', add: 'Agregar cirugía', none: 'Sin cirugías previas',
-    fields: [F('name', 'Procedimiento', 'text', { list: 'procedure' }), F('year', 'Año', 'text', { ph: '2012' }), F('notes', 'Notas (opcional)')],
+    fields: [F('name', 'Procedimiento', 'text', { list: 'procedure' }), F('year', 'Año', 'text', { ph: '2012' }), F('notes', 'Notas (opcional)', 'area')],
     line: x => `<b>${esc(x.name)}</b>${x.year ? ` <span class="s">${esc(x.year)}</span>` : ''}`, sub: x => x.notes },
   vaccine: { key: 'vaccines', title: 'Vacunas', add: 'Agregar vacuna',
     fields: [F('name', 'Vacuna', 'text', { list: 'vaccine' }), F('brand', 'Marca (opcional)', 'text', { ph: 'Por ejemplo Pfizer' }), F('given_on', 'Fecha', 'date'), F('dose_label', 'Dosis', 'select', { options: 'dose_options', optional: true }), F('lot', 'Lote (opcional)'), F('place', 'Dónde (opcional)')],
     line: v => `<b>${esc(v.name)}</b> <span class="s">${fd(v.given_on)}</span>`, sub: v => [v.dose_label, v.brand, v.place].filter(Boolean).join(' · ') },
   symptom: { key: 'symptoms', title: 'Síntomas y observaciones', add: 'Anotar algo que noté',
-    fields: [F('occurred_on', 'Fecha', 'date'), F('what', 'Qué noté', 'text', { ph: 'Por ejemplo: sangre en las heces' }), F('related', 'Después de qué (medicamento, comida, actividad; opcional)', 'text', { ph: 'Por ejemplo: ibuprofeno' }), F('notes', 'Detalles (opcional): color, cantidad, cuántos días…')],
+    fields: [F('occurred_on', 'Fecha', 'date'), F('what', 'Qué noté', 'text', { ph: 'Por ejemplo: sangre en las heces' }), F('related', 'Después de qué (medicamento, comida, actividad; opcional)', 'text', { ph: 'Por ejemplo: ibuprofeno' }), F('notes', 'Detalles (opcional): color, cantidad, cuántos días…', 'area')],
     line: s => `<b>${esc(s.what)}</b> <span class="s">${fd(s.occurred_on)}</span>`, sub: s => [s.related && 'después de ' + s.related, s.notes].filter(Boolean).join(' · ') },
   consultation: { key: 'consultations', title: 'Consultas', add: 'Agregar consulta',
-    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)')],
+    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)', 'area')],
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
@@ -920,7 +920,7 @@ async function renderClinical() {
     return `<div class="plw">${p.links.map(chip).join('')}${suggChips}${groups ? `<label class="lchip add"><select data-plink="${p.id}" aria-label="Ligar un estudio a este padecimiento"><option value="">＋ Ligar estudio o tratamiento</option>${groups}</select></label>` : ''}</div>`;
   };
   const row = (kind, it, cfg = CLIN[kind]) => { const sub = cfg.sub(it);
-    return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate && !cfg.noDup ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
+    return `<li><span>${cfg.line(it)}${sub ? (sub.length > 220 || sub.includes('\n') ? `<details class="ntv"><summary>${esc(sub.split('\n')[0].replace(/[.…]+$/, '').slice(0, 110))}… <span class="s">(ver notas completas)</span></summary><div class="ntb">${esc(sub)}</div></details>` : `<br><span class="s">${esc(sub)}</span>`) : ''}${it.duplicate && !cfg.noDup ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
       <span class="rowact">${cfg.badge ? cfg.badge(it) : ''}<button class="mini" data-edit="${kind}:${it.id}">Editar</button><button class="mini dn" data-del="${kind}:${it.id}">Quitar</button></span>${kind === 'problem' ? plinks(it) : ''}</li>`; };
   // Vacunas agrupadas por vacuna: «COVID-19 · 2 dosis · última mayo 2022», con cada dosis al abrir.
   const plainName = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -1153,13 +1153,15 @@ async function renderClinical() {
         return `<select name="${f.name}">${opts.map(o => `<option value="${esc(o)}" ${o === cur ? 'selected' : ''}>${esc(o || 'Sin especificar')}</option>`).join('')}</select>`;
       }
       if (f.type === 'check') return `<input type="checkbox" name="${f.name}" ${v ? 'checked' : ''}>`;
+      if (f.type === 'area') return `<textarea name="${f.name}" class="notes-area" rows="${Math.min(18, Math.max(6, String(v).split('\n').length + Math.ceil(String(v).length / 90)))}" maxlength="4000" spellcheck="true" lang="es" placeholder="Escribe con libertad; puedes usar renglones y párrafos.">${esc(v)}</textarea><span class="s">Puedes agrandar el cuadro arrastrando la esquina. <span data-count>${String(v).length}</span>/4000</span>`;
       return `<input type="${f.type === 'date' ? 'date' : 'text'}" name="${f.name}" value="${esc(v)}" ${f.list ? `list="dl_${f.list}"` : ''} ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} autocomplete="off" ${f.type === 'date' ? '' : 'spellcheck="true" lang="es"'} style="width:100%">`;
     };
     document.getElementById('clinform').innerHTML = `<form class="card cfg fg2" id="cf"><h2>${editing.item ? 'Editar' : cfg.add}</h2>
       ${lists.map(l => `<datalist id="dl_${l}">${(S.sug[l] || []).map(x => `<option value="${esc(x)}">`).join('')}</datalist>`).join('')}
-      ${cfg.fields.map(f => `<label>${esc(f.label)}${input(f)}</label>`).join('')}
+      ${cfg.fields.map(f => `<label ${f.type === 'area' ? 'class="wide"' : ''}>${esc(f.label)}${input(f)}</label>`).join('')}
       <p class="err" id="cfe"></p><div class="bar"><button type="button" class="mini" id="cfc">Cancelar</button><button class="btn">Guardar</button></div></form>`;
     document.getElementById('cf').elements[0].focus();
+    document.querySelectorAll('#cf textarea.notes-area').forEach(a => a.oninput = () => { const n = a.parentElement.querySelector('[data-count]'); if (n) n.textContent = a.value.length; });
     document.getElementById('cfc').onclick = () => { S.clinEdit = null; reload(); };
     document.getElementById('cf').onsubmit = async ev => {
       ev.preventDefault();
