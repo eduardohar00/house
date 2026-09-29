@@ -18,7 +18,10 @@ from .base import LLMRequest, LLMResponse
 # Acepta dos órdenes de columnas: "valor unidad referencia" y "valor referencia unidad" (Chopo).
 # Sin unidad impresa exige un intervalo de referencia; así no confunde números del nombre ("25-OH")
 # ni leyendas ("ALTO 200 - 499"). El "*" tras un valor fuera de rango se tolera.
-_UNIT = r"x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ0-9.]+(?:/[A-Za-zµμ0-9.]+)?|%|[fF][lL]|pg|UCT|seg"
+_UNIT = (
+    r"x?\s?10\^?\d+/[A-Za-zµμ]+|[A-Za-zµμ]+/[A-Za-zµμ0-9.]+(?:/[A-Za-zµμ0-9.]+)?|%|[fF][lL]|pg|UCT|seg"
+    r"|[µμu]g\s*Hb/g(?:\s+heces)?"
+)
 _WORD_UNIT = r"días|dias|mL|cm|millones"
 _REF = r"[<>]\s*=?\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?"
 _LINE = re.compile(
@@ -123,6 +126,7 @@ def _text_row(line: str) -> dict | None:
             if " ".join(plain[k : k + n]) != phrase:
                 continue
             name, rest = toks[:k], toks[k:]
+            name[-1] = name[-1].rstrip(":")  # "ANTIGENO DE Giardia: NEGATIVO"
             if name[-1] == ".":
                 return None  # "Cristales . Ausentes": sin resultado; el tipo viene en el renglón siguiente
             if _NUMBER.match(name[-1]) and len(name) > 1:

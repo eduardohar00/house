@@ -541,7 +541,8 @@ function notSaved(d) {
   const rows = d.not_saved || [], lost = rows.filter(r => r.lost), dup = rows.length - lost.length;
   if (!rows.length) return '';
   const head = lost.length ? `<b class="warnline">${lost.length} ${lost.length === 1 ? 'renglón' : 'renglones'} ${d.review_state === 'revisada' ? 'sin guardar' : 'por resolver'}</b>` : `<span class="tip">${dup} repetido${dup === 1 ? '' : 's'} (ya guardado${dup === 1 ? '' : 's'})</span>`;
-  return `<details class="hist"><summary>${head}</summary><ul class="nsl">${rows.map(r => `<li><b>${esc(r.printed_name)}</b> ${esc(r.value_printed || '')} ${esc(r.unit_printed || '')}<small>${esc(r.reason)}</small></li>`).join('')}</ul></details>`;
+  return `<details class="hist"><summary>${head}</summary><ul class="nsl">${rows.map(r => `<li><b>${esc(r.printed_name)}</b> ${esc(r.value_printed || '')} ${esc(r.unit_printed || '')}<small>${esc(r.reason)}</small></li>`).join('')}</ul>
+    ${d.review_state === 'revisada' && lost.length ? `<button class="mini" data-complete="${d.id}" title="Vuelve a leer el original con la versión actual de House y te deja resolver solo estos renglones">Completar estos renglones</button>` : ''}</details>`;
 }
 
 async function renderDocs() {
@@ -570,6 +571,14 @@ async function renderDocs() {
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFiles([...e.dataTransfer.files]); };
   view().querySelectorAll('[data-rev]').forEach(b => b.onclick = () => openReview(Number(b.dataset.rev)));
+  view().querySelectorAll('[data-complete]').forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = 'Leyendo de nuevo…';
+    try {
+      const r = await api(`/api/documents/${b.dataset.complete}/complete-read`, { method: 'POST' });
+      if (!r.open) { toast('Ya no falta ningún renglón.'); renderDocs(); return; }
+      openReview(Number(b.dataset.complete), { complete: true });
+    } catch (e) { b.disabled = false; b.textContent = 'Completar estos renglones'; toast(e.message); }
+  });
   view().querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (!confirm(`¿Borrar «${b.dataset.t}» y todos sus resultados? No se puede deshacer.`)) return;
     await api(`/api/documents/${b.dataset.del}`, { method: 'DELETE' }); toast('Estudio borrado.'); renderDocs();
@@ -609,10 +618,11 @@ const PROBLEMS = {
   aparece_mas_de_una_vez: 'Aparece más de una vez en este estudio',
 };
 
-async function openReview(id) {
+async function openReview(id, opts = {}) {
+  const complete = !!opts.complete;  // estudio ya revisado: solo se muestra lo que no quedó guardado
   const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
   if (d.document.doc_type === 'imagen') return openImagingReview(id, d, layout);
-  const rows = d.rows.map(r => ({ ...r, accept: !!r.analyte_key && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
+  const rows = d.rows.filter(r => !complete || r.unsaved).map(r => ({ ...r, accept: !!r.analyte_key && !(complete && r.problems.includes('aparece_mas_de_una_vez')) && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
   let onlyFlags = false, showAi = false, active = null, addOpen = false;
   const manual = [];  // resultados que faltaban y la persona agregó a mano
   const byName = new Map(Object.entries(S.catalog).map(([k, a]) => [a.name.toLowerCase(), k]));
@@ -641,10 +651,11 @@ async function openReview(id) {
     const shown = rows.filter(r => !onlyFlags || r.needs_attention || !r.analyte_key);
     const n = rows.filter(r => r.accept).length;
     document.getElementById('side').innerHTML = `
-      <div class="bar"><h2>Revisa «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><button class="mini" id="reread" title="Útil si House mejoró o si conectaste Claude">Volver a leer</button><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir PDF</a><button class="mini" id="back">Volver</button></div></div>
+      <div class="bar"><h2>${complete ? 'Completa' : 'Revisa'} «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><button class="mini" id="reread" ${complete ? 'hidden' : ''} title="Útil si House mejoró o si conectaste Claude">Volver a leer</button><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir PDF</a><button class="mini" id="back">Volver</button></div></div>
       <datalist id="catlist">${[...byName.keys()].sort().map(n => `<option value="${esc(S.catalog[byName.get(n)].name)}">`).join('')}</datalist>
+      ${complete ? '<p class="tip"><b>Solo aparece lo que no quedó guardado.</b> Lo que ya guardaste no se toca ni se duplica.</p>' : ''}
       <p class="tip">Toca un resultado para ver su renglón resaltado en el original. Corrige lo necesario y desmarca lo que no quieras guardar. Si House no reconoció un análisis, dile cuál es; si falta uno, agrégalo abajo. Solo lo que confirmes entra a tu expediente.</p>
-      <div class="bar"><label class="kv"><b>Fecha de toma</b><input type="date" id="date" value="${esc(d.document.collected_on || '')}"></label>
+      <div class="bar"><label class="kv"><b>Fecha de toma</b><input type="date" id="date" value="${esc(d.document.collected_on || '')}" ${complete ? 'disabled' : ''}></label>
         <label><input type="checkbox" id="only" ${onlyFlags ? 'checked' : ''}> Solo lo que requiere atención</label>
         <button class="mini" id="ai">${showAi ? 'Ocultar' : 'Ver'} lo que vio la IA</button></div>
       ${showAi ? `<div class="anon">${esc(d.ai_saw)}</div><p class="tip">Datos personales quitados antes de enviar: ${Object.entries(d.redactions).map(([k, v]) => `${esc(k.toLowerCase())} (${v})`).join(', ') || 'ninguno'}.</p>` : ''}
@@ -666,7 +677,7 @@ async function openReview(id) {
         <label>Rango que imprime el estudio (opcional)<input type="text" name="ref" autocomplete="off" placeholder="Por ejemplo 70 - 99"></label>
         <p class="err" id="me"></p><div class="bar"><button type="button" class="mini" id="mcancel">Cancelar</button><button class="btn">Agregar a la lista</button></div></form>` : `<div><button class="mini" id="addm">+ Agregar un resultado que falta</button></div>`}
       <p class="err" id="e"></p>
-      <div class="bar"><button class="btn danger" id="discard">Descartar estudio</button><button class="btn" id="ok">Confirmar ${n + manual.length} ${n + manual.length === 1 ? 'resultado' : 'resultados'}</button></div>`;
+      <div class="bar">${complete ? '<span></span>' : '<button class="btn danger" id="discard">Descartar estudio</button>'}<button class="btn" id="ok">Confirmar ${n + manual.length} ${n + manual.length === 1 ? 'resultado' : 'resultados'}</button></div>`;
     document.getElementById('back').onclick = () => renderDocs();
     document.getElementById('reread').onclick = async () => {
       if (!confirm('¿Volver a leer este estudio? Se pierden las correcciones que no hayas confirmado.')) return;
@@ -699,7 +710,7 @@ async function openReview(id) {
     }
     view().querySelectorAll('[data-acc]').forEach(c => c.onchange = () => { rows.find(r => r.id == c.dataset.acc).accept = c.checked; draw(); });
     view().querySelectorAll('[data-val]').forEach(i => i.oninput = () => { rows.find(r => r.id == i.dataset.val).edited = i.value; });
-    document.getElementById('discard').onclick = async () => {
+    if (!complete) document.getElementById('discard').onclick = async () => {
       if (!confirm('¿Descartar este estudio? Se borra el original y no se guarda ningún resultado.')) return;
       await api(`/api/documents/${id}`, { method: 'DELETE' }); toast('Estudio descartado.'); renderDocs();
     };
@@ -720,8 +731,9 @@ async function openReview(id) {
         decisions.push(dd);
       }
       try {
-        const res = await api(`/api/documents/${id}/review`, { method: 'POST', body: { collected_on: date, decisions, manual } });
-        toast(`Guardé ${res.saved} resultados en tu expediente.`); S.tab = 'res'; renderShell();
+        const res = await api(`/api/documents/${id}/review`, { method: 'POST', body: { collected_on: date, decisions, manual, complete } });
+        toast(`Guardé ${res.saved} ${res.saved === 1 ? 'resultado' : 'resultados'} en tu expediente.`);
+        if (complete) renderDocs(); else { S.tab = 'res'; renderShell(); }
       } catch (err) { e.textContent = err.message; }
     };
   };

@@ -84,6 +84,7 @@ class Review(BaseModel):
     collected_on: str
     decisions: list[Decision]
     manual: list[ManualResult] = []
+    complete: bool = False  # completar un estudio ya revisado (solo lo que falta)
 
 
 # Por decisión de Eduardo, todo lo hace Claude. Un house.toml en la carpeta de datos lo cambia.
@@ -453,6 +454,22 @@ def create_app(
             raise HTTPException(e.status, e.message) from None
         return Response(png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
+    @app.post("/api/documents/{doc_id}/complete-read")
+    def complete_read(doc_id: int, actor: Me) -> dict:
+        """Estudio ya revisado: lo vuelve a leer y deja abierto solo lo que no está guardado."""
+        doc = document(doc_id, actor, "releer_estudio")
+        person = db.execute("SELECT * FROM person WHERE id = ?", (doc["person_id"],)).fetchone()
+        router, fallback, _ = current_router()
+        try:
+            left = ingest.refresh_missing(db, vault, router, doc_id, person, fallback=fallback)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
+        return {"document_id": doc_id, "open": left}
+
     @app.post("/api/documents/{doc_id}/review")
     def review(doc_id: int, body: Review, actor: Me) -> dict:
         document(doc_id, actor, "revisar_estudio")
@@ -464,6 +481,7 @@ def create_app(
                 body.collected_on,
                 [d.model_dump(exclude_unset=True) for d in body.decisions],
                 [m.model_dump() for m in body.manual],
+                complete=body.complete,
             )
         except ingest.IngestError as e:
             raise HTTPException(e.status, e.message) from None

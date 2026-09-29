@@ -152,6 +152,8 @@ ABOUT: dict[str, str] = {
     "stool_epithelial": "Células de la pared del intestino que se desprenden y aparecen en las heces.",
     "stool_micro_parasites": "Parásitos o sus huevos vistos en el microscopio en las heces.",
     "giardia_antigen": "Busca proteínas de Giardia, un parásito del intestino, en las heces.",
+    "fit_stool": "Mide con anticuerpos cuánta sangre humana hay en las heces, aunque no se vea. Se usa para detectar sangrado del intestino.",
+    "cryptosporidium_antigen": "Busca proteínas de Cryptosporidium, un parásito del intestino, en las heces.",
     "calprotectin_stool": "Una proteína que sube en las heces cuando hay inflamación en el intestino. Ayuda a distinguirla de problemas sin inflamación.",
     "lactoferrin_stool": "Una proteína de los glóbulos blancos que aparece en las heces cuando hay inflamación en el intestino.",
     # Orina

@@ -470,22 +470,61 @@ _NOT_SAVED_REASON = {
 }
 
 
+def _saved_counter(db: sqlite3.Connection, doc_id: int) -> Counter:
+    """Cuántas veces está guardado cada (nombre, valor) impreso de un estudio, sin lo escrito a mano."""
+    return Counter(
+        (o["printed_name"], o["value_printed"])
+        for o in db.execute(
+            "SELECT printed_name, value_printed FROM observation "
+            "WHERE document_id = ? AND entered_manually = 0",
+            (doc_id,),
+        )
+    )
+
+
+def refresh_missing(
+    db: sqlite3.Connection,
+    vault: Vault,
+    router: Router,
+    doc_id: int,
+    person: sqlite3.Row,
+    today: date | None = None,
+    fallback: Router | None = None,
+) -> int:
+    """Estudio ya revisado: vuelve a leer el original con el lector actual y deja abiertos solo los
+    renglones que no están guardados. Lo ya guardado no se toca. Devuelve cuántos quedan por resolver."""
+    doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    if doc["doc_type"] != "laboratorio" or doc["review_state"] != "revisada":
+        raise IngestError(409, "Solo se puede completar un estudio de laboratorio ya revisado.")
+    outcome, _ = read_lab_text(
+        pdf_text(vault.get(doc["file_path"])), router, fallback, person_names(db, person), today
+    )
+    saved = _saved_counter(db, doc_id)
+    keep = Counter(saved)
+    for r in db.execute(
+        "SELECT id, printed_name, value_printed FROM extraction_row WHERE document_id = ?", (doc_id,)
+    ):
+        k = (r["printed_name"], r["value_printed"])
+        if keep[k] > 0:
+            keep[k] -= 1  # este renglón es un resultado guardado
+        else:
+            db.execute("DELETE FROM extraction_row WHERE id = ?", (r["id"],))
+    for r in outcome.rows:
+        k = (r.printed_name, r.value_text)
+        if saved[k] > 0:
+            saved[k] -= 1
+            continue
+        _save_row(db, doc_id, r)
+    return len(not_saved_rows(db, doc_id, True))
+
+
 def not_saved_rows(db: sqlite3.Connection, doc_id: int, reviewed: bool) -> list[dict]:
     """Renglones que House leyó del PDF pero que no están (o no estarán) entre los resultados guardados.
 
     `lost` = True cuando de verdad falta un resultado (no se reconoció o la persona lo descartó);
     False cuando es un repetido que ya está guardado.
     """
-    saved: Counter[tuple[str, str]] = Counter()
-    if reviewed:
-        saved.update(
-            (o["printed_name"], o["value_printed"])
-            for o in db.execute(
-                "SELECT printed_name, value_printed FROM observation "
-                "WHERE document_id = ? AND entered_manually = 0",
-                (doc_id,),
-            )
-        )
+    saved = _saved_counter(db, doc_id) if reviewed else Counter()
     out = []
     for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ? ORDER BY id", (doc_id,)):
         problems = json.loads(r["problems"])
@@ -504,6 +543,7 @@ def not_saved_rows(db: sqlite3.Connection, doc_id: int, reviewed: bool) -> list[
             continue  # sin problemas: se guardará al confirmar
         out.append(
             {
+                "id": r["id"],
                 "printed_name": r["printed_name"],
                 "value_printed": r["value_printed"],
                 "unit_printed": r["unit_printed"],
@@ -518,6 +558,9 @@ def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
     ex = db.execute("SELECT * FROM extraction WHERE document_id = ?", (doc_id,)).fetchone()
     rows = []
+    open_ids = (
+        {r["id"] for r in not_saved_rows(db, doc_id, True)} if doc["review_state"] == "revisada" else None
+    )
     for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ? ORDER BY id", (doc_id,)):
         a = terminology.BY_KEY.get(r["analyte_key"] or "")
         problems = json.loads(r["problems"])
@@ -527,6 +570,7 @@ def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
             {
                 **dict(r),
                 "name": a.name if a else None,
+                "unsaved": True if open_ids is None else r["id"] in open_ids,
                 "problems": problems,
                 "needs_attention": bool(problems) or bool(r["converted"]),
             }
@@ -628,21 +672,30 @@ def confirm_review(
     collected_on: str,
     decisions: list[dict],
     manual: list[dict] | None = None,
+    complete: bool = False,
 ) -> int:
     """Guarda en `observation` solo lo aceptado: filas del PDF (con correcciones o con el análisis que la
     persona indicó) y resultados que faltaban, escritos a mano y marcados como tales."""
     date.fromisoformat(collected_on)
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
-    if doc["review_state"] != "pendiente":
+    if complete and doc["review_state"] != "revisada":
+        raise IngestError(409, "Solo se puede completar un estudio ya revisado.")
+    if not complete and doc["review_state"] != "pendiente":
         raise IngestError(409, "Este estudio ya fue revisado.")
     rows = {r["id"]: r for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ?", (doc_id,))}
+    if complete:  # solo lo que aún no está guardado; lo guardado no se duplica ni se modifica
+        open_ids = {r["id"] for r in not_saved_rows(db, doc_id, True)}
+        rows = {i: r for i, r in rows.items() if i in open_ids}
+        collected_on = doc["collected_on"]
     now = datetime.now().isoformat(timespec="seconds")
     common = {"collected_on": collected_on, "reviewer_id": reviewer_id, "now": now}
     saved = 0
     for d in decisions:
         r = rows.get(d.get("row_id"))
         if r is None:
-            raise IngestError(422, "Fila desconocida.")
+            raise IngestError(
+                422, "Ese renglón ya está guardado o no existe." if complete else "Fila desconocida."
+            )
         if not d.get("accept"):
             continue
         key = d.get("analyte_key") or r["analyte_key"]
@@ -719,9 +772,11 @@ def confirm_review(
             **common,
         )
         saved += 1
-    db.execute(
-        "UPDATE document SET review_state = 'revisada', collected_on = ? WHERE id = ?", (collected_on, doc_id)
-    )
+    if not complete:
+        db.execute(
+            "UPDATE document SET review_state = 'revisada', collected_on = ? WHERE id = ?",
+            (collected_on, doc_id),
+        )
     return saved
 
 

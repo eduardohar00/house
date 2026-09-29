@@ -600,3 +600,69 @@ def test_documents_list_says_what_was_read_but_not_saved(client):
         "Sodio": "Decidiste no guardarlo",
     }
     assert item["results"] == 1
+
+
+def test_complete_a_reviewed_study_only_adds_what_was_missing(client):
+    c = client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    lines = ["Informe de Resultados de Laboratorio", "Fecha de Toma : 01/03/2026", "Glucosa 105 70 - 99 mg/dL",
+             "Análisis Inventado XYZ 12.5 mg/dL 10 - 20"]  # fmt: skip
+    doc = upload(c, me, make_pdf(lines)).json()["document_id"]
+    rev = c.get(f"/api/documents/{doc}").json()
+    decisions = [{"row_id": r["id"], "accept": r["analyte_key"] == "glucose"} for r in rev["rows"]]
+    c.post(
+        f"/api/documents/{doc}/review", json={"collected_on": "2026-03-01", "decisions": decisions}, headers=H
+    ).raise_for_status()
+    assert len(c.get(f"/api/people/{me}/observations").json()) == 1
+
+    assert c.post(f"/api/documents/{doc}/complete-read", headers=H).json() == {"document_id": doc, "open": 1}
+    rows = c.get(f"/api/documents/{doc}").json()["rows"]
+    assert [(r["printed_name"], r["unsaved"]) for r in rows] == [
+        ("Glucosa", False),
+        ("Análisis Inventado XYZ", True),
+    ]
+
+    # lo ya guardado no se puede volver a guardar ni modificar
+    glucose, other = rows
+    body = {
+        "collected_on": "2030-01-01",
+        "complete": True,
+        "decisions": [{"row_id": glucose["id"], "accept": True}],
+    }
+    assert c.post(f"/api/documents/{doc}/review", json=body, headers=H).status_code == 422
+    body["decisions"] = [{"row_id": other["id"], "accept": True, "analyte_key": "uric_acid"}]
+    assert c.post(f"/api/documents/{doc}/review", json=body, headers=H).json() == {"saved": 1}
+
+    obs = c.get(f"/api/people/{me}/observations").json()
+    assert sorted(o["analyte_key"] for o in obs) == ["glucose", "uric_acid"]
+    assert {o["collected_on"] for o in obs} == {"2026-03-01"}  # la fecha del estudio no cambia
+    (item,) = c.get(f"/api/people/{me}/documents").json()
+    assert item["not_saved"] == [] and item["review_state"] == "revisada" and item["results"] == 2
+    # un estudio pendiente no se "completa", se revisa
+    doc2 = upload(c, me, make_pdf(lines + ["Sodio 140 135 - 145 mmol/L"]), "otro.pdf").json()["document_id"]
+    assert c.post(f"/api/documents/{doc2}/complete-read", headers=H).status_code == 409
+
+
+def test_baseline_reader_keeps_fit_and_colon_antigen_lines():
+    from house.app.api import BASIC_CONFIG
+    from house.extract import extract_document
+    from house.providers import Router
+
+    text = """Informe de Resultados
+Fecha de Toma : 07/02/2026
+EXAMEN RESULTADO UNIDADES INTERVALO DE REFERENCIA
+PRUEBA INMUNOQUIMICA FECAL (FIT) 131.00 * µg Hb/g heces 0.00 - 15.00
+ANTIGENO DE Cryptosporidium: NEGATIVO
+ANTIGENO DE Giardia: NEGATIVO
+"""
+    rows = {r.key: r for r in extract_document(text, Router(BASIC_CONFIG)).rows}
+    assert (rows["fit_stool"].value, rows["fit_stool"].unit, rows["fit_stool"].status) == (
+        131.0,
+        "µg Hb/g",
+        "high",
+    )
+    assert (
+        rows["cryptosporidium_antigen"].value_label == "NEGATIVO"
+        and rows["giardia_antigen"].value_label == "NEGATIVO"
+    )

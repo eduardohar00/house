@@ -68,6 +68,8 @@ _CANON = {
     "seg": "s",
     "s": "s",
     "uu/ml": "µU/mL",
+    "ughb/g": "µg Hb/g",
+    "ughb/gheces": "µg Hb/g",  # prueba inmunoquímica fecal (FIT)
 }
 
 
