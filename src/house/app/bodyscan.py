@@ -68,6 +68,9 @@ Responde solo con el JSON pedido."""
 def scan_schema() -> dict:
     num = {"type": ["number", "null"]}
     text = {"type": ["string", "null"]}
+    evaluation = {
+        "anyOf": [{"type": "string", "enum": list(EVALS)}, {"type": "null"}]
+    }  # enum + null: así lo acepta la API
     metric = {
         "type": "object",
         "properties": {
@@ -75,7 +78,7 @@ def scan_schema() -> dict:
             "value": num,
             "normal_low": num,
             "normal_high": num,
-            "evaluation": {"type": ["string", "null"], "enum": [*EVALS, None]},
+            "evaluation": evaluation,
         },
         "required": ["key", "value", "normal_low", "normal_high", "evaluation"],
         "additionalProperties": False,
@@ -85,10 +88,10 @@ def scan_schema() -> dict:
         "properties": {
             "region": {"type": "string", "enum": list(REGIONS)},
             "lean_kg": num,
-            "lean_evaluation": {"type": ["string", "null"], "enum": [*EVALS, None]},
+            "lean_evaluation": evaluation,
             "fat_kg": num,
             "fat_pct": num,
-            "fat_evaluation": {"type": ["string", "null"], "enum": [*EVALS, None]},
+            "fat_evaluation": evaluation,
         },
         "required": ["region", "lean_kg", "lean_evaluation", "fat_kg", "fat_pct", "fat_evaluation"],
         "additionalProperties": False,
@@ -101,7 +104,7 @@ def scan_schema() -> dict:
             "date_printed": text,
             "height_cm": num,
             "age": num,
-            "sex": {"type": ["string", "null"], "enum": ["M", "F", None]},
+            "sex": {"anyOf": [{"type": "string", "enum": ["M", "F"]}, {"type": "null"}]},
             "metrics": {"type": "array", "items": metric},
             "segments": {"type": "array", "items": segment},
             "notes": text,

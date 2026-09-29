@@ -206,3 +206,47 @@ def test_old_measurement_tables_are_upgraded_and_assistant_sees_the_scan(tmp_pat
     assert prof["body_composition_reports"][0]["metrics"][0]["name"] == "Peso"
     assert "composición corporal (2026-09-04)" in box.person_context()
     assert "masa muscular esquelética 42.3 kg" in box.person_context()
+
+
+def _walk(node, path="$"):
+    """Recorre un esquema JSON y devuelve los problemas que la API de Anthropic rechaza."""
+    problems = []
+    if isinstance(node, dict):
+        if "enum" in node:
+            types = node.get("type", [])
+            types = [types] if isinstance(types, str) else types
+            check = {
+                "string": str,
+                "number": (int, float),
+                "integer": int,
+                "boolean": bool,
+                "null": type(None),
+            }
+            for v in node["enum"]:
+                if types and not any(isinstance(v, check[t]) for t in types):
+                    problems.append(f"{path}: el valor {v!r} no coincide con el tipo {types}")
+        if node.get("type") == "object":
+            props = node.get("properties", {})
+            if node.get("additionalProperties") is not False:
+                problems.append(f"{path}: falta additionalProperties=false")
+            if set(node.get("required", [])) != set(props):
+                problems.append(f"{path}: todos los campos deben ser requeridos")
+        for k, v in node.items():
+            problems += _walk(v, f"{path}.{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            problems += _walk(v, f"{path}[{i}]")
+    return problems
+
+
+def test_every_json_schema_sent_to_claude_is_valid_for_structured_outputs():
+    """Un esquema mal armado hace que Anthropic conteste 400 (BadRequestError): se revisan todos aquí."""
+    from house.app import drugs, naming, prescriptions, tables
+    from house.schema import extraction_json_schema
+
+    for name, schema in {
+        "composición": bodyscan.scan_schema(), "recetas": prescriptions.prescription_schema(),
+        "tablas": tables.tables_schema(), "nombres": naming.schema(), "sustancias": drugs.schema(),
+        "laboratorio": extraction_json_schema(),
+    }.items():  # fmt: skip
+        assert _walk(schema) == [], name
