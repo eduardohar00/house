@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any
 
 from ..imaging import MODALITIES
+from ..normalize import terminology
 
 # Modalidades que son imagen; las demás (endoscopia, patología, ECG...) se muestran como "otro estudio".
 IMAGING = {label for _, label in MODALITIES} - {"Electrocardiograma"}
@@ -39,6 +40,13 @@ CREATE TABLE IF NOT EXISTS vaccine (
 CREATE TABLE IF NOT EXISTS consultation (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
   occurred_on TEXT NOT NULL, reason TEXT NOT NULL, doctor TEXT, specialty TEXT, notes TEXT
+);
+CREATE TABLE IF NOT EXISTS problem_link (
+  id INTEGER PRIMARY KEY,
+  problem_id INTEGER NOT NULL REFERENCES problem(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('document', 'imaging', 'analyte')),
+  ref TEXT NOT NULL,                              -- id del documento o informe, o clave del análisis
+  UNIQUE (problem_id, kind, ref)
 );
 CREATE TABLE IF NOT EXISTS clinical_none (
   person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
@@ -216,6 +224,145 @@ def set_none(db, person_id: int, section: str, confirmed: bool) -> None:
     db.execute("INSERT OR IGNORE INTO clinical_none(person_id, section) VALUES(?, ?)", (person_id, section))
 
 
+# ---------- Padecimientos ligados a estudios ----------
+
+LINK_KINDS = ("document", "imaging", "analyte")
+
+
+def link_candidates(db, person_id: int) -> dict:
+    """Lo que se puede ligar a un padecimiento: laboratorios, informes y análisis que tienen resultados."""
+    documents = [
+        {"ref": str(r["id"]), "title": r["title"], "date": r["collected_on"]}
+        for r in db.execute(
+            "SELECT id, title, collected_on FROM document WHERE person_id = ? AND doc_type = 'laboratorio' "
+            "AND review_state = 'revisada' ORDER BY collected_on DESC",
+            (person_id,),
+        )
+    ]
+    imaging = [
+        {"ref": str(r["id"]), "title": r["study_name"] or r["modality"], "date": r["performed_on"]}
+        for r in db.execute(
+            "SELECT id, study_name, modality, performed_on FROM imaging_study WHERE person_id = ? "
+            "ORDER BY performed_on DESC, id",
+            (person_id,),
+        )
+    ]
+    analytes = []
+    for r in db.execute(
+        "SELECT analyte_key, COUNT(*) AS n, MAX(collected_on) AS last FROM observation WHERE person_id = ? "
+        "GROUP BY analyte_key",
+        (person_id,),
+    ):
+        a = terminology.BY_KEY.get(r["analyte_key"])
+        analytes.append({"ref": r["analyte_key"], "title": a.name if a else r["analyte_key"],
+                         "date": r["last"], "results": r["n"]})  # fmt: skip
+    analytes.sort(key=lambda a: _plain(a["title"]))
+    return {"documents": documents, "imaging": imaging, "analytes": analytes}
+
+
+def _link_target(db, person_id: int, kind: str, ref: str) -> dict | None:
+    """Datos legibles de lo ligado; None si ya no existe (se borró el estudio)."""
+    if kind == "document":
+        r = db.execute(
+            "SELECT id, title, collected_on FROM document "
+            "WHERE id = ? AND person_id = ? AND doc_type = 'laboratorio'",
+            (ref, person_id),
+        ).fetchone()
+        return {"title": r["title"], "date": r["collected_on"], "document_id": r["id"]} if r else None
+    if kind == "imaging":
+        r = db.execute(
+            "SELECT id, study_name, modality, performed_on, document_id FROM imaging_study "
+            "WHERE id = ? AND person_id = ?",
+            (ref, person_id),
+        ).fetchone()
+        return (
+            {
+                "title": r["study_name"] or r["modality"],
+                "date": r["performed_on"],
+                "document_id": r["document_id"],
+            }
+            if r
+            else None
+        )
+    last = db.execute(
+        "SELECT value_num, value_text, unit, status, collected_on FROM observation "
+        "WHERE person_id = ? AND analyte_key = ? ORDER BY collected_on DESC, id DESC LIMIT 1",
+        (person_id, ref),
+    ).fetchone()
+    if last is None:
+        return None
+    a = terminology.BY_KEY.get(ref)
+    value = (
+        last["value_text"]
+        if last["value_num"] is None
+        else f"{last['value_num']:g} {last['unit'] or ''}".strip()
+    )
+    return {
+        "title": a.name if a else ref,
+        "date": last["collected_on"],
+        "value": value,
+        "status": last["status"],
+    }
+
+
+def problem_links(db, person_id: int) -> dict[int, list[dict]]:
+    """Estudios ligados a cada padecimiento. Los que ya no existen se limpian."""
+    out: dict[int, list[dict]] = {}
+    for r in db.execute(
+        "SELECT l.id, l.problem_id, l.kind, l.ref FROM problem_link l JOIN problem p ON p.id = l.problem_id "
+        "WHERE p.person_id = ? ORDER BY l.id",
+        (person_id,),
+    ).fetchall():
+        target = _link_target(db, person_id, r["kind"], r["ref"])
+        if target is None:
+            db.execute("DELETE FROM problem_link WHERE id = ?", (r["id"],))
+            continue
+        out.setdefault(r["problem_id"], []).append(
+            {"id": r["id"], "kind": r["kind"], "ref": r["ref"], **target}
+        )
+    return out
+
+
+def problems_of(db, person_id: int) -> dict[tuple[str, str], list[dict]]:
+    """Al revés: (tipo, ref) -> padecimientos a los que está ligado."""
+    out: dict[tuple[str, str], list[dict]] = {}
+    for r in db.execute(
+        "SELECT l.kind, l.ref, p.id, p.name FROM problem_link l JOIN problem p ON p.id = l.problem_id "
+        "WHERE p.person_id = ? ORDER BY p.name COLLATE NOCASE",
+        (person_id,),
+    ):
+        out.setdefault((r["kind"], r["ref"]), []).append({"id": r["id"], "name": r["name"]})
+    return out
+
+
+def add_link(db, person_id: int, problem_id: int, kind: str, ref: str) -> int:
+    if kind not in LINK_KINDS:
+        raise ClinicalError(422, "Tipo de estudio desconocido.")
+    if not db.execute(
+        "SELECT 1 FROM problem WHERE id = ? AND person_id = ?", (problem_id, person_id)
+    ).fetchone():
+        raise ClinicalError(404, "No encontré ese padecimiento en este perfil.")
+    ref = str(ref)
+    if _link_target(db, person_id, kind, ref) is None:
+        raise ClinicalError(404, "Ese estudio no existe en este perfil.")
+    db.execute(
+        "INSERT OR IGNORE INTO problem_link(problem_id, kind, ref) VALUES(?,?,?)", (problem_id, kind, ref)
+    )
+    return db.execute(
+        "SELECT id FROM problem_link WHERE problem_id = ? AND kind = ? AND ref = ?", (problem_id, kind, ref)
+    ).fetchone()["id"]
+
+
+def remove_link(db, person_id: int, problem_id: int, link_id: int) -> None:
+    cur = db.execute(
+        "DELETE FROM problem_link WHERE id = ? AND problem_id = ? AND problem_id IN "
+        "(SELECT id FROM problem WHERE person_id = ?)",
+        (link_id, problem_id, person_id),
+    )
+    if cur.rowcount == 0:
+        raise ClinicalError(404, "No encontré esa relación.")
+
+
 def _plain(s: str) -> str:
     s = "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
     return re.sub(r"[^a-z0-9]+", " ", s).strip()
@@ -285,6 +432,9 @@ def overview(db, person_id: int) -> dict:
         m["duplicate"] = bool(m["active"]) and names.count(_plain(m["name"])) > 1
     problems = _rows(db, "problem", person_id, "name COLLATE NOCASE")
     problems.sort(key=lambda p: p["status"] == "Resuelta")
+    links = problem_links(db, person_id)
+    for p in problems:
+        p["links"] = links.get(p["id"], [])
     return {
         "allergies": _rows(db, "allergy", person_id, "substance COLLATE NOCASE"),
         "problems": problems,

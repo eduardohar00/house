@@ -249,3 +249,88 @@ def test_vaccine_brand_and_lot_dose_menu_and_one_time_brand_split(tmp_path):
         == "COVID-19 Pfizer"
     )
     assert "Refuerzo" in clinical.DOSE_OPTIONS and "Primera dosis" in clinical.DOSE_OPTIONS
+
+
+def _lab(c, pid, value="105"):
+    lines = [
+        "Informe de Resultados de Laboratorio",
+        "Fecha de Toma : 01/03/2026",
+        f"Glucosa {value} 70 - 99 mg/dL",
+    ]
+    doc = upload(c, pid, make_pdf(lines), "Perfil.pdf").json()["document_id"]
+    rows = c.get(f"/api/documents/{doc}").json()["rows"]
+    body = {"collected_on": "2026-03-01", "decisions": [{"row_id": r["id"], "accept": True} for r in rows]}
+    c.post(f"/api/documents/{doc}/review", json=body, headers=H).raise_for_status()
+    return doc
+
+
+def _report(c, pid):
+    doc = upload(c, pid, make_pdf(REPORT.splitlines()), "Rx torax.pdf").json()["document_id"]
+    dec = [{"position": 0, "accept": True, "performed_on": "2026-02-06", "study_name": "Rx de tórax"}]
+    c.post(f"/api/documents/{doc}/review-imaging", json={"decisions": dec}, headers=H).raise_for_status()
+    return c.get(f"/api/people/{pid}/imaging").json()[0]["id"]
+
+
+def test_problems_can_be_linked_to_studies_reports_and_analytes(world):
+    c, me, member = world
+    problem = add(c, me, "problem", name="Prediabetes", status="Seguimiento").json()["id"]
+    doc, study = _lab(c, me), _report(c, me)
+    cand = c.get(f"/api/people/{me}/link-candidates").json()
+    assert [d["ref"] for d in cand["documents"]] == [str(doc)] and [i["ref"] for i in cand["imaging"]] == [
+        str(study)
+    ]
+    assert [a["ref"] for a in cand["analytes"]] == ["glucose"]
+
+    link = lambda kind, ref: c.post(  # noqa: E731
+        f"/api/people/{me}/clinical/problem/{problem}/links", json={"kind": kind, "ref": ref}, headers=H
+    )
+    ids = [
+        link("document", str(doc)).json()["id"],
+        link("imaging", str(study)).json()["id"],
+        link("analyte", "glucose").json()["id"],
+    ]
+    assert link("analyte", "glucose").json()["id"] == ids[2]  # ligar dos veces no duplica
+
+    (p,) = c.get(f"/api/people/{me}/clinical").json()["problems"]
+    by_kind = {ln["kind"]: ln for ln in p["links"]}
+    assert by_kind["document"]["title"] == "Perfil" and by_kind["document"]["document_id"] == doc
+    assert by_kind["imaging"]["title"] == "Rx de tórax"
+    assert by_kind["analyte"]["title"] == "Glucosa en ayunas" and "105" in by_kind["analyte"]["value"]
+    # el informe sabe a qué padecimiento está ligado
+    assert c.get(f"/api/people/{me}/imaging").json()[0]["problems"] == [
+        {"id": problem, "name": "Prediabetes"}
+    ]
+
+    # no se puede ligar lo de otra persona, algo inexistente ni un tipo raro
+    other = add(c, member, "problem", name="Asma", status="En control").json()["id"]
+
+    def bad(pid, kind, ref, target=member):
+        url = f"/api/people/{target}/clinical/problem/{pid}/links"
+        return c.post(url, json={"kind": kind, "ref": ref}, headers=H).status_code
+
+    assert bad(other, "document", str(doc)) == 404 and bad(other, "analyte", "glucose") == 404
+    assert bad(problem, "imaging", str(study), me) == 200 and bad(problem, "imaging", "9999", me) == 404
+    assert bad(problem, "cosa", "1", me) == 422
+    assert (
+        c.post(
+            f"/api/people/{me}/clinical/problem/{other}/links",
+            json={"kind": "analyte", "ref": "glucose"},
+            headers=H,
+        ).status_code
+        == 404
+    )
+
+    # quitar la relación; y si se borra el estudio, la relación desaparece sola
+    assert (
+        c.delete(f"/api/people/{me}/clinical/problem/{problem}/links/{ids[2]}", headers=H).status_code == 200
+    )
+    assert (
+        c.delete(f"/api/people/{me}/clinical/problem/{problem}/links/{ids[2]}", headers=H).status_code == 404
+    )
+    c.delete(f"/api/documents/{doc}", headers=H).raise_for_status()
+    (p,) = c.get(f"/api/people/{me}/clinical").json()["problems"]
+    assert [ln["kind"] for ln in p["links"]] == ["imaging"]
+    c.delete(
+        f"/api/people/{me}/clinical/problem/{problem}", headers=H
+    )  # borrar el padecimiento limpia sus relaciones
+    assert c.get(f"/api/people/{me}/imaging").json()[0]["problems"] == []

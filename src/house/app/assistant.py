@@ -112,8 +112,9 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_clinical_record",
-        "description": "Expediente clínico: alergias, problemas de salud, medicamentos (actuales y pasados), "
-        "antecedentes familiares, cirugías, vacunas y consultas.",
+        "description": "Expediente clínico: alergias, problemas de salud (con los estudios que la persona "
+        "ligó a cada uno), medicamentos (actuales y pasados), antecedentes familiares, cirugías, vacunas y "
+        "consultas.",
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
@@ -362,6 +363,20 @@ class Toolbox:
             "marked_by_house": r["flag"],
         }
 
+    def _linked(self, problem: dict) -> list[dict]:
+        """Estudios que la persona ligó a este padecimiento, cada uno con su fuente."""
+        out = []
+        for link in problem.get("links", []):
+            item: dict[str, Any] = {"title": link["title"], "date": link["date"]}
+            if link["kind"] == "analyte":
+                item.update({"analyte_key": link["ref"], "last_value": link.get("value"),
+                             "status": STATUS_ES.get(link.get("status"), "sin referencia")})  # fmt: skip
+            else:
+                kind = "informe" if link["kind"] == "imaging" else "laboratorio"
+                item["src"] = self._src(kind, link.get("document_id"), link["title"], link["date"])
+            out.append(item)
+        return out
+
     def get_clinical_record(self) -> dict:
         from . import clinical
 
@@ -374,7 +389,10 @@ class Toolbox:
         return {
             "src": src,
             "allergies": pick(c["allergies"], "substance", "reaction"),
-            "problems": pick(c["problems"], "name", "status", "since_year"),
+            "problems": [
+                {**pick([p], "name", "status", "since_year")[0], "linked_studies": self._linked(p)}
+                for p in c["problems"]
+            ],
             "medications": pick(
                 c["medications"], "name", "dose", "reason", "since_year", "until_year", "active"
             ),

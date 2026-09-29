@@ -569,6 +569,26 @@ def create_app(
         subject(person_id, actor, "ver_expediente")
         return clinical.overview(db, person_id)
 
+    class LinkBody(BaseModel):
+        kind: str
+        ref: str
+
+    @app.get("/api/people/{person_id}/link-candidates")
+    def link_candidates(person_id: int, actor: Me) -> dict:
+        subject(person_id, actor, "ver_expediente")
+        return clinical.link_candidates(db, person_id)
+
+    @app.post("/api/people/{person_id}/clinical/problem/{problem_id}/links")
+    def add_problem_link(person_id: int, problem_id: int, body: LinkBody, actor: Me) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        return {"id": clinical_call(clinical.add_link, db, person_id, problem_id, body.kind, body.ref)}
+
+    @app.delete("/api/people/{person_id}/clinical/problem/{problem_id}/links/{link_id}")
+    def remove_problem_link(person_id: int, problem_id: int, link_id: int, actor: Me) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        clinical_call(clinical.remove_link, db, person_id, problem_id, link_id)
+        return {"ok": True}
+
     @app.post("/api/people/{person_id}/clinical/{kind}")
     def clinical_add(person_id: int, kind: str, actor: Me, data: Annotated[dict, Body()]) -> dict:
         subject(person_id, actor, "editar_expediente")
@@ -621,7 +641,16 @@ def create_app(
             )
         }
         related = ingest.related_studies(studies, manual)
-        return [{**s, "images": linked.get(s["id"], []), "related": related[s["id"]]} for s in studies]
+        problems = clinical.problems_of(db, person_id)
+        return [
+            {
+                **s,
+                "images": linked.get(s["id"], []),
+                "related": related[s["id"]],
+                "problems": problems.get(("imaging", str(s["id"])), []),
+            }
+            for s in studies
+        ]
 
     class StudyLink(BaseModel):
         other_id: int

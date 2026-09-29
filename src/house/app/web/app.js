@@ -822,12 +822,26 @@ const EV_KIND = { consulta: 'Consulta', laboratorio: 'Laboratorio', imagen: 'Ima
 
 async function renderClinical() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
-  const [c, sug] = await Promise.all([api(`/api/people/${S.subject}/clinical`), S.sug ? Promise.resolve(S.sug) : api('/api/clinical/suggestions')]);
+  const [c, sug, cand] = await Promise.all([api(`/api/people/${S.subject}/clinical`), S.sug ? Promise.resolve(S.sug) : api('/api/clinical/suggestions'), api(`/api/people/${S.subject}/link-candidates`)]);
   S.sug = sug;
   const reload = () => renderClinical();
   const itemsOf = kind => c[CLIN[kind].key];
+  // Estudios ligados a un padecimiento: informes, laboratorios y análisis que tienen que ver con él.
+  const KL = { document: 'Laboratorio', imaging: 'Informe', analyte: 'Análisis' };
+  S.plOpen ||= new Set();
+  const plinks = p => {
+    const have = new Set(p.links.map(l => l.kind + ':' + l.ref));
+    const opts = (kind, arr) => arr.filter(x => !have.has(kind + ':' + x.ref)).map(x => `<option value="${kind}:${esc(x.ref)}">${esc(x.title)}${x.date ? ' · ' + fd(x.date) : ''}</option>`).join('');
+    const groups = [['Informes de estudios', 'imaging', cand.imaging], ['Laboratorios', 'document', cand.documents], ['Análisis', 'analyte', cand.analytes]]
+      .map(([label, kind, arr]) => { const o = opts(kind, arr); return o ? `<optgroup label="${label}">${o}</optgroup>` : ''; }).join('');
+    return `<details class="hist plinks" data-pl="${p.id}" ${S.plOpen.has(p.id) ? 'open' : ''}><summary>Estudios ligados (${p.links.length})</summary>
+      ${p.links.length ? `<ul class="nsl">${p.links.map(l => `<li><span class="tag">${KL[l.kind]}</span> <b>${esc(l.title)}</b>${l.date ? ' · ' + fd(l.date) : ''}${l.value ? ' · ' + esc(l.value) : ''}
+        ${l.document_id ? `<a class="mini" href="/api/documents/${l.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver original</a>` : ''}
+        <button class="mini dn" data-punlink="${p.id}:${l.id}" aria-label="Quitar la relación con ${esc(l.title)}">✕</button></li>`).join('')}</ul>` : '<p class="tip" style="margin:4px 0">Todavía no hay estudios ligados a este padecimiento.</p>'}
+      ${groups ? `<select data-plink="${p.id}" aria-label="Ligar un estudio a este padecimiento"><option value="">Ligar un estudio…</option>${groups}</select>` : ''}</details>`;
+  };
   const row = (kind, it, cfg = CLIN[kind]) => { const sub = cfg.sub(it);
-    return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
+    return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate ? '<span class="flag">Aparece más de una vez</span>' : ''}${kind === 'problem' ? plinks(it) : ''}</span>
       <span class="rowact">${cfg.badge ? cfg.badge(it) : ''}<button class="mini" data-edit="${kind}:${it.id}">Editar</button><button class="mini dn" data-del="${kind}:${it.id}">Quitar</button></span></li>`; };
   // Vacunas agrupadas por vacuna: «COVID-19 · 2 dosis · última mayo 2022», con cada dosis al abrir.
   const plainName = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -868,6 +882,17 @@ async function renderClinical() {
         : '<p class="tip">Todavía no hay eventos. Sube estudios o agrega consultas, vacunas y cirugías.</p>'}</div></section>`;
 
   view().querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.clinFilter = b.dataset.f; reload(); });
+  view().querySelectorAll('details[data-pl]').forEach(d => d.ontoggle = () => { d.open ? S.plOpen.add(Number(d.dataset.pl)) : S.plOpen.delete(Number(d.dataset.pl)); });
+  view().querySelectorAll('[data-plink]').forEach(sel => sel.onchange = async () => {
+    if (!sel.value) return;
+    const [kind, ...rest] = sel.value.split(':');
+    try { await api(`/api/people/${S.subject}/clinical/problem/${sel.dataset.plink}/links`, { method: 'POST', body: { kind, ref: rest.join(':') } }); S.plOpen.add(Number(sel.dataset.plink)); toast('Estudio ligado.'); reload(); }
+    catch (e) { toast(e.message); }
+  });
+  view().querySelectorAll('[data-punlink]').forEach(b => b.onclick = async () => {
+    const [pid, lid] = b.dataset.punlink.split(':');
+    await api(`/api/people/${S.subject}/clinical/problem/${pid}/links/${lid}`, { method: 'DELETE' }); toast('Relación quitada.'); reload();
+  });
   view().querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.clinEdit = { kind: b.dataset.add, item: null }; reload(); });
   view().querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
     const [kind, id] = b.dataset.edit.split(':'); S.clinEdit = { kind, item: itemsOf(kind).find(x => x.id == id) }; reload();
@@ -948,6 +973,7 @@ async function renderImaging() {
         <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Estudio')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
       ${thumbs(x.images, x.study_name)}
       ${related(x, list)}
+      ${(x.problems || []).length ? `<p class="tip" style="margin:0">Ligado a: ${x.problems.map(p => `<span class="tag at">${esc(p.name)}</span>`).join(' ')}</p>` : ''}
       ${x.conclusion ? `<p style="margin:0"><b>Conclusión:</b> ${esc(x.conclusion)}</p>` : '<p class="tip" style="margin:0">Este informe no trae una conclusión separada; lee el informe completo.</p>'}
       <details class="hist"><summary>Ver el informe completo</summary>
         <div class="kv" style="margin-top:10px">
