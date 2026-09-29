@@ -39,6 +39,13 @@ class AnthropicProvider:
             client = anthropic.Anthropic()  # credenciales desde el entorno
         self._client = client
 
+    def _why(self, e: Exception) -> str:
+        """Motivo del fallo en palabras claras, sin el contenido enviado."""
+        text = str(e).lower()
+        if "credit balance" in text:
+            return f"{self.name}: se acabó el saldo de tu cuenta de Anthropic (agrega crédito en Billing)"
+        return f"{self.name}: {type(e).__name__}"
+
     @staticmethod
     def _content(req: LLMRequest) -> Any:
         if not req.images:
@@ -75,7 +82,7 @@ class AnthropicProvider:
         try:
             resp = self._client.messages.create(**kwargs)
         except Exception as e:  # noqa: BLE001 - se re-lanza tipado, sin el prompt
-            raise ProviderError(f"{self.name}: {type(e).__name__}") from e
+            raise ProviderError(self._why(e)) from e
         latency = time.monotonic() - t0
         if getattr(resp, "stop_reason", None) == "refusal":
             raise ProviderRefusal(f"{self.name}: solicitud rechazada por el proveedor")
@@ -129,7 +136,7 @@ class AnthropicProvider:
             try:
                 resp = self._client.messages.create(**kwargs)
             except Exception as e:  # noqa: BLE001 - se re-lanza tipado, sin el contenido
-                raise ProviderError(f"{self.name}: {type(e).__name__}") from e
+                raise ProviderError(self._why(e)) from e
             tin += resp.usage.input_tokens
             tout += resp.usage.output_tokens
             request_id = getattr(resp, "_request_id", None) or request_id

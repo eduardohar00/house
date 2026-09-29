@@ -215,3 +215,21 @@ def test_ingredient_suggestions_come_from_claude_and_are_not_saved_until_accepte
         is None
     )
     assert drugs.suggest(Router(cfg, overrides={"fake": Fake()}), []) == {}
+
+
+def test_provider_says_clearly_when_the_anthropic_balance_ran_out():
+    import pytest
+
+    from house.providers import ProviderError
+
+    class Broke:
+        class messages:  # noqa: N801 - imita el cliente del SDK
+            @staticmethod
+            def create(**_):
+                raise RuntimeError("Your credit balance is too low to access the Anthropic API.")
+
+    prov = AnthropicProvider("claude", "m", client=Broke())
+    with pytest.raises(ProviderError, match="saldo"):
+        prov.complete_json(LLMRequest(task="extract", system="s", user="u", schema={}))
+    with pytest.raises(ProviderError, match="saldo"):
+        prov.chat_with_tools("s", [{"role": "user", "content": "hola"}], [], lambda *_: {})
