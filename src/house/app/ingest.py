@@ -16,11 +16,11 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from ..extract import Row, convert_ref, extract_document
+from ..extract import Outcome, Row, convert_ref, extract_document
 from ..imaging import ImagingReport, looks_like_lab, parse_reports
 from ..normalize import critical, ranges, terminology, units
 from ..privacy import Anonymizer
-from ..providers import Router
+from ..providers import BudgetExceeded, ProviderError, Router
 from . import ocr
 from .vault import Vault
 
@@ -241,6 +241,36 @@ class Ingested:
     document_id: int
     rows: int
     kind: str = "laboratorio"  # o "imagen" (informe leído localmente, sin IA)
+    used_fallback: bool = False  # el lector básico no entendió el formato y lo leyó Claude
+
+
+def _poor(o: Outcome) -> bool:
+    """El lector básico no entendió el formato: nada leído, muchos análisis sin reconocer o sin fecha."""
+    unknown = sum(1 for r in o.rows if not r.key)
+    return not o.rows or o.collected_on is None or unknown / len(o.rows) > 0.25
+
+
+def read_lab_text(
+    text: str,
+    router: Router,
+    fallback: Router | None,
+    person_names_: list[str],
+    today: date | None,
+) -> tuple[Outcome, bool]:
+    """Lee con el lector principal (el básico, local) y, solo si no entendió el formato, con Claude.
+
+    Si Claude falla o no lee más análisis reconocidos, se conserva lo del lector principal.
+    """
+    kwargs = {"anonymizer": Anonymizer(person_names_), "reference_date": today or date.today()}
+    outcome = extract_document(text, router, **kwargs)
+    if fallback is None or not _poor(outcome):
+        return outcome, False
+    try:
+        better = extract_document(text, fallback, **kwargs)
+    except (ProviderError, BudgetExceeded):
+        return outcome, False
+    known = lambda o: sum(1 for r in o.rows if r.key)  # noqa: E731
+    return (better, True) if known(better) > known(outcome) else (outcome, False)
 
 
 def ingest_pdf(
@@ -251,6 +281,7 @@ def ingest_pdf(
     filename: str,
     data: bytes,
     today: date | None = None,
+    fallback: Router | None = None,
 ) -> Ingested:
     if len(data) > MAX_BYTES:
         raise IngestError(413, "El archivo pesa más de 25 MB.")
@@ -279,9 +310,7 @@ def ingest_pdf(
     if not looks_like_lab(text) and (reports := parse_reports(text, filename)):
         return _ingest_imaging(db, vault, person, filename, data, sha, reports)
 
-    outcome = extract_document(
-        text, router, anonymizer=Anonymizer(person_names(db, person)), reference_date=today or date.today()
-    )
+    outcome, used_fallback = read_lab_text(text, router, fallback, person_names(db, person), today)
     stored = vault.put(data)
     title = re.sub(r"\.pdf$", "", filename, flags=re.I).strip() or "Estudio"
     cur = db.execute(
@@ -290,7 +319,7 @@ def ingest_pdf(
         (person["id"], title, outcome.collected_on, stored, sha),
     )
     _store_extraction(db, cur.lastrowid, person["id"], outcome)
-    return Ingested(cur.lastrowid, len(outcome.rows))
+    return Ingested(cur.lastrowid, len(outcome.rows), used_fallback=used_fallback)
 
 
 def _ingest_imaging(
@@ -337,6 +366,7 @@ def reread(
     doc_id: int,
     person: sqlite3.Row,
     today: date | None = None,
+    fallback: Router | None = None,
 ) -> Ingested:
     """Vuelve a leer un estudio pendiente (catálogo mejorado o lector distinto) sin volver a subirlo."""
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
@@ -359,17 +389,14 @@ def reread(
         db.execute("UPDATE document SET collected_on = ? WHERE id = ?", (first_date, doc_id))
         _store_imaging_drafts(db, doc_id, reports, first_date)
         return Ingested(doc_id, len(reports), "imagen")
-    outcome = extract_document(
-        pdf_text(vault.get(doc["file_path"])),
-        router,
-        anonymizer=Anonymizer(person_names(db, person)),
-        reference_date=today or date.today(),
+    outcome, used_fallback = read_lab_text(
+        pdf_text(vault.get(doc["file_path"])), router, fallback, person_names(db, person), today
     )
     db.execute("DELETE FROM extraction_row WHERE document_id = ?", (doc_id,))
     db.execute("DELETE FROM extraction WHERE document_id = ?", (doc_id,))
     db.execute("UPDATE document SET collected_on = ? WHERE id = ?", (outcome.collected_on, doc_id))
     _store_extraction(db, doc_id, person["id"], outcome)
-    return Ingested(doc_id, len(outcome.rows))
+    return Ingested(doc_id, len(outcome.rows), used_fallback=used_fallback)
 
 
 def _store_extraction(db: sqlite3.Connection, doc_id: int, person_id: int, outcome) -> None:

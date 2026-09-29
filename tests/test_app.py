@@ -528,3 +528,49 @@ def test_review_flags_a_critical_value_so_a_misread_is_caught_before_saving(clie
     rows = {r["analyte_key"]: r for r in client.get(f"/api/documents/{doc}").json()["rows"]}
     assert "valor_critico" in rows["potassium"]["problems"] and rows["potassium"]["needs_attention"]
     assert "valor_critico" not in rows["sodium"]["problems"]
+
+
+def test_basic_reader_goes_first_and_claude_only_steps_in_when_the_format_is_not_understood(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from house.app import ingest
+    from house.providers import ProviderError
+
+    def outcome(keys, date="2026-03-01"):
+        return NS(collected_on=date, rows=[NS(key=k) for k in keys])
+
+    calls = []
+
+    def fake(text, router, **kw):
+        calls.append(router)
+        result = router()
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(ingest, "extract_document", fake)
+    read = lambda basic, claude: ingest.read_lab_text("t", basic, claude, ["Nombre"], None)  # noqa: E731
+
+    good = lambda: outcome(["a", "b", "c", "d"])  # noqa: E731
+    calls.clear()
+    assert read(good, lambda: outcome(["a"])) == (good(), False) or calls == [
+        good
+    ]  # básico conforme: no se llama a Claude
+    assert len(calls) == 1
+
+    weak = lambda: outcome(["a", None, None, None])  # noqa: E731  (3 de 4 sin reconocer)
+    better = lambda: outcome(["a", "b", "c", "d"])  # noqa: E731
+    calls.clear()
+    out, used = read(weak, better)
+    assert used and len(out.rows) == 4 and len(calls) == 2
+
+    failing = lambda: ProviderError("claude: caído")  # noqa: E731
+    out, used = read(weak, failing)
+    assert not used and out.rows[0].key == "a"  # si Claude falla, se conserva lo del lector básico
+
+    worse = lambda: outcome([None])  # noqa: E731
+    assert read(weak, worse)[1] is False  # Claude no leyó más: se queda el básico
+    assert read(weak, None)[1] is False  # sin clave no hay respaldo
+    assert (
+        read(lambda: outcome(["a", "b"], date=None), better)[1] is True
+    )  # sin fecha también cuenta como mal leído

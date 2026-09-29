@@ -16,7 +16,7 @@ Documentos clave (léelos antes de proponer cambios grandes):
 
 ## Decisiones de producto ya tomadas
 - Modo de IA **único: híbrido**. Lectura, limpieza de datos personales y DICOM ocurren en la Mac; a la IA solo llega texto anonimizado.
-- **Agnóstico al modelo**: el proveedor se elige por tarea en `config/house.toml`. **Decisión vigente (2026-09-28): todo lo hace Claude** (extracción, interpretación y verificación); no comparar otros proveedores por ahora. La capa de proveedores se conserva para poder cambiar después. El banco se usa para medir a Claude contra la línea base.
+- **Agnóstico al modelo**: el proveedor se elige por tarea en `config/house.toml`. **Decisión vigente (2026-09-29): lector básico local primero; Claude solo para formatos que el básico no entiende** (extracción de laboratorio; interpretación y verificación con Claude); no comparar otros proveedores por ahora. Motivo: en dos estudios reales Claude no leyó mejor que el básico, tardó ~90 s y costó ~0.31 USD. La capa de proveedores se conserva para poder cambiar después. El banco se usa para medir a Claude contra la línea base.
 - **La IA propone, el código dispone**: conversiones, rangos, estados y tendencias son deterministas; toda fila requiere evidencia literal y revisión humana (al inicio, siempre).
 - MVP en **una sola máquina** (laptop de Eduardo). Onboarding **solo lo hace Eduardo** (admin): crea perfiles y asigna PIN. Cada persona ve solo su perfil.
 - Fuera de alcance: diagnóstico, resumen o preparación de consulta, compartir con terceros, vender paneles de laboratorio.

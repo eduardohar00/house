@@ -112,15 +112,16 @@ BASIC_CONFIG = Config(
 WEB = Path(__file__).parent / "web"
 
 
-def reader_router(data_dir: Path, vault: Vault) -> tuple[Router, str]:
-    """Router para leer estudios y cómo se llama el lector ('claude' o 'basico')."""
+def reader_router(data_dir: Path, vault: Vault) -> tuple[Router, Router | None, str]:
+    """(lector principal, lector de respaldo, nombre). Primero el básico, local y gratis; Claude solo si el
+    básico no entiende el formato de un estudio. Sin clave de Anthropic no hay respaldo."""
     ledger = UsageLedger(data_dir / "ai_usage.jsonl")
     toml = data_dir / "house.toml"
     if toml.exists():
-        return Router(Config.load(toml), ledger=ledger), "configurado"
+        return Router(Config.load(toml), ledger=ledger), None, "configurado"
     key = vault.get_secret("anthropic")
     if not key:
-        return Router(BASIC_CONFIG), "basico"
+        return Router(BASIC_CONFIG), None, "basico"
     import anthropic
 
     from ..providers.anthropic_provider import AnthropicProvider
@@ -134,7 +135,15 @@ def reader_router(data_dir: Path, vault: Vault) -> tuple[Router, str]:
         output_per_mtok=c.output_per_mtok,
         client=anthropic.Anthropic(api_key=key),
     )
-    return Router(DEFAULT_CONFIG, ledger=ledger, overrides={"claude": provider}), "claude"
+    claude = Router(DEFAULT_CONFIG, ledger=ledger, overrides={"claude": provider})
+    return Router(BASIC_CONFIG), claude, "basico + claude"
+
+
+def _who(reader: str, done) -> str:
+    """Qué lector leyó este estudio, para avisar a la persona ('basico', 'claude' o el configurado)."""
+    if reader == "basico + claude":
+        return "claude" if done.used_fallback else "basico"
+    return reader
 
 
 def _public(p: sqlite3.Row) -> dict:
@@ -169,8 +178,8 @@ def create_app(
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
     app.state.db, app.state.vault = db, vault
 
-    def current_router() -> tuple[Router, str]:
-        return (fixed_router, "prueba") if fixed_router else reader_router(data_dir, vault)
+    def current_router() -> tuple[Router, Router | None, str]:
+        return (fixed_router, None, "prueba") if fixed_router else reader_router(data_dir, vault)
 
     @app.middleware("http")
     async def _no_cross_site_writes(request: Request, call_next):
@@ -365,9 +374,11 @@ def create_app(
             except ingest.IngestError as e:
                 raise HTTPException(e.status, {"message": e.message, "document_id": None}) from None
             return {"image_id": image_id, "rows": 0, "kind": "foto"}
-        router, reader = current_router()
+        router, fallback, reader = current_router()
         try:
-            done = ingest.ingest_pdf(db, vault, router, person, file.filename or "Estudio.pdf", data)
+            done = ingest.ingest_pdf(
+                db, vault, router, person, file.filename or "Estudio.pdf", data, fallback=fallback
+            )
         except ingest.IngestError as e:
             raise HTTPException(e.status, {"message": e.message, "document_id": e.document_id}) from None
         except BudgetExceeded:
@@ -375,7 +386,12 @@ def create_app(
         except ProviderError as e:
             # El mensaje del proveedor no incluye contenido del documento (ver providers/base.py).
             raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
-        return {"document_id": done.document_id, "rows": done.rows, "kind": done.kind, "reader": reader}
+        return {
+            "document_id": done.document_id,
+            "rows": done.rows,
+            "kind": done.kind,
+            "reader": _who(reader, done),
+        }
 
     @app.get("/api/people/{person_id}/documents")
     def list_documents(person_id: int, actor: Me) -> list[dict]:
@@ -407,16 +423,16 @@ def create_app(
     def reread(doc_id: int, actor: Me) -> dict:
         doc = document(doc_id, actor, "releer_estudio")
         person = db.execute("SELECT * FROM person WHERE id = ?", (doc["person_id"],)).fetchone()
-        router, reader = current_router()
+        router, fallback, reader = current_router()
         try:
-            done = ingest.reread(db, vault, router, doc_id, person)
+            done = ingest.reread(db, vault, router, doc_id, person, fallback=fallback)
         except ingest.IngestError as e:
             raise HTTPException(e.status, e.message) from None
         except BudgetExceeded:
             raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
         except ProviderError as e:
             raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
-        return {"document_id": doc_id, "rows": done.rows, "kind": done.kind, "reader": reader}
+        return {"document_id": doc_id, "rows": done.rows, "kind": done.kind, "reader": _who(reader, done)}
 
     @app.get("/api/documents/{doc_id}/layout")
     def get_layout(doc_id: int, actor: Me) -> dict:
@@ -618,13 +634,13 @@ def create_app(
 
     @app.get("/api/settings")
     def settings(_: Admin) -> dict:
-        _, reader = current_router()
+        _, _, reader = current_router()
         month = db.execute(
             "SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(*) AS n FROM ai_call "
             "WHERE strftime('%Y-%m', at) = strftime('%Y-%m', 'now')"
         ).fetchone()
         return {
-            "reader": reader,
+            "reader": "claude" if reader == "basico + claude" else reader,  # con clave: Claude de respaldo
             "budget_usd": DEFAULT_CONFIG.monthly_budget_usd,
             "month_usd": round(month["usd"], 4),
             "month_calls": month["n"],

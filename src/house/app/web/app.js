@@ -578,7 +578,7 @@ async function uploadFiles(files) {
       const r = await api(`/api/people/${S.subject}/documents`, { method: 'POST', form });
       if (r.kind === 'foto') { toast('Imagen guardada. La verás en Estudios, junto a su informe.'); imgs++; continue; }
       last = r.document_id;
-      toast(r.kind === 'imagen' ? `Leí ${r.rows} ${r.rows === 1 ? 'informe' : 'informes'} de imagen en esta Mac.` : r.reader === 'basico' ? `Leído con el lector básico: ${r.rows} renglones.` : `Leído: ${r.rows} renglones.`);
+      toast(r.kind === 'imagen' ? `Leí ${r.rows} ${r.rows === 1 ? 'informe' : 'informes'} de imagen en esta Mac.` : r.reader === 'claude' ? `El lector básico no conocía este formato; lo leyó Claude: ${r.rows} renglones.` : r.reader === 'basico' ? `Leído con el lector básico: ${r.rows} renglones.` : `Leído: ${r.rows} renglones.`);
     } catch (e) {
       if (e.status === 409) { toast('Ese archivo ya estaba cargado.'); continue; }
       up.innerHTML = `<p class="err">«${esc(f.name)}»: ${esc(e.message)}</p>`;
@@ -1047,7 +1047,7 @@ async function accessLogHtml() {
 
 async function renderConfig() {
   const s = await api('/api/settings');
-  const reader = { claude: 'Claude (Anthropic)', basico: 'Lector básico en esta Mac, sin IA', configurado: 'Según house.toml' }[s.reader] || s.reader;
+  const reader = { claude: 'Lector básico en esta Mac; Claude (Anthropic) solo si no entiende el formato', basico: 'Lector básico en esta Mac, sin IA', configurado: 'Según house.toml' }[s.reader] || s.reader;
   view().innerHTML = `<section class="card cfg"><h2>Lectura de estudios</h2>
       <div class="kv"><b>Ahora lee</b><span>${esc(reader)}</span>
         <b>Gasto de este mes</b><span>${s.month_usd.toFixed(2)} USD de ${s.budget_usd} USD (${s.month_calls} lecturas)</span></div>
@@ -1055,7 +1055,7 @@ async function renderConfig() {
         <ol class="tip" style="margin:0;padding-left:20px"><li>Entra a <b>console.anthropic.com</b> e inicia sesión (o crea tu cuenta y agrega un método de pago).</li>
         <li>En <b>API Keys</b>, crea una clave nueva y cópiala.</li><li>Pégala aquí. Se guarda cifrada en esta Mac.</li></ol>
         <form class="bar" id="kf"><input type="password" name="key" placeholder="sk-ant-…" style="flex:1" autocomplete="off"><button class="btn">Guardar clave</button></form>`
-      : s.reader === 'claude' ? `<p class="tip">Antes de enviar un estudio, House le quita tu nombre, fecha de nacimiento y números de registro. Puedes ver exactamente lo que se envió al revisar cada estudio.</p>
+      : s.reader === 'claude' ? `<p class="tip">House lee primero en esta Mac, sin enviar nada. Solo si no entiende el formato de un estudio, se lo manda a Claude, y antes le quita tu nombre, fecha de nacimiento y números de registro. Puedes ver exactamente lo que se envió al revisar cada estudio.</p>
         <div><button class="btn danger" id="rm">Quitar la clave (volver al lector básico)</button></div>` : ''}
       <p class="err" id="e"></p></section>
     <section class="card cfg" id="bkcard"></section>
