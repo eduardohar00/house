@@ -942,6 +942,35 @@ async function renderClinical() {
 const FLAG = { normal: ['ok', 'Normal según el informe'], revisar: ['out', 'Leer la conclusión'] };
 const flagPill = f => { const [c, t] = FLAG[f] || FLAG.revisar; return `<span class="pill ${c}">${t}</span>`; };
 
+// Tablas transcritas por Claude desde la imagen del informe (a petición de la persona).
+function studyTables(x) {
+  if (!x.tables) return `<p style="margin:10px 0 0"><button class="mini" data-readtables="${x.id}" title="Envía las imágenes de este informe a Claude para transcribir sus tablas. Se ven datos personales impresos en ellas.">Leer las tablas con Claude</button></p>`;
+  const html = x.tables.tables.map(t => `${t.caption ? `<h4 style="margin:10px 0 4px">${esc(t.caption)}</h4>` : ''}<div class="tblwrap"><table><thead><tr>${t.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.rows.map(r => `<tr>${r.map(c => `<td>${c == null ? '—' : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
+  return `<div style="margin-top:10px"><span class="tip">Transcrito por Claude desde la imagen; compáralo con el original.</span>${html}
+    ${x.tables.notes ? `<p class="tip">${esc(x.tables.notes)}</p>` : ''}${allergySuggestions(x)}</div>`;
+}
+
+// Pruebas cutáneas de alergia: los alérgenos con reacción (grado 2+ o más) se pueden sumar a las alergias.
+function allergyRows(x) {
+  if (!/cut[aá]nea|alerg|prick|hipersensibilidad/i.test(x.study_name || '') || !x.tables) return [];
+  const out = [];
+  for (const t of x.tables.tables) {
+    const g = t.columns.findIndex(c => /grado/i.test(c));
+    const n = t.columns.findIndex(c => /extracto|al[eé]rgeno|sustancia|nombre/i.test(c));
+    if (g < 0 || n < 0) continue;
+    for (const r of t.rows) { const m = String(r[g] || '').match(/^(\d)\+?$/); if (m && Number(m[1]) >= 2 && r[n] && !/control/i.test(r[n])) out.push({ name: r[n], grade: `${m[1]}+` }); }
+  }
+  return out;
+}
+function allergySuggestions(x) {
+  const rows = allergyRows(x);
+  if (!rows.length) return '';
+  return `<div class="newan" style="margin-top:10px"><b>Alérgenos con reacción (grado 2+ o más, según el informe)</b>
+    <span class="tip">Elige cuáles quieres sumar a tus Alergias. House no interpreta el resultado: tu médico lo hará.</span>
+    ${rows.map((r, i) => `<label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" data-allergen="${x.id}:${i}" checked> ${esc(r.name)} <span class="tag at">${esc(r.grade)}</span></label>`).join('')}
+    <span><button class="mini" data-addallergies="${x.id}">Agregar a Alergias</button></span></div>`;
+}
+
 const thumbs = (imgs, label) => imgs.length ? `<div class="thumbs" aria-label="Imágenes de ${esc(label)}">${imgs.map(i => `<button class="thumb" data-img="${i.id}" title="${esc(i.title)}" aria-label="Ver imagen ${esc(i.title)}"><img src="/api/images/${i.id}/file" alt="${esc(i.title)}" loading="lazy"></button>`).join('')}</div>` : '';
 
 // Estudios que van de la mano (conclusiones, imágenes y biopsias de un mismo procedimiento).
@@ -975,15 +1004,34 @@ async function renderImaging() {
       ${related(x, list)}
       ${(x.problems || []).length ? `<p class="tip" style="margin:0">Ligado a: ${x.problems.map(p => `<span class="tag at">${esc(p.name)}</span>`).join(' ')}</p>` : ''}
       ${x.conclusion ? `<p style="margin:0"><b>Conclusión:</b> ${esc(x.conclusion)}</p>` : '<p class="tip" style="margin:0">Este informe no trae una conclusión separada; lee el informe completo.</p>'}
-      <details class="hist"><summary>Ver el informe completo</summary>
+      <details class="hist" ${S.openStudy === x.id ? 'open' : ''}><summary>Ver el informe completo</summary>
         <div class="kv" style="margin-top:10px">
           ${x.technique ? `<b>Técnica</b><span>${esc(x.technique)}</span>` : ''}${x.indication ? `<b>Indicación</b><span>${esc(x.indication)}</span>` : ''}
           <b>Hallazgos</b><span>${esc(x.findings || '—')}</span>${x.prior ? `<b>Estudio previo</b><span>${esc(x.prior)}</span>` : ''}
           ${x.suggestions ? `<b>Sugerencias</b><span>${esc(x.suggestions)}</span>` : ''}${x.radiologist ? `<b>Firmado por</b><span>${esc(x.radiologist)}</span>` : ''}</div>
-        ${x.document_id ? `<p style="margin:10px 0 0"><a class="mini" href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver informe original</a></p>` : ''}</details></section>`).join('')}
+        ${x.document_id ? `<p style="margin:10px 0 0"><a class="mini" href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver informe original</a></p>` : ''}
+        ${studyTables(x)}</details></section>`).join('')}
     ${loose.length && S.studyFilter === 'Todos' ? `<section class="card cfg"><div class="bar"><div><h2>Imágenes sin informe</h2>
         <span class="tip">No encontré un informe de la misma fecha y nombre parecido. Sube el informe en PDF y se unirán solas.</span></div></div>${thumbs(loose, 'sin informe')}</section>` : ''}`;
   view().querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.studyFilter = b.dataset.sf; renderImaging(); });
+  view().querySelectorAll('[data-readtables]').forEach(b => b.onclick = async () => {
+    if (!confirm('Se enviarán a Claude las imágenes de este informe para transcribir sus tablas. Ahí se ven datos personales impresos (nombre, fecha de nacimiento…). ¿Continuar?')) return;
+    b.disabled = true; b.textContent = 'Claude está leyendo la imagen… (unos 15 segundos)';
+    try { await api(`/api/imaging/${b.dataset.readtables}/read-tables`, { method: 'POST' }); toast('Tablas leídas. Compáralas con el original.'); S.openStudy = Number(b.dataset.readtables); renderImaging(); }
+    catch (e) { b.disabled = false; b.textContent = 'Leer las tablas con Claude'; toast(e.message); }
+  });
+  view().querySelectorAll('[data-addallergies]').forEach(b => b.onclick = async () => {
+    const x = list.find(s => s.id == b.dataset.addallergies), rows = allergyRows(x);
+    const picked = [...view().querySelectorAll(`[data-allergen^="${x.id}:"]`)].filter(c => c.checked).map(c => rows[Number(c.dataset.allergen.split(':')[1])]);
+    if (!picked.length) return toast('Elige al menos un alérgeno.');
+    const have = new Set((await api(`/api/people/${S.subject}/clinical`)).allergies.map(a => a.substance.toLowerCase()));
+    let added = 0;
+    for (const r of picked) {
+      if (have.has(r.name.toLowerCase())) continue;
+      await api(`/api/people/${S.subject}/clinical/allergy`, { method: 'POST', body: { substance: r.name, reaction: `Prueba cutánea del ${fd(x.performed_on)}: grado ${r.grade}` } }); added++;
+    }
+    toast(added ? `Agregué ${added} ${added === 1 ? 'alergia' : 'alergias'} al expediente.` : 'Esas alergias ya estaban en tu expediente.');
+  });
   const rf = document.getElementById('refreshrep');
   if (rf) rf.onclick = async () => {
     rf.disabled = true; rf.textContent = 'Leyendo de nuevo… puede tardar unos minutos';

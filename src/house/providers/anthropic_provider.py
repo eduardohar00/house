@@ -8,6 +8,7 @@ Notas de diseño (según la documentación vigente del SDK):
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 from collections.abc import Callable
@@ -38,6 +39,23 @@ class AnthropicProvider:
             client = anthropic.Anthropic()  # credenciales desde el entorno
         self._client = client
 
+    @staticmethod
+    def _content(req: LLMRequest) -> Any:
+        if not req.images:
+            return req.user
+        blocks: list[dict] = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": base64.b64encode(img).decode(),
+                },
+            }
+            for img in req.images
+        ]
+        return [*blocks, {"type": "text", "text": req.user}]
+
     def build_kwargs(self, req: LLMRequest) -> dict:
         output_config: dict = {"format": {"type": "json_schema", "schema": req.schema}}
         effort = req.effort or self.effort
@@ -47,7 +65,7 @@ class AnthropicProvider:
             "model": self.model,
             "max_tokens": req.max_tokens,
             "system": req.system,
-            "messages": [{"role": "user", "content": req.user}],
+            "messages": [{"role": "user", "content": self._content(req)}],
             "output_config": output_config,
         }
 

@@ -22,6 +22,7 @@ class LLMRequest:
     schema: dict  # JSON Schema de la respuesta
     max_tokens: int = 8000
     effort: str | None = None  # low | medium | high (si el proveedor lo soporta)
+    images: tuple[bytes, ...] = ()  # imágenes PNG que acompañan al texto (solo proveedores con visión)
 
 
 @dataclass(frozen=True)

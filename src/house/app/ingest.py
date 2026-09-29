@@ -22,7 +22,7 @@ from ..imaging import ImagingReport, looks_like_lab, parse_reports
 from ..normalize import critical, ranges, terminology, units
 from ..privacy import Anonymizer
 from ..providers import BudgetExceeded, ProviderError, Router
-from . import ocr
+from . import ocr, tables
 from .vault import Vault
 
 MAX_BYTES = 25 * 1024 * 1024
@@ -131,7 +131,7 @@ def _brief_study(s: dict) -> dict:
 _IMAGING_COLUMNS = {
     "study_name": "TEXT", "technique": "TEXT", "indication": "TEXT", "findings": "TEXT", "prior": "TEXT",
     "conclusion": "TEXT", "suggestions": "TEXT", "radiologist": "TEXT", "site": "TEXT", "flag": "TEXT",
-    "confirmed_by": "INTEGER", "confirmed_at": "TEXT",
+    "confirmed_by": "INTEGER", "confirmed_at": "TEXT", "tables_json": "TEXT",
 }  # fmt: skip
 
 
@@ -424,6 +424,31 @@ _TEXT_FIELDS = (
     "radiologist",
     "site",
 )
+
+
+def read_study_tables(db: sqlite3.Connection, vault: Vault, router: Router, study_id: int) -> dict:
+    """Transcribe con Claude las tablas de un informe (páginas como imagen) y las guarda con el informe."""
+    study = db.execute(
+        "SELECT i.id, d.file_path FROM imaging_study i JOIN document d ON d.id = i.document_id "
+        "WHERE i.id = ?",
+        (study_id,),
+    ).fetchone()
+    if study is None:
+        raise IngestError(404, "No encontré ese informe.")
+    original = vault.get(study["file_path"])
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(original)) as pdf:
+        pages = min(len(pdf.pages), tables.MAX_PAGES)
+    images = [render_page(original, n, resolution=150) for n in range(1, pages + 1)]
+    result = tables.read_tables(router, images)
+    if not result["tables"]:
+        raise IngestError(422, "No pude leer tablas en este informe.")
+    db.execute(
+        "UPDATE imaging_study SET tables_json = ? WHERE id = ?",
+        (json.dumps(result, ensure_ascii=False), study_id),
+    )
+    return result
 
 
 def refresh_imaging_text(db: sqlite3.Connection, vault: Vault, person_id: int) -> dict:

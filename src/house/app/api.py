@@ -4,6 +4,7 @@ Permisos: cada persona ve solo su perfil; el admin ve todos y cada acceso a un p
 en access_log. Solo el admin crea perfiles, asigna o restablece PIN y borra perfiles.
 """
 
+import json
 import sqlite3
 import threading
 import time
@@ -627,11 +628,14 @@ def create_app(
         rows = db.execute(
             "SELECT i.id, i.document_id, i.modality, i.study_name, i.performed_on, i.technique, "
             "i.indication, i.findings, i.prior, i.conclusion, i.suggestions, i.radiologist, i.site, i.flag, "
-            "d.title AS document_title FROM imaging_study i LEFT JOIN document d ON d.id = i.document_id "
-            "WHERE i.person_id = ? ORDER BY i.performed_on DESC, i.id",
+            "i.tables_json, d.title AS document_title FROM imaging_study i "
+            "LEFT JOIN document d ON d.id = i.document_id WHERE i.person_id = ? "
+            "ORDER BY i.performed_on DESC, i.id",
             (person_id,),
         )
         studies = [dict(r) for r in rows]
+        for s in studies:
+            s["tables"] = json.loads(s.pop("tables_json")) if s.get("tables_json") else None
         linked, _ = ingest.link_images(person_images(person_id), studies)
         manual = {
             (r["a"], r["b"])
@@ -687,6 +691,25 @@ def create_app(
         """Vuelve a leer los informes confirmados con la versión actual: solo textos, no lo confirmado."""
         subject(person_id, actor, "releer_estudio")
         return ingest.refresh_imaging_text(db, vault, person_id)
+
+    @app.post("/api/imaging/{study_id}/read-tables")
+    def read_tables(study_id: int, actor: Me) -> dict:
+        """Transcribe con Claude las tablas de un informe escaneado. Envía las imágenes del informe."""
+        owner = db.execute("SELECT person_id FROM imaging_study WHERE id = ?", (study_id,)).fetchone()
+        if owner is None:
+            raise HTTPException(404, "Informe no encontrado")
+        subject(owner["person_id"], actor, "releer_estudio")
+        router = assistant_router()
+        if router is None:
+            raise HTTPException(409, "Leer tablas necesita Claude: conecta tu clave en Configuración.")
+        try:
+            return ingest.read_study_tables(db, vault, router, study_id)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo leer con Claude: {e}") from None
 
     @app.get("/api/people/{person_id}/images/loose")
     def loose_images(person_id: int, actor: Me) -> list[dict]:
