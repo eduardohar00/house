@@ -33,11 +33,23 @@ CREATE TABLE IF NOT EXISTS review (
 
 PROMPT = """Haz una REVISIÓN INTEGRAL de mi historial de salud. Empieza con get_full_history y profundiza con las
 demás herramientas donde haga falta (por ejemplo los informes completos de endoscopia, biopsias y tomografía).
-Busca en guías oficiales para respaldar cada recomendación.
+Busca en guías oficiales para respaldar cada recomendación. Esta revisión es independiente: parte solo de mi
+expediente actual.
+
+Reglas de fondo:
+- Separa siempre lo que dijo o diagnosticó mi médico (consultas e informes) de lo que opinas tú. Escribe
+  «mi médico indicó…» para lo primero y «mi hipótesis…» o «mi criterio…» para lo segundo.
+- No sugieras descartar, estudiar o hacer algo que ya consta como hecho o descartado en mis consultas o informes.
+  Si crees que aun así conviene repetirlo, di por qué.
+- Los síntomas y observaciones que anoté y los medicamentos con reacción (bad_reaction) valen tanto como un
+  resultado: relaciónalos con el resto y, si sugieren riesgo, ponlos entre los primeros puntos.
+- Cuando un problema tenga varias causas posibles y ninguna esté confirmada (por ejemplo un sangrado), no digas
+  que «no hay causa» ni elijas una sola: enumera las hipótesis, quién sostiene cada una (mi médico, mi
+  observación o tú) y qué evidencia faltaría para decidir.
+- Algunas fechas que anoté son aproximadas (lo dicen sus notas): trátalas como tales. Para cuándo empezó un
+  padecimiento usa el año que trae el padecimiento en el expediente.
 
 Estructura tu respuesta EXACTAMENTE con estos apartados (títulos con ##):
-Los síntomas y observaciones anotados por la persona y los medicamentos con reacción (bad_reaction) valen tanto
-como un resultado: relaciónalos con el resto y, si sugieren riesgo, ponlos entre los primeros puntos.
 
 ## Resumen ejecutivo
 Máximo 5 puntos numerados, ordenados por prioridad (lo urgente primero). Formato EXACTO de cada punto:
@@ -45,19 +57,22 @@ Máximo 5 puntos numerados, ordenados por prioridad (lo urgente primero). Format
 donde «Prioridad» es una sola palabra: Urgente, Pronto, Rutina o Informativo. Sin sub-listas ni párrafos
 largos. Después de los puntos, no agregues nada más en este apartado.
 ## Lo que dicen tus datos
-Padecimientos y hallazgos relevantes, con tu opinión de qué podrían significar y qué tan importantes son.
+Un subtítulo en negritas por tema, en su propia línea, con su importancia entre paréntesis, por ejemplo
+`**1. Aparato digestivo (lo más importante)**`. Debajo, viñetas con los hallazgos y, en una viñeta que empiece
+con «**Mi opinión:**», qué podrían significar y qué tan importantes son.
 ## Relaciones que noté
-Conexiones entre estudios, padecimientos, medicamentos, suplementos, hábitos y antecedentes familiares que yo
-quizá no he notado, y qué conviene revisar por ello.
+Lista numerada; cada punto empieza con un título corto en negritas y sigue con la explicación: conexiones entre
+estudios, padecimientos, medicamentos, suplementos, hábitos y antecedentes familiares que yo quizá no he notado,
+y qué conviene revisar por ello.
 ## Estudios y chequeos que podrías considerar
-Para cada uno: qué es, por qué en mi caso (edad, sexo, antecedentes, hábitos, resultados), cada cuánto
-según la guía (nómbrala con el año) y prioridad (urgente / pronto / rutina).
+Una tabla con estas columnas exactas: Estudio | Por qué en tu caso | Frecuencia / guía (nómbrala con el año) |
+Prioridad (Urgente, Pronto, Rutina o Según síntomas). Después de la tabla, las vacunas en viñetas.
 ## Cuidados y hábitos
-Recomendaciones concretas según mi perfil y mis hallazgos.
+Viñetas; cada una empieza con el tema en negritas seguido de dos puntos (por ejemplo «**Reflujo:**»).
 ## Qué comentar con mi médico
-Lista priorizada de preguntas o temas.
+Lista numerada y priorizada de preguntas o temas; cada una empieza con la pregunta en negritas.
 ## Datos que me faltan
-Qué información adicional cambiaría tu análisis.
+Viñetas; cada una empieza con el dato que falta en negritas y dice qué cambiaría en tu análisis.
 """
 
 
