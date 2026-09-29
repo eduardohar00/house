@@ -1547,7 +1547,103 @@ function execHtml(lines, sources) {
   }
   return `<div class="exec">${out.join('')}</div>`;
 }
-function reviewHtml(text, sources, openAll) {
+// Revisión integral: cada sección se presenta según su contenido (tarjetas, checklist, prioridades).
+function rvBlocks(lines) {
+  const out = []; let tbl = null;
+  const endTable = () => { if (tbl) { out.push({ t: 'table', rows: tbl }); tbl = null; } };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+    if (/^\s*\|/.test(line)) {
+      const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;
+      (tbl ||= []).push(cells); continue;
+    }
+    endTable();
+    if (!line.trim() || /^\s*-{3,}\s*$/.test(line)) continue;
+    const sub = line.match(/^\*\*(.+?)\*\*\s*$/), li = line.match(/^(\s*)[-•*]\s+(.*)/), ol = line.match(/^\s*(\d+)[.)]\s+(.*)/);
+    if (sub) out.push({ t: 'sub', text: sub[1] });
+    else if (li) out.push({ t: 'li', depth: li[1].length ? 1 : 0, text: li[2] });
+    else if (ol) out.push({ t: 'ol', n: ol[1], text: ol[2] });
+    else out.push({ t: 'p', text: line.trim() });
+  }
+  endTable();
+  return out;
+}
+const rvSplitTitle = (t, keep) => { const m = t.match(/^\*\*(.+?)\*\*\s*(.*)$/); if (!m) return ['', t]; return [keep ? m[1] : m[1].replace(/[.:]\s*$/, ''), m[2]]; };
+const rvCap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+const rvPrio = t => { const s = String(t || '').replace(/\*/g, '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); return /urgente/.test(s) ? 'urg' : /pronto/.test(s) ? 'pro' : /rutina/.test(s) ? 'rut' : 'inf'; };
+function rvList(items, sources) {   // viñetas con un nivel de sangría; «Mi opinión» y «Mi lectura» salen como recuadro
+  const out = []; let cur = null;
+  const flush = () => {
+    if (cur) out.push(`<ul class="rvul">${cur.map(x => `<li>${x.text}${x.subs.length ? `<ul class="rvsub">${x.subs.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul>`);
+    cur = null;
+  };
+  for (const b of items) {
+    if (b.t === 'li' && /^\*\*(Mi opinión|Mi lectura|Mi criterio)/i.test(b.text)) { flush(); out.push(`<div class="rvopin">${mdInline(b.text, sources)}</div>`); continue; }
+    if (b.t === 'li' || b.t === 'ol') {
+      (cur ||= []);
+      if (b.depth === 1 && cur.length) cur[cur.length - 1].subs.push(mdInline(b.text, sources));
+      else cur.push({ text: mdInline(b.text, sources), subs: [] });
+      continue;
+    }
+    flush(); out.push(b.t === 'sub' ? `<h5>${mdInline(b.text, sources)}</h5>` : `<p>${mdInline(b.text, sources)}</p>`);
+  }
+  flush();
+  return out.join('');
+}
+function rvData(blocks, sources) {   // «Lo que dicen tus datos»: un bloque plegable por tema, con su importancia
+  const groups = []; let cur = { title: '', body: [] };
+  for (const b of blocks) { if (b.t === 'sub') { groups.push(cur); cur = { title: b.text, body: [] }; } else cur.body.push(b); }
+  groups.push(cur);
+  return groups.filter(g => g.title || g.body.length).map((g, i) => {
+    if (!g.title) return `<div class="rvbody">${rvList(g.body, sources)}</div>`;
+    const m = g.title.replace(/^\d+[.)]\s*/, '').match(/^(.*?)\s*\((.*)\)\s*$/), name = m ? m[1] : g.title.replace(/^\d+[.)]\s*/, ''), tag = m ? m[2] : '';
+    const cls = /m[aá]s importante|urgente/i.test(tag) ? 'urg' : /vigilar|media/i.test(tag) ? 'pro' : 'inf';
+    return `<details class="rvtopic" ${i <= 1 ? 'open' : ''}><summary><span class="rvtn">${esc(name)}</span>${tag ? `<span class="exchip ${cls}">${esc(tag[0].toUpperCase() + tag.slice(1))}</span>` : ''}</summary><div class="rvbody">${rvList(g.body, sources)}</div></details>`;
+  }).join('');
+}
+function rvCards(blocks, sources, numbered) {   // relaciones y cuidados: una tarjeta por punto
+  const cards = []; let intro = [];
+  for (const b of blocks) {
+    if (b.t === 'ol' || (b.t === 'li' && b.depth === 0 && !numbered)) {
+      const [title, rest] = rvSplitTitle(b.text);
+      cards.push({ n: b.n, title, text: rvCap(rest || (title ? '' : b.text)), extra: [] });
+    } else if (b.t === 'li' && cards.length) cards[cards.length - 1].extra.push({ ...b, depth: 0 });
+    else if (b.t === 'sub' || b.t === 'p') { if (!cards.length) intro.push(b); else cards[cards.length - 1].extra.push(b); }
+  }
+  const heads = intro.map(b => `<p class="rvlead">${mdInline(b.text, sources)}</p>`).join('');
+  return heads + `<div class="rvcards">${cards.map((c, i) => `<div class="rvcard">${numbered ? `<span class="rvnum">${c.n || i + 1}</span>` : ''}<div>${c.title ? `<b class="rvct">${mdInline(c.title, sources)}</b>` : ''}${c.text ? `<p>${mdInline(c.text, sources)}</p>` : ''}${c.extra.length ? rvList(c.extra, sources) : ''}</div></div>`).join('')}</div>`;
+}
+function rvStudies(blocks, sources) {   // tabla de estudios → tarjetas agrupadas por prioridad; lo demás debajo
+  const table = blocks.find(b => b.t === 'table'), rest = blocks.filter(b => b.t !== 'table');
+  let html = '';
+  if (table && table.rows.length > 1) {
+    const cards = table.rows.slice(1).map(r => ({ name: r[0] || '', why: r[1] || '', guide: r[2] || '', prio: r[3] || '' }));
+    const GROUPS = [['pro', 'Conviene pronto'], ['rut', 'De rutina'], ['inf', 'Según el caso']];
+    const key = c => { const p = rvPrio(c.prio); return p === 'urg' ? 'pro' : p; };
+    html = GROUPS.map(([k, label]) => { const list = cards.filter(c => key(c) === k); return list.length ? `<h5 class="rvgh ${k}">${label} <span class="s">(${list.length})</span></h5><div class="rvcards">${list.map(c => `<div class="rvcard st ${k}">
+      <div><b class="rvct">${mdInline(c.name, sources)}</b><span class="exchip ${k}">${esc(c.prio.replace(/\*/g, ''))}</span>
+      <p><span class="rvk">Por qué en tu caso</span> ${mdInline(c.why, sources)}</p>${c.guide ? `<p class="rvg"><span class="rvk">Guía o frecuencia</span> ${mdInline(c.guide, sources)}</p>` : ''}</div></div>`).join('')}</div>` : ''; }).join('');
+  }
+  return html + rvList(rest, sources);
+}
+function rvChecklist(blocks, sources, revId, kind) {   // «Qué comentar con mi médico» y «Datos que me faltan»
+  const items = blocks.filter(b => b.t === 'ol' || (b.t === 'li' && b.depth === 0)), key = i => `house-rv-${revId}-${kind}-${i}`;
+  const get = i => { try { return localStorage.getItem(key(i)) === '1'; } catch { return false; } };
+  return `<ul class="rvcheck" data-kind="${kind}">${items.map((b, i) => { const [t, rest] = rvSplitTitle(b.text, true);
+    return `<li><label><input type="checkbox" data-ck="${key(i)}" ${get(i) ? 'checked' : ''}><span>${t ? `<b>${mdInline(t, sources)}</b> ` : ''}${mdInline(rest, sources)}</span></label></li>`; }).join('')}</ul>
+    ${kind === 'medico' ? '<button class="mini" id="rvcopy">Copiar esta lista</button>' : ''}`;
+}
+const RV_ICON = { datos: '🔎', relaciones: '🔗', estudios: '🧪', cuidados: '🌿', medico: '🩺', faltan: '❓' };
+function rvKind(title) { const t = title.toLowerCase(); return /dicen|datos/.test(t) && !/faltan/.test(t) ? 'datos' : /relacion/.test(t) ? 'relaciones' : /estudios|chequeos/.test(t) ? 'estudios' : /cuidados|h[aá]bitos/.test(t) ? 'cuidados' : /comentar|m[eé]dico/.test(t) ? 'medico' : /faltan/.test(t) ? 'faltan' : ''; }
+function rvSection(x, sources, revId) {
+  const kind = rvKind(x.title), b = rvBlocks(x.lines);
+  const body = kind === 'datos' ? rvData(b, sources) : kind === 'relaciones' ? rvCards(b, sources, true) : kind === 'estudios' ? rvStudies(b, sources)
+    : kind === 'cuidados' ? rvCards(b, sources, false) : kind === 'medico' ? rvChecklist(b, sources, revId, 'medico') : kind === 'faltan' ? rvChecklist(b, sources, revId, 'faltan') : rvList(b, sources);
+  const n = kind === 'datos' ? (body.match(/class="rvtopic"/g) || []).length : kind === 'estudios' ? (body.match(/class="rvcard/g) || []).length : kind ? (body.match(/class="rvcard"|<li><label>/g) || []).length : 0;
+  return { kind, body, n };
+}
+function reviewHtml(text, sources, openAll, revId) {
   const secs = []; let cur = { title: '', lines: [] };
   for (const line of (text || '').split('\n')) {
     const h = line.match(/^\s*##\s+(.*)/);
@@ -1556,10 +1652,11 @@ function reviewHtml(text, sources, openAll) {
   secs.push(cur);
   const has = x => x.title || x.lines.some(l => l.trim());
   const summary = secs.find(x => /resumen/i.test(x.title)), rest = secs.filter(x => x !== summary && has(x));
-  const nav = rest.filter(x => x.title).map((x, i) => `<button class="chip" data-gosec="${i}">${esc(x.title)}</button>`).join('');
+  const nav = rest.filter(x => x.title).map((x, i) => `<button class="chip" data-gosec="${i}">${RV_ICON[rvKind(x.title)] || ''} ${esc(x.title)}</button>`).join('');
   return `${summary ? `<div class="rvhero"><h3>${esc(summary.title)}</h3>${execHtml(summary.lines, sources)}</div>` : ''}
     ${nav ? `<div class="rvnav"><span class="tip">Ir a:</span>${nav}<button class="mini" id="rvtoggle">${openAll ? 'Contraer todo' : 'Expandir todo'}</button></div>` : ''}
-    ${rest.map((x, i) => x.title ? `<details class="rvsec" id="rvs-${i}" ${openAll ? 'open' : ''}><summary>${esc(x.title)}</summary><div class="msg-body">${answerHtml(x.lines.join('\n'), sources)}</div></details>` : `<div class="msg-body">${answerHtml(x.lines.join('\n'), sources)}</div>`).join('')}`;
+    ${rest.map((x, i) => { if (!x.title) return `<div class="rvbody">${rvList(rvBlocks(x.lines), sources)}</div>`; const s = rvSection(x, sources, revId);
+      return `<details class="rvsec ${s.kind}" id="rvs-${i}" ${openAll ? 'open' : ''}><summary><span class="rvic">${RV_ICON[s.kind] || ''}</span>${esc(x.title)}${s.n ? `<span class="xn">${s.n}</span>` : ''}</summary><div class="rvsecbody">${s.body}</div></details>`; }).join('')}`;
 }
 
 const webLinks = list => list && list.length ? `<p class="tip" style="margin:8px 0 2px">Guías y páginas consultadas:</p><ul class="webs">${list.map(w => `<li><a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.title || w.url)}</a></li>`).join('')}</ul>` : '';
@@ -1629,7 +1726,7 @@ async function paintReviews(forceOpen) {
   const cur = rv.open ? await api(`/api/reviews/${rv.open}`).catch(() => null) : null;
   const body = !cur ? '' : cur.status === 'running' ? '<p class="tip"><span class="spin"></span>Claude está analizando todo tu historial y buscando en guías oficiales… puede tardar unos minutos. Puedes seguir usando House.</p>'
     : cur.status === 'error' ? `<p class="err">${esc(cur.error || 'La revisión falló.')}</p>`
-    : `<div class="msg bot rvdoc" style="max-width:none">${reviewHtml(cur.content, cur.sources || [], rv.openAll)}
+    : `<div class="msg bot rvdoc" style="max-width:none">${reviewHtml(cur.content, cur.sources || [], rv.openAll, cur.id)}
         <details class="rvsec" id="rvsrc"><summary>Fuentes de tu expediente (${(cur.sources || []).length}) y guías consultadas (${(cur.web_sources || []).length})</summary>
         ${(cur.sources || []).length ? `<ol class="srcs">${cur.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${x.document_id ? `<a href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener">${esc(x.title)}${x.date ? ' · ' + fd(x.date) : ''}</a>` : esc(x.title)}</li>`).join('')}</ol>` : ''}
         ${webLinks(cur.web_sources)}${cur.web_note ? `<p class="tip">${esc(cur.web_note)}</p>` : ''}</details>
@@ -1652,6 +1749,9 @@ async function paintReviews(forceOpen) {
   });
   box.querySelectorAll('[data-cite]').forEach(a => a.onclick = e => { e.preventDefault(); const t = box.querySelector('#src-' + a.dataset.cite); if (t) { t.closest('details').open = true; t.scrollIntoView({ block: 'center' }); t.classList.add('flash'); setTimeout(() => t.classList.remove('flash'), 1400); } });
   box.querySelectorAll('[data-gosec]').forEach(b => b.onclick = () => { const d = box.querySelector('#rvs-' + b.dataset.gosec); if (d) { d.open = true; d.scrollIntoView({ block: 'start', behavior: 'smooth' }); } });
+  box.querySelectorAll('input[data-ck]').forEach(i => i.onchange = () => { try { localStorage.setItem(i.dataset.ck, i.checked ? '1' : '0'); } catch { /* sin almacenamiento */ } });
+  const cp = box.querySelector('#rvcopy');
+  if (cp) cp.onclick = async () => { const txt = [...box.querySelectorAll('.rvcheck[data-kind="medico"] li')].map((l, n) => `${n + 1}. ${l.innerText.replace(/\s+/g, ' ').trim()}`).join('\n'); try { await navigator.clipboard.writeText(txt); toast('Copié la lista.'); } catch { toast('No pude copiar; selecciona el texto.'); } };
   const tg = box.querySelector('#rvtoggle');
   if (tg) tg.onclick = () => { rv.openAll = !rv.openAll; box.querySelectorAll('details.rvsec[id^=rvs-]').forEach(d => d.open = rv.openAll); tg.textContent = rv.openAll ? 'Contraer todo' : 'Expandir todo'; };
   clearTimeout(S.revTimer);
