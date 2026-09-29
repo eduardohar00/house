@@ -38,4 +38,4 @@ python -m house.app                         # la app en http://127.0.0.1:8765 (d
 - Antes de subir: pruebas y ruff en verde. Commits claros en español o inglés; nunca fuerces push a `main`.
 
 ## Estado y siguientes pasos
-Fase 0 lista (plan, proveedores, anonimizador, normalización, banco de pruebas). En curso: **Fase 0b**, Eduardo arma casos reales en `bench/private/` y compara proveedores. **Fase 1 en curso** en paralelo (ver `docs/TECHNICAL_PLAN.md` §2.6): base de la app hecha; sigue subir estudio y revisión lado a lado. PDFs escaneados requieren OCR local (Fase 1).
+Fase 0 lista (plan, proveedores, anonimizador, normalización, banco de pruebas). En curso: **Fase 0b**, Eduardo pasa estudios reales y Claude arma los casos en `bench/private/`; el banco mide a Claude contra la línea base. **Fase 1 en curso** en paralelo (ver `docs/TECHNICAL_PLAN.md` §2.6): base de la app hecha; sigue subir estudio y revisión lado a lado. PDFs escaneados requieren OCR local (Fase 1).
