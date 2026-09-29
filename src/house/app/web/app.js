@@ -567,7 +567,7 @@ async function renderDocs() {
         <input type="file" id="rxfile" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" hidden></label>
       <div id="rxup"></div>
     </section>
-    <section class="card cfg"><h2>Estudios</h2>
+    <section class="card cfg"><div class="bar"><h2>Estudios</h2>${docs.some(d => !d.name_source) ? '<button class="mini" id="autonames" title="Claude pone un nombre corto y claro a los documentos que no has renombrado. Solo ve los nombres de archivo, no su contenido. El nombre original se conserva.">Ordenar nombres con Claude</button>' : ''}</div>
       ${docs.length ? `<div class="tblwrap"><table><thead><tr><th>Estudio</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
         ${docs.map(d => `<tr><td><b>${esc(d.title)}</b>${d.filename && d.filename.replace(/\.(pdf|png|jpe?g)$/i, '') !== d.title ? `<small class="fname" style="display:block" title="Nombre del archivo que subiste">Archivo: ${esc(d.filename)}</small>` : ''}<small style="display:block;color:var(--muted)">${{ imagen: 'Informe de estudio', receta: 'Receta' }[d.doc_type] || 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
           <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : d.doc_type === 'receta' ? `Revisado · ${d.results} ${d.results === 1 ? 'medicamento' : 'medicamentos'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}${notSaved(d)}</td>
@@ -589,6 +589,12 @@ async function renderDocs() {
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFiles([...e.dataTransfer.files]); };
   view().querySelectorAll('[data-rev]').forEach(b => b.onclick = () => openReview(Number(b.dataset.rev)));
+  const an = document.getElementById('autonames');
+  if (an) an.onclick = async () => {
+    an.disabled = true; an.textContent = 'Claude está ordenando los nombres…';
+    try { const r = await api(`/api/people/${S.subject}/names/auto`, { method: 'POST' }); toast(`Nombres ordenados: ${r.renamed}.`); renderDocs(); }
+    catch (e) { an.disabled = false; an.textContent = 'Ordenar nombres con Claude'; toast(e.message); }
+  };
   view().querySelectorAll('[data-rename-doc]').forEach(b => b.onclick = async () => {
     const name = prompt('Nombre corregido del documento (el nombre del archivo original se conserva):', b.dataset.t);
     if (name == null || name.trim() === b.dataset.t) return;

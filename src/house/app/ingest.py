@@ -138,7 +138,7 @@ def _brief_study(s: dict) -> dict:
 _IMAGING_COLUMNS = {
     "study_name": "TEXT", "technique": "TEXT", "indication": "TEXT", "findings": "TEXT", "prior": "TEXT",
     "conclusion": "TEXT", "suggestions": "TEXT", "radiologist": "TEXT", "site": "TEXT", "flag": "TEXT",
-    "confirmed_by": "INTEGER", "confirmed_at": "TEXT", "tables_json": "TEXT",
+    "confirmed_by": "INTEGER", "confirmed_at": "TEXT", "tables_json": "TEXT", "name_source": "TEXT",
 }  # fmt: skip
 
 
@@ -160,6 +160,8 @@ def migrate_document(db: sqlite3.Connection) -> None:
     have = {r["name"] for r in db.execute("PRAGMA table_info(document)")}
     if have and "filename" not in have:
         db.execute("ALTER TABLE document ADD COLUMN filename TEXT")
+    if have and "name_source" not in have:
+        db.execute("ALTER TABLE document ADD COLUMN name_source TEXT")  # ia | manual
 
 
 def rename_document(db: sqlite3.Connection, doc_id: int, title: str) -> None:
@@ -168,7 +170,9 @@ def rename_document(db: sqlite3.Connection, doc_id: int, title: str) -> None:
         raise IngestError(422, "El nombre debe tener entre 2 y 120 caracteres.")
     # El nombre del archivo original se conserva la primera vez que se cambia el título.
     db.execute(
-        "UPDATE document SET filename = COALESCE(filename, title), title = ? WHERE id = ?", (title, doc_id)
+        "UPDATE document SET filename = COALESCE(filename, title), title = ?, name_source = 'manual' "
+        "WHERE id = ?",
+        (title, doc_id),
     )
 
 
@@ -176,7 +180,9 @@ def rename_study(db: sqlite3.Connection, study_id: int, name: str) -> None:
     name = " ".join((name or "").split())
     if not 2 <= len(name) <= 120:
         raise IngestError(422, "El nombre debe tener entre 2 y 120 caracteres.")
-    db.execute("UPDATE imaging_study SET study_name = ? WHERE id = ?", (name, study_id))
+    db.execute(
+        "UPDATE imaging_study SET study_name = ?, name_source = 'manual' WHERE id = ?", (name, study_id)
+    )
 
 
 def migrate_observation(db: sqlite3.Connection) -> None:
@@ -1271,7 +1277,7 @@ def confirm_imaging_review(
         db.execute(
             "INSERT INTO imaging_study(person_id, document_id, modality, region, performed_on, report_text, "
             "study_name, technique, indication, findings, prior, conclusion, suggestions, radiologist, site, "
-            "flag, confirmed_by, confirmed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "flag, confirmed_by, confirmed_at, name_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 doc["person_id"],
                 doc_id,
@@ -1291,6 +1297,9 @@ def confirm_imaging_review(
                 flag,
                 reviewer_id,
                 now,
+                "manual"
+                if study != (draft.get("study_name") or "").strip()
+                else None,  # la persona lo corrigió
             ),
         )
         first_date = first_date or performed_on

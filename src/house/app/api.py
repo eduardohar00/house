@@ -22,7 +22,7 @@ from ..normalize import explanations, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import assistant, auth, backup, clinical, drugs, ingest, store
+from . import assistant, auth, backup, clinical, drugs, ingest, naming, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -462,12 +462,37 @@ def create_app(
         except ProviderError as e:
             # El mensaje del proveedor no incluye contenido del documento (ver providers/base.py).
             raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
+        name_after_upload(person_id, done.document_id)
         return {
             "document_id": done.document_id,
             "rows": done.rows,
             "kind": done.kind,
             "reader": _who(reader, done),
         }
+
+    def name_after_upload(person_id: int, doc_id: int) -> None:
+        """Nombre claro puesto por Claude al subir (solo nombres de archivo y tipos; falla en silencio)."""
+        router = assistant_router()
+        if router is None:
+            return
+        try:
+            naming.auto_name(db, router, person_id, [doc_id])
+        except Exception:  # noqa: BLE001 - nombrar es un extra: subir el estudio nunca debe fallar por esto
+            pass
+
+    @app.post("/api/people/{person_id}/names/auto")
+    def auto_names(person_id: int, actor: Me) -> dict:
+        """Pone nombre claro (Claude) a los documentos que nadie ha renombrado. Solo se envían nombres."""
+        subject(person_id, actor, "editar_expediente")
+        router = assistant_router()
+        if router is None:
+            raise HTTPException(409, "Ordenar nombres necesita Claude: conecta tu clave en Configuración.")
+        try:
+            return naming.auto_name(db, router, person_id)
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo consultar a Claude: {e}") from None
 
     @app.post("/api/people/{person_id}/prescriptions")
     async def upload_prescription(person_id: int, actor: Me, file: Annotated[UploadFile, File()]) -> dict:
@@ -485,6 +510,7 @@ def create_app(
             raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
         except ProviderError as e:
             raise HTTPException(502, f"No se pudo leer con Claude: {e}") from None
+        name_after_upload(person_id, done.document_id)
         return {"document_id": done.document_id, "medications": done.rows, "kind": "receta"}
 
     @app.post("/api/documents/{doc_id}/review-prescription")
@@ -500,7 +526,8 @@ def create_app(
     def list_documents(person_id: int, actor: Me) -> list[dict]:
         subject(person_id, actor, "ver_estudios")
         rows = db.execute(
-            "SELECT d.id, d.doc_type, d.title, d.filename, d.collected_on, d.review_state, d.uploaded_at, "
+            "SELECT d.id, d.doc_type, d.title, d.filename, d.name_source, d.collected_on, d.review_state, "
+            "d.uploaded_at, "
             "(SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id) "
             "+ (SELECT COUNT(*) FROM imaging_study i WHERE i.document_id = d.id) "
             "+ (SELECT COUNT(*) FROM medication m WHERE m.document_id = d.id) AS results "
@@ -730,7 +757,7 @@ def create_app(
         rows = db.execute(
             "SELECT i.id, i.document_id, i.modality, i.study_name, i.performed_on, i.technique, "
             "i.indication, i.findings, i.prior, i.conclusion, i.suggestions, i.radiologist, i.site, i.flag, "
-            "i.tables_json, d.title AS document_title, d.filename FROM imaging_study i "
+            "i.tables_json, i.name_source, d.title AS document_title, d.filename FROM imaging_study i "
             "LEFT JOIN document d ON d.id = i.document_id WHERE i.person_id = ? "
             "ORDER BY i.performed_on DESC, i.id",
             (person_id,),
