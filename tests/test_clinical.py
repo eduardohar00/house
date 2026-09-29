@@ -522,3 +522,25 @@ def test_allergies_have_a_type_and_no_allergies_means_no_drug_allergies(world):
     assert c.put(f"/api/people/{me}/clinical-none/allergy", headers=H).status_code == 200
     add(c, me, "allergy", substance="Amoxicilina").raise_for_status()  # sin tipo: se trata como medicamento
     assert "allergy" not in c.get(f"/api/people/{me}/clinical").json()["none"]
+
+
+def test_sintomas_y_reaccion_a_medicamento(world):
+    c, me, _ = world
+    r = add(c, me, "symptom", occurred_on="2026-03-01", what="Sangre en las heces", related="ibuprofeno")
+    r.raise_for_status()
+    assert add(c, me, "symptom", occurred_on="2999-01-01", what="x").status_code == 422  # no puede ser futuro
+    assert add(c, me, "symptom", occurred_on="2026-03-01", what="  ").status_code == 422
+    add(
+        c,
+        me,
+        "medication",
+        active_ingredient="ibuprofeno",
+        active=False,
+        bad_reaction="Al día siguiente hay sangre en mis heces",
+    ).raise_for_status()
+    data = c.get(f"/api/people/{me}/clinical").json()
+    assert data["symptoms"][0]["what"] == "Sangre en las heces"
+    assert data["medications"][0]["bad_reaction"].startswith("Al día siguiente")
+    assert any(e["kind"] == "sintoma" and "ibuprofeno" in e["subtitle"] for e in data["timeline"])
+    c.delete(f"/api/people/{me}/clinical/symptom/{data['symptoms'][0]['id']}", headers=H).raise_for_status()
+    assert c.get(f"/api/people/{me}/clinical").json()["symptoms"] == []

@@ -861,10 +861,11 @@ const CLIN = {
     badge: p => `<span class="sp ${STCLS[p.status] || 'c'}">${esc(p.status)}</span>` },
   medication: { key: 'medications', title: 'Medicamentos', add: 'Agregar medicamento', none: 'Sin medicamentos actuales',
     fields: [F('brand', 'Nombre comercial (si lo conoces)', 'text', { ph: 'Por ejemplo Glucophage' }), F('active_ingredient', 'Sustancia activa', 'text', { list: 'medication', ph: 'Por ejemplo metformina' }), F('dose', 'Dosis (por ejemplo 50 mg al día)'), F('reason', 'Para qué'), F('prescriber', 'Médico que lo indicó (opcional)'),
-      F('since_year', 'Desde (año)', 'text', { ph: '2022' }), F('until_year', 'Hasta (año, si ya lo suspendiste)', 'text', { ph: '2024' }), F('active', 'Lo tomo actualmente', 'check')],
-    badge: m => m.document_id ? `<a class="mini" href="/api/documents/${m.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver receta</a>` : '',
+      F('since_year', 'Desde (año)', 'text', { ph: '2022' }), F('until_year', 'Hasta (año, si ya lo suspendiste)', 'text', { ph: '2024' }), F('active', 'Lo tomo actualmente', 'check'),
+      F('bad_reaction', 'Me cae mal: qué me pasa con este medicamento (opcional)', 'text', { ph: 'Por ejemplo: al día siguiente hay sangre en mis heces' })],
+    badge: m => (m.bad_reaction ? `<span class="sp a" title="${esc(m.bad_reaction)}">Me cae mal</span>` : '') + (m.document_id ? `<a class="mini" href="/api/documents/${m.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver receta</a>` : ''),
     line: m => `<b>${esc(m.brand || m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
-    sub: m => [m.brand && m.active_ingredient && 'Sustancia activa: ' + m.active_ingredient, m.reason, (m.problems || []).filter(p => p.name.toLowerCase() !== (m.reason || '').toLowerCase()).length && 'ligado a ' + m.problems.map(p => p.name).join(', '), m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
+    sub: m => [m.bad_reaction && 'Me cae mal: ' + m.bad_reaction, m.brand && m.active_ingredient && 'Sustancia activa: ' + m.active_ingredient, m.reason, (m.problems || []).filter(p => p.name.toLowerCase() !== (m.reason || '').toLowerCase()).length && 'ligado a ' + m.problems.map(p => p.name).join(', '), m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
   supplement: { key: 'supplements', title: 'Suplementos', add: 'Agregar suplemento',
     fields: [F('name', 'Suplemento', 'text', { list: 'supplement' }), F('dose', 'Cuánto y cuándo (por ejemplo 1 scoop al día)'), F('brand', 'Marca (opcional)'), F('reason', 'Para qué (opcional)'),
       F('since_year', 'Desde (año)', 'text', { ph: '2024' }), F('until_year', 'Hasta (año, si ya lo dejaste)', 'text', { ph: '2025' }), F('active', 'Lo tomo actualmente', 'check')],
@@ -879,12 +880,15 @@ const CLIN = {
   vaccine: { key: 'vaccines', title: 'Vacunas', add: 'Agregar vacuna',
     fields: [F('name', 'Vacuna', 'text', { list: 'vaccine' }), F('brand', 'Marca (opcional)', 'text', { ph: 'Por ejemplo Pfizer' }), F('given_on', 'Fecha', 'date'), F('dose_label', 'Dosis', 'select', { options: 'dose_options', optional: true }), F('lot', 'Lote (opcional)'), F('place', 'Dónde (opcional)')],
     line: v => `<b>${esc(v.name)}</b> <span class="s">${fd(v.given_on)}</span>`, sub: v => [v.dose_label, v.brand, v.place].filter(Boolean).join(' · ') },
+  symptom: { key: 'symptoms', title: 'Síntomas y observaciones', add: 'Anotar algo que noté',
+    fields: [F('occurred_on', 'Fecha', 'date'), F('what', 'Qué noté', 'text', { ph: 'Por ejemplo: sangre en las heces' }), F('related', 'Después de qué (medicamento, comida, actividad; opcional)', 'text', { ph: 'Por ejemplo: ibuprofeno' }), F('notes', 'Detalles (opcional): color, cantidad, cuántos días…')],
+    line: s => `<b>${esc(s.what)}</b> <span class="s">${fd(s.occurred_on)}</span>`, sub: s => [s.related && 'después de ' + s.related, s.notes].filter(Boolean).join(' · ') },
   consultation: { key: 'consultations', title: 'Consultas', add: 'Agregar consulta',
     fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)')],
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
-const EV_KIND = { consulta: 'Consulta', receta: 'Receta', cuerpo: 'Composición corporal', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
+const EV_KIND = { consulta: 'Consulta', receta: 'Receta', cuerpo: 'Composición corporal', sintoma: 'Síntoma', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
 
 // Un mismo medicamento (misma sustancia activa) que aparece en varias recetas se muestra en una sola fila.
 const medKey = m => String(m.active_ingredient || m.name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -986,11 +990,11 @@ async function renderClinical() {
 
   // ---- Secciones: un resumen al inicio y una sección a la vez, para no ver todo junto.
   const SECTIONS = [['res', 'Resumen'], ['per', 'Perfil y medidas'], ['prob', 'Padecimientos', 'problem'], ['med', 'Medicamentos', 'medication'], ['sup', 'Suplementos', 'supplement'], ['alg', 'Alergias', 'allergy'],
-    ['fam', 'Antecedentes', 'family'], ['vac', 'Vacunas', 'vaccine'], ['cir', 'Cirugías', 'procedure'], ['con', 'Consultas', 'consultation'], ['his', 'Historial']];
+    ['fam', 'Antecedentes', 'family'], ['vac', 'Vacunas', 'vaccine'], ['cir', 'Cirugías', 'procedure'], ['sin', 'Síntomas', 'symptom'], ['con', 'Consultas', 'consultation'], ['his', 'Historial']];
   const secOfKind = Object.fromEntries(SECTIONS.filter(x => x[2]).map(x => [x[2], x[0]]));
   const sec = SECTIONS.some(x => x[0] === S.expSec) ? S.expSec : 'res';
   const count = { problem: c.problems.filter(p => p.status !== 'Resuelta').length, medication: c.medications.filter(m => m.active).length, supplement: c.supplements.filter(m => m.active).length, allergy: c.allergies.length,
-    family: c.family.length, vaccine: c.vaccines.length, procedure: c.procedures.length, consultation: c.consultations.length };
+    family: c.family.length, vaccine: c.vaccines.length, procedure: c.procedures.length, symptom: c.symptoms.length, consultation: c.consultations.length };
   const drugAllergies = c.allergies.filter(a => !a.category || a.category === 'Medicamento').length;
   const pending = HAS_NONE.filter(k => !(k === 'allergy' ? drugAllergies : count[k]) && !c.none.includes(k));  // sin datos y sin confirmar que «no hay»
   const profileEmpty = !hl.profile.height_cm && !hl.profile.smoking && !hl.profile.alcohol && !hl.profile.exercise;
@@ -1015,6 +1019,7 @@ async function renderClinical() {
         <section class="card xc">${head('Medicamentos actuales', 'med')}${mini(groupMeds(meds).map(g => g[0]), m => `<li><b>${esc(m.brand || m.name)}</b>${m.active_ingredient && m.brand ? ` <span class="s">· ${esc(m.active_ingredient)}</span>` : ''}${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'med', 'Sin medicamentos actuales.')}</section>
         <section class="card xc">${head('Suplementos actuales', 'sup')}${mini(c.supplements.filter(m => m.active), m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'sup', 'Sin suplementos registrados.')}</section>
         <section class="card xc">${head('Alergias', 'alg')}${mini(c.allergies, a => `<li><b>${esc(a.substance)}</b> <span class="s">· ${esc((a.category || 'Medicamento').toLowerCase())}${a.reaction ? ' · ' + esc(a.reaction) : ''}</span></li>`, 'alg', c.none.includes('allergy') ? 'Sin alergias a medicamentos conocidas.' : 'Sin registrar.')}</section>
+        <section class="card xc">${head('Síntomas y observaciones', 'sin')}${mini(c.symptoms, x => `<li><b>${esc(x.what)}</b> <span class="s">· ${fd(x.occurred_on)}${x.related ? ' · después de ' + esc(x.related) : ''}</span></li>`, 'sin', 'Nada anotado. Aquí puedes anotar lo que notes (por ejemplo, algo que te pasa después de un medicamento).')}</section>
         <section class="card xc">${head('Últimos eventos', 'his')}${recent ? `<ul class="xmini">${recent}</ul>` : '<p class="tip" style="margin:0">Todavía no hay eventos.</p>'}</section>
       </div>`;
   };

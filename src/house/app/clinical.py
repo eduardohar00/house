@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS consultation (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
   occurred_on TEXT NOT NULL, reason TEXT NOT NULL, doctor TEXT, specialty TEXT, notes TEXT
 );
+CREATE TABLE IF NOT EXISTS symptom (
+  id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+  occurred_on TEXT NOT NULL, what TEXT NOT NULL, related TEXT, notes TEXT
+);
 CREATE TABLE IF NOT EXISTS supplement (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
   name TEXT NOT NULL, dose TEXT, brand TEXT, reason TEXT, since_year TEXT, until_year TEXT,
@@ -74,6 +78,7 @@ _EXTRA_COLUMNS = {
         "document_id": "INTEGER",
         "active_ingredient": "TEXT",
         "brand": "TEXT",
+        "bad_reaction": "TEXT",
     },
     "problem": {"notes": "TEXT"},
     "allergy": {"notes": "TEXT", "category": "TEXT"},
@@ -150,6 +155,11 @@ SPECS: dict[str, tuple[str, dict[str, Field]]] = {
         "dose": Field("text"), "reason": Field("text"),
         "prescriber": Field("text"), "since_year": Field("year"), "until_year": Field("year"),
         "active": Field("bool", default=True), "notes": Field("text", max=1000),
+        "bad_reaction": Field("text", max=300),
+    }),
+    "symptom": ("symptom", {
+        "occurred_on": Field("date", True), "what": Field("text", True, max=300),
+        "related": Field("text", max=200), "notes": Field("text", max=1000),
     }),
     "supplement": ("supplement", {
         "name": Field("text", True), "dose": Field("text"), "brand": Field("text"), "reason": Field("text"),
@@ -173,7 +183,8 @@ SPECS: dict[str, tuple[str, dict[str, Field]]] = {
 
 _LABELS = {
     "substance": "La sustancia", "name": "El nombre", "status": "El estado", "relative": "El parentesco",
-    "condition": "La condición", "given_on": "La fecha", "occurred_on": "La fecha", "reason": "El motivo",
+    "condition": "La condición", "what": "Lo que notaste", "given_on": "La fecha",
+    "occurred_on": "La fecha", "reason": "El motivo",
 }  # fmt: skip
 
 
@@ -487,6 +498,11 @@ def timeline(db, person_id: int) -> list[dict]:
         ev.append(
             {"kind": "consulta", "date": c["occurred_on"], "title": c["reason"], "subtitle": sub, "ref": None}
         )
+    for s in _rows(db, "symptom", person_id, "occurred_on"):
+        sub = " · ".join(x for x in (f"después de {s['related']}" if s["related"] else "", s["notes"]) if x)
+        ev.append(
+            {"kind": "sintoma", "date": s["occurred_on"], "title": s["what"], "subtitle": sub, "ref": None}
+        )
     for v in _rows(db, "vaccine", person_id, "given_on"):
         sub = " · ".join(x for x in (v["dose_label"], v["brand"], v["place"]) if x)
         ev.append({"kind": "vacuna", "date": v["given_on"], "title": v["name"], "subtitle": sub, "ref": None})
@@ -578,6 +594,7 @@ def overview(db, person_id: int) -> dict:
         "procedures": _rows(db, "procedure_history", person_id, "year DESC, name COLLATE NOCASE"),
         "vaccines": _rows(db, "vaccine", person_id, "given_on DESC"),
         "consultations": _rows(db, "consultation", person_id, "occurred_on DESC"),
+        "symptoms": _rows(db, "symptom", person_id, "occurred_on DESC, id DESC"),
         "none": [
             r["section"]
             for r in db.execute("SELECT section FROM clinical_none WHERE person_id = ?", (person_id,))

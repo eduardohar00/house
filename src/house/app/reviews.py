@@ -36,6 +36,9 @@ demás herramientas donde haga falta (por ejemplo los informes completos de endo
 Busca en guías oficiales para respaldar cada recomendación.
 
 Estructura tu respuesta EXACTAMENTE con estos apartados (títulos con ##):
+Los síntomas y observaciones anotados por la persona y los medicamentos con reacción (bad_reaction) valen tanto
+como un resultado: relaciónalos con el resto y, si sugieren riesgo, ponlos entre los primeros puntos.
+
 ## Resumen ejecutivo
 Máximo 5 puntos numerados, ordenados por prioridad (lo urgente primero). Formato EXACTO de cada punto:
 `1. **Prioridad: título corto.** Una o dos frases: qué pasa y qué hacer.`

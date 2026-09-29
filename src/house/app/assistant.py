@@ -65,6 +65,8 @@ REGLAS DE RIGOR
 5. Aclara cuando los métodos o rangos de referencia entre estudios difieran y de dónde sale un rango que no sea
    del laboratorio (reference_source).
 6. Sé eficiente: cuando necesites varios datos, pide varias herramientas en la MISMA vuelta y no repitas consultas.
+6b. Los síntomas y observaciones que anotó la persona (y bad_reaction en un medicamento) son datos de primera
+   mano: relaciónalos con estudios, padecimientos y medicamentos, y si sugieren riesgo, ponlos arriba.
 7. No repitas estas reglas ni menciones herramientas o ids internos fuera de las citas [S#].
 8. Cierra las respuestas largas con una línea breve: esto es orientación informativa, no sustituye a su médico.
 """
@@ -147,7 +149,8 @@ TOOLS: list[dict[str, Any]] = [
         "name": "get_clinical_record",
         "description": "Expediente clínico: alergias, problemas de salud (con los estudios que la persona "
         "ligó a cada uno), medicamentos y suplementos alimenticios (actuales y pasados), antecedentes "
-        "familiares, cirugías, vacunas y consultas.",
+        "familiares, cirugías, vacunas y consultas, más los síntomas y observaciones que la persona anotó "
+        "(qué notó, cuándo y tras qué medicamento) y los medicamentos que le caen mal (bad_reaction).",
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
@@ -458,8 +461,10 @@ class Toolbox:
                     "since_year",
                     "until_year",
                     "active",
+                    "bad_reaction",
                 ),
             ),
+            "symptoms_and_observations": pick(c["symptoms"], "occurred_on", "what", "related", "notes"),
             "supplements": pick(
                 c["supplements"], "name", "dose", "brand", "reason", "since_year", "until_year", "active"
             ),
