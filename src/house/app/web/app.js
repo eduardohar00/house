@@ -538,6 +538,7 @@ const STATE = { pendiente: 'Pendiente de revisar', revisada: 'Revisado', descart
 
 // Renglones que House leyó pero que no quedaron entre los resultados: nada se pierde en silencio.
 function notSaved(d) {
+  if (d.gaps?.length) return `<details class="hist"><summary><b class="warnline">${d.gaps.length} ${d.gaps.length === 1 ? 'informe incompleto' : 'informes incompletos'}</b></summary><ul class="nsl">${d.gaps.map(g => `<li><b>${esc(g.study_name)}</b><small>No encontré ${g.missing.map(esc).join(' ni ')}.</small></li>`).join('')}</ul></details>`;
   const rows = d.not_saved || [], lost = rows.filter(r => r.lost), dup = rows.length - lost.length;
   if (!rows.length) return '';
   const head = lost.length ? `<b class="warnline">${lost.length} ${lost.length === 1 ? 'renglón' : 'renglones'} ${d.review_state === 'revisada' ? 'sin guardar' : 'por resolver'}</b>` : `<span class="tip">${dup} repetido${dup === 1 ? '' : 's'} (ya guardado${dup === 1 ? '' : 's'})</span>`;

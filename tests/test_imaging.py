@@ -406,3 +406,27 @@ def test_manual_study_links_through_the_api(client):
     assert [r["id"] for r in linked[a]] == [b] and [r["id"] for r in linked[b]] == [a]
     assert c.delete(f"/api/imaging/{b}/links/{a}", headers=H).status_code == 200
     assert all(s["related"] == [] for s in c.get(f"/api/people/{me}/imaging").json())
+
+
+def test_imaging_gaps_names_what_was_not_found():
+    import json
+    import sqlite3
+
+    from house.app.ingest import IMAGING_SCHEMA, imaging_gaps
+
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.executescript(IMAGING_SCHEMA)
+    db.execute("CREATE TABLE imaging_study(document_id, study_name, performed_on, conclusion)")
+    drafts = [
+        {"study_name": "Completo", "performed_on": "2026-02-06", "conclusion": "Sin hallazgos."},
+        {"study_name": "Sin fecha", "performed_on": None, "conclusion": "Normal."},
+        {"study_name": "Sin nada", "performed_on": None, "conclusion": ""},
+    ]
+    for pos, d in enumerate(drafts):
+        db.execute(
+            "INSERT INTO imaging_draft(document_id, position, data) VALUES(1, ?, ?)", (pos, json.dumps(d))
+        )
+    gaps = imaging_gaps(db, 1, reviewed=False)
+    assert [(g["study_name"], len(g["missing"])) for g in gaps] == [("Sin fecha", 1), ("Sin nada", 2)]
+    assert imaging_gaps(db, 2, reviewed=True) == []

@@ -470,6 +470,35 @@ _NOT_SAVED_REASON = {
 }
 
 
+def imaging_gaps(db: sqlite3.Connection, doc_id: int, reviewed: bool) -> list[dict]:
+    """Informes de imagen a los que House no les encontró la fecha o una conclusión separada."""
+    if reviewed:
+        found = [
+            dict(r)
+            for r in db.execute(
+                "SELECT study_name, performed_on, conclusion FROM imaging_study WHERE document_id = ?",
+                (doc_id,),
+            )
+        ]
+    else:
+        found = [
+            json.loads(r["data"])
+            for r in db.execute(
+                "SELECT data FROM imaging_draft WHERE document_id = ? ORDER BY position", (doc_id,)
+            )
+        ]
+    gaps = []
+    for f in found:
+        missing = []
+        if not f.get("performed_on"):
+            missing.append("la fecha")
+        if not (f.get("conclusion") or "").strip():
+            missing.append("una conclusión separada (lee el informe completo)")
+        if missing:
+            gaps.append({"study_name": f.get("study_name") or "Informe", "missing": missing})
+    return gaps
+
+
 def _saved_counter(db: sqlite3.Connection, doc_id: int) -> Counter:
     """Cuántas veces está guardado cada (nombre, valor) impreso de un estudio, sin lo escrito a mano."""
     return Counter(

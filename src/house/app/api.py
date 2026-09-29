@@ -408,6 +408,8 @@ def create_app(
         for d in docs:
             if d["doc_type"] == "laboratorio" and d["review_state"] != "descartada":
                 d["not_saved"] = ingest.not_saved_rows(db, d["id"], d["review_state"] == "revisada")
+            elif d["doc_type"] == "imagen" and d["review_state"] != "descartada":
+                d["gaps"] = ingest.imaging_gaps(db, d["id"], d["review_state"] == "revisada")
         return docs
 
     @app.get("/api/documents/{doc_id}")
