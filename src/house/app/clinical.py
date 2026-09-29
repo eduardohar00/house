@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from ..imaging import MODALITIES
+
+# Modalidades que son imagen; las demás (endoscopia, patología, ECG...) se muestran como "otro estudio".
+IMAGING = {label for _, label in MODALITIES} - {"Electrocardiograma"}
 PROBLEM_STATUSES = ("En control", "En tratamiento", "Seguimiento", "Resuelta")
 NONE_SECTIONS = ("allergy", "medication", "problem", "procedure", "family")
 OUT = ("low", "high", "abnormal")
@@ -243,7 +247,8 @@ def timeline(db, person_id: int) -> list[dict]:
         title = i["study_name"] or i["modality"]
         ev.append(
             {
-                "kind": "imagen",
+                "kind": "imagen" if i["modality"] in IMAGING else "estudio",
+                "modality": i["modality"],
                 "date": i["performed_on"],
                 "title": title,
                 "subtitle": i["conclusion"] or "",

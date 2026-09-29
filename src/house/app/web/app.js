@@ -2,7 +2,7 @@
 /* House: interfaz local. Sin compilación ni dependencias; habla con la API en 127.0.0.1. */
 
 const app = document.getElementById('app');
-const S = { me: null, people: [], subject: null, catalog: {}, tab: 'res', sel: null, view: 'g', clinFilter: 'todo', clinEdit: null, sug: null };
+const S = { me: null, people: [], subject: null, catalog: {}, tab: 'res', sel: null, view: 'g', clinFilter: 'todo', clinEdit: null, sug: null, studyFilter: 'Todos' };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ts = d => Date.parse(d + 'T00:00:00Z');
@@ -120,7 +120,7 @@ function brandIcon() {
 
 function renderShell() {
   const admin = S.me.is_admin, subj = S.people.find(p => p.id === S.subject);
-  const tabs = [['res', 'Resumen'], ['exp', 'Expediente'], ['doc', 'Documentos'], ['img', 'Imagen']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
+  const tabs = [['res', 'Resumen'], ['exp', 'Expediente'], ['doc', 'Documentos'], ['img', 'Estudios']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
   app.innerHTML = `<div class="wrap">
     <header>
       <div class="brand">${brandIcon()}House</div>
@@ -540,7 +540,7 @@ async function renderDocs() {
     </section>
     <section class="card cfg"><h2>Estudios</h2>
       ${docs.length ? `<div class="tblwrap"><table><thead><tr><th>Estudio</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
-        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b><small style="display:block;color:var(--muted)">${d.doc_type === 'imagen' ? 'Informe de imagen' : 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
+        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b><small style="display:block;color:var(--muted)">${d.doc_type === 'imagen' ? 'Informe de estudio' : 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
           <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}</td>
           <td><div class="acts" style="display:flex;gap:6px;flex-wrap:wrap">
             ${d.review_state === 'pendiente' ? `<button class="mini" data-rev="${d.id}">Revisar</button>` : ''}
@@ -740,7 +740,7 @@ const CLIN = {
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
-const EV_KIND = { consulta: 'Consulta', laboratorio: 'Laboratorio', imagen: 'Imagen', vacuna: 'Vacuna', cirugia: 'Cirugía' };
+const EV_KIND = { consulta: 'Consulta', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
 
 async function renderClinical() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
@@ -772,7 +772,7 @@ async function renderClinical() {
     <section class="card xc"><h3>Historial cronológico</h3>
       <div class="chips" role="group" aria-label="Filtrar por tipo">${chips.map(k => `<button class="chip" data-f="${k}" aria-pressed="${k === S.clinFilter}">${k === 'todo' ? 'Todo' : EV_KIND[k]}</button>`).join('')}</div>
       <div class="tl">${evs.length ? evs.map(e => `<div class="ev"><div class="dt">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</div><div>
-          <div class="tt"><span class="ty">${EV_KIND[e.kind]}</span>${esc(e.title)}${e.flag ? ' ' + flagPill(e.flag) : ''}</div>
+          <div class="tt"><span class="ty">${e.modality && e.kind !== 'imagen' ? esc(e.modality) : EV_KIND[e.kind]}</span>${esc(e.title)}${e.flag ? ' ' + flagPill(e.flag) : ''}</div>
           ${e.subtitle ? `<div class="sb">${esc(e.subtitle)}</div>` : ''}
           ${e.ref ? `<a class="mini" href="/api/documents/${e.ref.id}/file" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;margin-top:4px">Ver original</a>` : ''}</div></div>`).join('')
         : '<p class="tip">Todavía no hay eventos. Sube estudios o agrega consultas, vacunas y cirugías.</p>'}</div></section>`;
@@ -827,22 +827,27 @@ async function renderImaging() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
   const list = await api(`/api/people/${S.subject}/imaging`);
   if (!list.length) {
-    view().innerHTML = `<section class="card empty"><h2>Todavía no hay estudios de imagen</h2>
-      <p>Sube el informe en PDF (radiografía, ultrasonido, resonancia, tomografía…) desde Documentos. House lo lee en esta Mac, sin enviarlo a ninguna IA, y lo revisas junto al original.</p>
+    view().innerHTML = `<section class="card empty"><h2>Todavía no hay informes de estudios</h2>
+      <p>Sube el informe en PDF, digital o escaneado (radiografía, ultrasonido, tomografía, endoscopia, biopsia, electrocardiograma…) desde Documentos. House lo lee en esta Mac, sin enviarlo a ninguna IA, y lo revisas junto al original.</p>
       <button class="btn" id="go">Subir un informe</button></section>`;
     document.getElementById('go').onclick = () => { S.tab = 'doc'; renderShell(); };
     return;
   }
-  view().innerHTML = `<p class="tip">House guarda lo que dice cada informe; no interpreta imágenes ni sustituye al radiólogo. Las imágenes mismas (DICOM) llegan más adelante.</p>
-    ${list.map(x => `<section class="card cfg"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
-        <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Imagen')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
-      <p style="margin:0"><b>Conclusión:</b> ${esc(x.conclusion || '—')}</p>
+  const kinds = ['Todos', ...new Set(list.map(x => x.modality || 'Otro'))];
+  if (!kinds.includes(S.studyFilter)) S.studyFilter = 'Todos';
+  const shown = list.filter(x => S.studyFilter === 'Todos' || (x.modality || 'Otro') === S.studyFilter);
+  view().innerHTML = `<p class="tip">House guarda lo que dice cada informe; no interpreta imágenes ni sustituye al médico que lo firma. Las imágenes mismas (DICOM) llegan más adelante.</p>
+    ${kinds.length > 2 ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${kinds.map(k => `<button class="chip" data-sf="${esc(k)}" aria-pressed="${k === S.studyFilter}">${esc(k)}</button>`).join('')}</div>` : ''}
+    ${shown.map(x => `<section class="card cfg"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
+        <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Estudio')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
+      ${x.conclusion ? `<p style="margin:0"><b>Conclusión:</b> ${esc(x.conclusion)}</p>` : '<p class="tip" style="margin:0">Este informe no trae una conclusión separada; lee el informe completo.</p>'}
       <details class="hist"><summary>Ver el informe completo</summary>
         <div class="kv" style="margin-top:10px">
           ${x.technique ? `<b>Técnica</b><span>${esc(x.technique)}</span>` : ''}${x.indication ? `<b>Indicación</b><span>${esc(x.indication)}</span>` : ''}
           <b>Hallazgos</b><span>${esc(x.findings || '—')}</span>${x.prior ? `<b>Estudio previo</b><span>${esc(x.prior)}</span>` : ''}
-          ${x.suggestions ? `<b>Sugerencias</b><span>${esc(x.suggestions)}</span>` : ''}${x.radiologist ? `<b>Radiólogo</b><span>${esc(x.radiologist)}</span>` : ''}</div>
+          ${x.suggestions ? `<b>Sugerencias</b><span>${esc(x.suggestions)}</span>` : ''}${x.radiologist ? `<b>Firmado por</b><span>${esc(x.radiologist)}</span>` : ''}</div>
         ${x.document_id ? `<p style="margin:10px 0 0"><a class="mini" href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver informe original</a></p>` : ''}</details></section>`).join('')}`;
+  view().querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.studyFilter = b.dataset.sf; renderImaging(); });
 }
 
 async function openImagingReview(id, d, layout) {

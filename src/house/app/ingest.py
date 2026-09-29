@@ -16,10 +16,11 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from ..extract import Row, convert_ref, extract_document
-from ..imaging import ImagingReport, looks_like_imaging_report, parse_reports
+from ..imaging import ImagingReport, looks_like_lab, parse_reports
 from ..normalize import ranges, terminology, units
 from ..privacy import Anonymizer
 from ..providers import Router
+from . import ocr
 from .vault import Vault
 
 MAX_BYTES = 25 * 1024 * 1024
@@ -140,12 +141,17 @@ def ingest_pdf(
         text = pdf_text(data)
     except Exception:
         raise IngestError(422, "No se pudo leer el PDF.") from None
-    if len(re.sub(r"\s", "", text)) < 40:
-        raise IngestError(
-            422, "El PDF parece un escaneo sin texto. Los escaneos llegan en una fase posterior."
-        )
+    if len(re.sub(r"\s", "", text)) < 40:  # escaneo: se lee con el OCR de macOS, en esta Mac
+        try:
+            text = ocr.ocr_bytes(data, ".pdf", vault.root.parent)
+        except ocr.OcrUnavailable as e:
+            raise IngestError(422, str(e)) from None
+        if len(re.sub(r"\s", "", text)) < 40:
+            raise IngestError(422, "No pude leer texto en este escaneo. ¿Está borroso o al revés?")
 
-    if looks_like_imaging_report(text) and (reports := parse_reports(text)):
+    # Laboratorio (columnas de resultado y referencia) o informe de un estudio (imagen, endoscopia,
+    # patología, ECG...): el segundo se lee con reglas locales y se confirma junto al original.
+    if not looks_like_lab(text) and (reports := parse_reports(text, filename)):
         return _ingest_imaging(db, vault, person, filename, data, sha, reports)
 
     outcome = extract_document(
@@ -212,7 +218,14 @@ def reread(
     if doc["review_state"] != "pendiente":
         raise IngestError(409, "Solo se puede volver a leer un estudio que aún no revisas.")
     if doc["doc_type"] == "imagen":
-        reports = parse_reports(pdf_text(vault.get(doc["file_path"])))
+        original = vault.get(doc["file_path"])
+        text = pdf_text(original)
+        if len(re.sub(r"\s", "", text)) < 40:
+            try:
+                text = ocr.ocr_bytes(original, ".pdf", vault.root.parent)
+            except ocr.OcrUnavailable as e:
+                raise IngestError(422, str(e)) from None
+        reports = parse_reports(text, doc["title"])
         if not reports:
             raise IngestError(422, "No se pudo volver a leer este informe de imagen.")
         first_date = next((r.performed_on for r in reports if r.performed_on), None)

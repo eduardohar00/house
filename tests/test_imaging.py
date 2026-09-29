@@ -1,5 +1,6 @@
 """Informes de imagen: lectura de secciones, revisión, migración y borrado (datos inventados)."""
 
+import shutil
 import sqlite3
 
 import pytest
@@ -146,3 +147,140 @@ def test_migration_adds_columns_to_an_existing_database(tmp_path):
     cols = {r["name"] for r in db.execute("PRAGMA table_info(imaging_study)")}
     assert {"study_name", "conclusion", "flag", "confirmed_by"} <= cols
     assert db.execute("SELECT COUNT(*) FROM imaging_study").fetchone()[0] == 1  # nada se pierde
+
+
+HOSPITAL = """Departamento de Imagenologia
+INFORME RADIOLÓGICO
+Nombre Paciente: PEREZ FICTICIO JUAN Sexo: H Edad: 33Y
+ID Paciente: 123 Fec.Nac: 01/01/1990
+Médico: Inventado Uno
+Código de Estudio Descripción Realizado
+IMA-720006 RADIOGRAFIA DE ABDOMEN (2 PROYECCIONES) 06/02/2026 11:06 a. m.
+Order ID: 999
+Radiografía de abdomen de pie y decúbito
+Estructuras óseas conservadas.
+No se observan visceromegalias.
+Nom. Paciente:PEREZ FICTICIO JUAN Sexo: H
+Impreso: 06/02/2026
+Conclusión.
+Sin hallazgos relevantes.
+Aprobado por:Dra. Persona Inventada Ruiz
+CP: 1 C.ESP: 2"""
+
+LEGACY = """56392629 Orden: OK350125
+Id Paciente: 396218
+ULTRASONIDO
+Paciente: PEREZ FICTICIO JUAN
+Edad: 31 años Sexo: Masculino
+Fecha: 27/12/2023 09:36:50 a. m.
+Hoja 1 de 1
+Dirigido a: ALGUIEN INVENTADO
+ULTRASONIDO TESTICULAR
+Técnica: Se realiza estudio con transductor lineal, reportando los siguientes hallazgos:
+Testículo derecho de morfología conservada.
+Testículo izquierdo de morfología conservada.
+Conclusión:
+- Sin patología demostrable, normal.
+Atentamente,
+Dr. Firmante Inventado Soto"""
+
+ENDOSCOPY_OCR = """INFORME DEL ESTUDIO
+HOSPITAL INVENTADO
+Paciente:
+PEREZ FICTICIO JUAN
+Procedimiento:
+PANENDOSCOPIA
+Fecha del Estudio: 07/Ago/2014 09:52 AM
+HALLAZGOS
+diagnostico preendoscopico.
+enfermedad acido-peptica
+diagnostico pósendoscopico.
+esofagitis b de los angeles
+gastropatia erosiva"""
+
+
+def test_hospital_format_technique_findings_conclusion_and_radiologist():
+    (r,) = parse_reports(HOSPITAL, "2026-02-06 - Rx de Abdomen.pdf")
+    assert (r.modality, r.performed_on) == ("Radiografía", "2026-02-06")
+    assert r.study_name == "Radiografia de abdomen (2 proyecciones)"
+    assert r.technique == "Radiografía de abdomen de pie y decúbito"
+    assert "visceromegalias" in r.findings and "Nom. Paciente" not in r.findings and "PEREZ" not in r.findings
+    assert r.conclusion == "Sin hallazgos relevantes." and r.flag == "revisar"
+    assert r.radiologist == "Persona Inventada Ruiz"
+
+
+def test_legacy_format_technique_ends_where_findings_start():
+    (r,) = parse_reports(LEGACY, "27-12-2023 Ultrasonido testicular.pdf")
+    assert (r.study_name, r.modality, r.performed_on) == (
+        "Ultrasonido testicular",
+        "Ultrasonido",
+        "2023-12-27",
+    )
+    assert r.technique.startswith("Se realiza estudio") and "Testículo derecho" in r.findings
+    assert r.technique.count("Testículo") == 0  # la técnica no se traga los hallazgos
+    assert r.conclusion == "- Sin patología demostrable, normal." and r.flag == "normal"
+    assert r.radiologist == "Firmante Inventado Soto"
+
+
+def test_generic_report_keeps_text_uses_filename_date_and_drops_the_patient_name():
+    (r,) = parse_reports(ENDOSCOPY_OCR, "07-08-2014 Panendoscopia.pdf")
+    assert (r.modality, r.performed_on, r.study_name) == ("Endoscopia", "2014-08-07", "Panendoscopia")
+    assert "esofagitis b de los angeles" in r.conclusion and "PEREZ" not in (r.findings + r.conclusion)
+    assert r.flag == "revisar"  # sin estructura conocida nunca se marca "normal"
+    (n,) = parse_reports(
+        "Plan de alimentación semanal: desayuno avena con fruta, comida pollo con verduras",
+        "14-09-2025 - Nutriologa.pdf",
+    )
+    assert (n.modality, n.performed_on) == ("Nutrición", "2025-09-14")
+    assert parse_reports("x", "vacio.pdf") == []
+
+
+def test_pathology_is_not_labelled_endoscopy_and_dates_with_month_names():
+    (r,) = parse_reports(
+        "DIAGNÓSTICO\n1.- Biopsias de esófago: esofagitis crónica leve. Sin displasia.",
+        "Resultados Biopsias Panendoscopia.pdf",
+    )
+    assert r.modality == "Patología"
+    assert parse_spanish_date("07/Ago/2014 09:52 AM") == "2014-08-07"
+    assert parse_spanish_date("jueves, 14 de agosto de 2014") == "2014-08-14"
+    assert parse_spanish_date("27-Julio-2024") == "2024-07-27"
+
+
+def test_scanned_pdf_is_read_with_ocr_and_becomes_a_report(client, monkeypatch):
+    from house.app import ocr
+
+    monkeypatch.setattr(ocr, "ocr_bytes", lambda data, suffix, work_dir: ENDOSCOPY_OCR)
+    c = client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    r = upload(c, me, make_pdf([]), "07-08-2014 Panendoscopia.pdf")  # PDF sin texto: un escaneo
+    assert r.status_code == 200 and r.json()["kind"] == "imagen"
+    rev = c.get(f"/api/documents/{r.json()['document_id']}").json()
+    assert rev["imaging"][0]["modality"] == "Endoscopia" and rev["document"]["collected_on"] == "2014-08-07"
+
+    def unavailable(data, suffix, work_dir):
+        raise ocr.OcrUnavailable("Instala las herramientas de desarrollo de Apple.")
+
+    monkeypatch.setattr(ocr, "ocr_bytes", unavailable)
+    r = upload(c, me, make_pdf([]) + b"\n%otro", "escaneo2.pdf")
+    assert r.status_code == 422 and "herramientas" in r.json()["detail"]["message"]
+
+
+@pytest.mark.skipif(not shutil.which("swiftc"), reason="requiere las herramientas de desarrollo de Apple")
+def test_real_ocr_reads_text_from_an_image_only_pdf(tmp_path, monkeypatch):
+    """Integración: compila el lector y lee un PDF que solo trae una imagen (una vez, ~10 s)."""
+    import io
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    from house.app import ocr
+
+    monkeypatch.delenv("HOUSE_OCR", raising=False)
+    img = Image.new("RGB", (1200, 400), "white")
+    ImageDraw.Draw(img).text(
+        (40, 150), "GLUCOSA EN AYUNAS 92 MG/DL", fill="black", font=ImageFont.load_default(size=64)
+    )
+    buf = io.BytesIO()
+    img.save(buf, "PDF")
+    text = ocr.ocr_bytes(buf.getvalue(), ".pdf", tmp_path)
+    assert "glucosa" in text.lower() and "92" in text
