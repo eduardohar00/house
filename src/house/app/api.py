@@ -57,6 +57,19 @@ class Decision(BaseModel):
     value_text: str | None = None
 
 
+class ImagingDecision(BaseModel):
+    position: int
+    accept: bool
+    performed_on: str | None = None
+    study_name: str | None = None
+    modality: str | None = None
+    flag: str | None = None
+
+
+class ImagingReview(BaseModel):
+    decisions: list[ImagingDecision]
+
+
 class Review(BaseModel):
     collected_on: str
     decisions: list[Decision]
@@ -132,6 +145,7 @@ def create_app(
     data_dir = data_dir or store.default_data_dir()
     db = store.connect(data_dir)
     db.executescript(ingest.SCHEMA)
+    ingest.migrate_imaging(db)
     ingest.repair_references(db)
     fixed_router = router
     vault = Vault(data_dir / "originals", key_provider)
@@ -328,14 +342,15 @@ def create_app(
         except ProviderError as e:
             # El mensaje del proveedor no incluye contenido del documento (ver providers/base.py).
             raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
-        return {"document_id": done.document_id, "rows": done.rows, "reader": reader}
+        return {"document_id": done.document_id, "rows": done.rows, "kind": done.kind, "reader": reader}
 
     @app.get("/api/people/{person_id}/documents")
     def list_documents(person_id: int, actor: Me) -> list[dict]:
         subject(person_id, actor, "ver_estudios")
         rows = db.execute(
-            "SELECT d.id, d.title, d.collected_on, d.review_state, d.uploaded_at, "
-            "(SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id) AS results "
+            "SELECT d.id, d.doc_type, d.title, d.collected_on, d.review_state, d.uploaded_at, "
+            "(SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id) "
+            "+ (SELECT COUNT(*) FROM imaging_study i WHERE i.document_id = d.id) AS results "
             "FROM document d WHERE person_id = ? ORDER BY COALESCE(collected_on, uploaded_at) DESC",
             (person_id,),
         )
@@ -368,7 +383,7 @@ def create_app(
             raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
         except ProviderError as e:
             raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
-        return {"document_id": doc_id, "rows": done.rows, "reader": reader}
+        return {"document_id": doc_id, "rows": done.rows, "kind": done.kind, "reader": reader}
 
     @app.get("/api/documents/{doc_id}/layout")
     def get_layout(doc_id: int, actor: Me) -> dict:
@@ -402,9 +417,33 @@ def create_app(
             raise HTTPException(422, "Fecha inválida (usa AAAA-MM-DD).") from None
         return {"saved": saved}
 
+    @app.post("/api/documents/{doc_id}/review-imaging")
+    def review_imaging(doc_id: int, body: ImagingReview, actor: Me) -> dict:
+        document(doc_id, actor, "revisar_estudio")
+        try:
+            saved = ingest.confirm_imaging_review(
+                db, doc_id, actor["id"], [d.model_dump(exclude_unset=True) for d in body.decisions]
+            )
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        return {"saved": saved}
+
+    @app.get("/api/people/{person_id}/imaging")
+    def imaging_list(person_id: int, actor: Me) -> list[dict]:
+        subject(person_id, actor, "ver_imagen")
+        rows = db.execute(
+            "SELECT i.id, i.document_id, i.modality, i.study_name, i.performed_on, i.technique, "
+            "i.indication, i.findings, i.prior, i.conclusion, i.suggestions, i.radiologist, i.site, i.flag, "
+            "d.title AS document_title FROM imaging_study i LEFT JOIN document d ON d.id = i.document_id "
+            "WHERE i.person_id = ? ORDER BY i.performed_on DESC, i.id",
+            (person_id,),
+        )
+        return [dict(r) for r in rows]
+
     @app.delete("/api/documents/{doc_id}")
     def delete_document(doc_id: int, actor: Me) -> dict:
         doc = document(doc_id, actor, "borrar_estudio")
+        db.execute("DELETE FROM imaging_study WHERE document_id = ?", (doc_id,))  # sin restos huérfanos
         db.execute("DELETE FROM document WHERE id = ?", (doc_id,))
         vault.delete(doc["file_path"])
         return {"ok": True}

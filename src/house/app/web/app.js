@@ -118,7 +118,7 @@ function brandIcon() {
 
 function renderShell() {
   const admin = S.me.is_admin, subj = S.people.find(p => p.id === S.subject);
-  const tabs = [['res', 'Resumen'], ['doc', 'Documentos']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
+  const tabs = [['res', 'Resumen'], ['img', 'Imagen'], ['doc', 'Documentos']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
   app.innerHTML = `<div class="wrap">
     <header>
       <div class="brand">${brandIcon()}House</div>
@@ -137,7 +137,7 @@ function renderShell() {
   const ps = document.getElementById('psel');
   if (ps) ps.onchange = () => { S.subject = Number(ps.value); S.sel = null; renderShell(); };
   app.querySelectorAll('.nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.t; renderShell(); });
-  ({ res: renderSummary, doc: renderDocs, fam: renderFamily, cfg: renderConfig, priv: renderPrivacy })[S.tab]();
+  ({ res: renderSummary, img: renderImaging, doc: renderDocs, fam: renderFamily, cfg: renderConfig, priv: renderPrivacy })[S.tab]();
 }
 
 const view = () => document.getElementById('view');
@@ -399,8 +399,8 @@ async function renderDocs() {
     </section>
     <section class="card cfg"><h2>Estudios</h2>
       ${docs.length ? `<div class="tblwrap"><table><thead><tr><th>Estudio</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
-        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b></td><td>${fd(d.collected_on)}</td>
-          <td>${d.review_state === 'revisada' ? `Revisado · ${d.results} resultados` : esc(STATE[d.review_state])}</td>
+        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b><small style="display:block;color:var(--muted)">${d.doc_type === 'imagen' ? 'Informe de imagen' : 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
+          <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}</td>
           <td><div class="acts" style="display:flex;gap:6px;flex-wrap:wrap">
             ${d.review_state === 'pendiente' ? `<button class="mini" data-rev="${d.id}">Revisar</button>` : ''}
             <a class="mini" href="/api/documents/${d.id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver original</a>
@@ -428,7 +428,7 @@ async function uploadFiles(files) {
     try {
       const r = await api(`/api/people/${S.subject}/documents`, { method: 'POST', form });
       last = r.document_id;
-      toast(r.reader === 'basico' ? `Leído con el lector básico: ${r.rows} renglones.` : `Leído: ${r.rows} renglones.`);
+      toast(r.kind === 'imagen' ? `Leí ${r.rows} ${r.rows === 1 ? 'informe' : 'informes'} de imagen en esta Mac.` : r.reader === 'basico' ? `Leído con el lector básico: ${r.rows} renglones.` : `Leído: ${r.rows} renglones.`);
     } catch (e) {
       if (e.status === 409 && e.detail?.document_id) { toast('Ese estudio ya estaba cargado.'); continue; }
       up.innerHTML = `<p class="err">«${esc(f.name)}»: ${esc(e.message)}</p>`;
@@ -451,6 +451,7 @@ const PROBLEMS = {
 
 async function openReview(id) {
   const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
+  if (d.document.doc_type === 'imagen') return openImagingReview(id, d, layout);
   const rows = d.rows.map(r => ({ ...r, accept: !!r.analyte_key && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
   let onlyFlags = false, showAi = false, active = null;
   view().innerHTML = `<div class="rv">
@@ -533,6 +534,76 @@ async function openReview(id) {
         const res = await api(`/api/documents/${id}/review`, { method: 'POST', body: { collected_on: date, decisions } });
         toast(`Guardé ${res.saved} resultados en tu expediente.`); S.tab = 'res'; renderShell();
       } catch (err) { e.textContent = err.message; }
+    };
+  };
+  draw();
+}
+
+/* ---------- Imagen: informes de radiografía, ultrasonido, resonancia... ---------- */
+
+const FLAG = { normal: ['ok', 'Normal según el informe'], revisar: ['out', 'Leer la conclusión'] };
+const flagPill = f => { const [c, t] = FLAG[f] || FLAG.revisar; return `<span class="pill ${c}">${t}</span>`; };
+
+async function renderImaging() {
+  view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
+  const list = await api(`/api/people/${S.subject}/imaging`);
+  if (!list.length) {
+    view().innerHTML = `<section class="card empty"><h2>Todavía no hay estudios de imagen</h2>
+      <p>Sube el informe en PDF (radiografía, ultrasonido, resonancia, tomografía…) desde Documentos. House lo lee en esta Mac, sin enviarlo a ninguna IA, y lo revisas junto al original.</p>
+      <button class="btn" id="go">Subir un informe</button></section>`;
+    document.getElementById('go').onclick = () => { S.tab = 'doc'; renderShell(); };
+    return;
+  }
+  view().innerHTML = `<p class="tip">House guarda lo que dice cada informe; no interpreta imágenes ni sustituye al radiólogo. Las imágenes mismas (DICOM) llegan más adelante.</p>
+    ${list.map(x => `<section class="card cfg"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
+        <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Imagen')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
+      <p style="margin:0"><b>Conclusión:</b> ${esc(x.conclusion || '—')}</p>
+      <details class="hist"><summary>Ver el informe completo</summary>
+        <div class="kv" style="margin-top:10px">
+          ${x.technique ? `<b>Técnica</b><span>${esc(x.technique)}</span>` : ''}${x.indication ? `<b>Indicación</b><span>${esc(x.indication)}</span>` : ''}
+          <b>Hallazgos</b><span>${esc(x.findings || '—')}</span>${x.prior ? `<b>Estudio previo</b><span>${esc(x.prior)}</span>` : ''}
+          ${x.suggestions ? `<b>Sugerencias</b><span>${esc(x.suggestions)}</span>` : ''}${x.radiologist ? `<b>Radiólogo</b><span>${esc(x.radiologist)}</span>` : ''}</div>
+        ${x.document_id ? `<p style="margin:10px 0 0"><a class="mini" href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver informe original</a></p>` : ''}</details></section>`).join('')}`;
+}
+
+async function openImagingReview(id, d, layout) {
+  const reports = d.imaging.map(r => ({ ...r, accept: true }));
+  view().innerHTML = `<div class="rv"><div class="pages" id="pages" aria-label="Informe original">
+      ${layout.pages.length ? layout.pages.map(pg => `<div class="pg"><img src="/api/documents/${id}/pages/${pg.n}" alt="Página ${pg.n}" loading="lazy" style="aspect-ratio:${pg.width}/${pg.height}"></div>`).join('')
+        : `<iframe class="pdf" src="/api/documents/${id}/file" title="Informe original"></iframe>`}</div>
+    <section class="card cfg" id="side"></section></div>`;
+  const draw = () => {
+    const n = reports.filter(r => r.accept).length;
+    document.getElementById('side').innerHTML = `
+      <div class="bar"><h2>Revisa «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><button class="mini" id="reread">Volver a leer</button><button class="mini" id="back">Volver</button></div></div>
+      <p class="tip">Leí ${reports.length} ${reports.length === 1 ? 'informe' : 'informes'} en esta Mac; no se envió nada a ninguna IA. Compara con el original, corrige la fecha o el nombre si hace falta y confirma. La marca «normal» es solo una ayuda: lee siempre la conclusión.</p>
+      ${reports.map((r, k) => `<div class="prof" style="display:grid;gap:8px">
+        <label><input type="checkbox" data-acc="${k}" ${r.accept ? 'checked' : ''}> <b>Guardar este informe</b></label>
+        <div class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+          <label>Estudio<input type="text" data-f="study_name" data-k="${k}" value="${esc(r.study_name)}" style="width:100%"></label>
+          <label>Fecha<input type="date" data-f="performed_on" data-k="${k}" value="${esc(r.performed_on || '')}"></label>
+          <label>Tipo<input type="text" data-f="modality" data-k="${k}" value="${esc(r.modality || '')}" style="width:100%"></label>
+          <label>Marca<select data-f="flag" data-k="${k}"><option value="normal" ${r.flag === 'normal' ? 'selected' : ''}>Normal según el informe</option><option value="revisar" ${r.flag !== 'normal' ? 'selected' : ''}>Leer la conclusión</option></select></label></div>
+        <div class="kv"><b>Técnica</b><span>${esc(r.technique || '—')}</span><b>Hallazgos</b><span>${esc(r.findings || '—')}</span>
+          <b>Conclusión</b><span><b>${esc(r.conclusion || '—')}</b></span>${r.suggestions ? `<b>Sugerencias</b><span>${esc(r.suggestions)}</span>` : ''}</div></div>`).join('')}
+      <p class="err" id="e"></p>
+      <div class="bar"><button class="btn danger" id="discard">Descartar</button><button class="btn" id="ok" ${n ? '' : 'disabled'}>Confirmar ${n} ${n === 1 ? 'informe' : 'informes'}</button></div>`;
+    document.getElementById('back').onclick = () => renderDocs();
+    document.getElementById('reread').onclick = async () => {
+      try { await api(`/api/documents/${id}/reread`, { method: 'POST' }); toast('Leído de nuevo.'); openReview(id); } catch (err) { document.getElementById('e').textContent = err.message; }
+    };
+    view().querySelectorAll('[data-acc]').forEach(c => c.onchange = () => { reports[c.dataset.acc].accept = c.checked; draw(); });
+    view().querySelectorAll('[data-f]').forEach(i => i.oninput = i.onchange = () => { reports[i.dataset.k][i.dataset.f] = i.value; });
+    document.getElementById('discard').onclick = async () => {
+      if (!confirm('¿Descartar este informe? Se borra el original y no se guarda nada.')) return;
+      await api(`/api/documents/${id}`, { method: 'DELETE' }); toast('Informe descartado.'); renderDocs();
+    };
+    document.getElementById('ok').onclick = async () => {
+      const decisions = reports.map(r => ({ position: r.position, accept: r.accept, performed_on: r.performed_on || null, study_name: r.study_name, modality: r.modality, flag: r.flag }));
+      try {
+        const res = await api(`/api/documents/${id}/review-imaging`, { method: 'POST', body: { decisions } });
+        toast(`Guardé ${res.saved} ${res.saved === 1 ? 'informe' : 'informes'} de imagen.`); S.tab = 'img'; renderShell();
+      } catch (err) { document.getElementById('e').textContent = err.message; }
     };
   };
   draw();

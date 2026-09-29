@@ -76,7 +76,11 @@ CREATE TABLE imaging_study (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
   document_id INTEGER REFERENCES document(id) ON DELETE SET NULL,
   modality TEXT NOT NULL, region TEXT, performed_on TEXT NOT NULL,
-  report_text TEXT, dicom_dir TEXT                    -- DICOM sin metadatos personales
+  report_text TEXT, dicom_dir TEXT,                   -- DICOM sin metadatos personales
+  study_name TEXT, technique TEXT, indication TEXT, findings TEXT, prior TEXT, conclusion TEXT,
+  suggestions TEXT, radiologist TEXT, site TEXT,
+  flag TEXT CHECK (flag IN ('normal', 'revisar')),    -- ayuda, no diagnóstico: la conclusión la lee la persona
+  confirmed_by INTEGER REFERENCES person(id), confirmed_at TEXT
 );
 
 -- Bitácora de llamadas a IA: sin contenido, solo lo necesario para auditar y controlar el gasto.

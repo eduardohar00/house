@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from ..extract import Row, convert_ref, extract_document
+from ..imaging import ImagingReport, looks_like_imaging_report, parse_reports
 from ..normalize import ranges, terminology
 from ..privacy import Anonymizer
 from ..providers import Router
@@ -50,6 +51,32 @@ CREATE TABLE IF NOT EXISTS extraction_row (
 """
 
 
+IMAGING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS imaging_draft (
+  id          INTEGER PRIMARY KEY,
+  document_id INTEGER NOT NULL REFERENCES document(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL,
+  data        TEXT NOT NULL                        -- informe leído, pendiente de revisar (JSON)
+);
+"""
+
+# Columnas que se agregaron a imaging_study después de la primera versión del esquema.
+_IMAGING_COLUMNS = {
+    "study_name": "TEXT", "technique": "TEXT", "indication": "TEXT", "findings": "TEXT", "prior": "TEXT",
+    "conclusion": "TEXT", "suggestions": "TEXT", "radiologist": "TEXT", "site": "TEXT", "flag": "TEXT",
+    "confirmed_by": "INTEGER", "confirmed_at": "TEXT",
+}  # fmt: skip
+
+
+def migrate_imaging(db: sqlite3.Connection) -> None:
+    """Prepara bases creadas antes de los informes de imagen, sin tocar sus datos."""
+    db.executescript(IMAGING_SCHEMA)
+    have = {r["name"] for r in db.execute("PRAGMA table_info(imaging_study)")}
+    for col, typ in _IMAGING_COLUMNS.items():
+        if col not in have:
+            db.execute(f"ALTER TABLE imaging_study ADD COLUMN {col} {typ}")
+
+
 class IngestError(Exception):
     def __init__(self, status: int, message: str, document_id: int | None = None) -> None:
         super().__init__(message)
@@ -74,6 +101,7 @@ def person_names(db: sqlite3.Connection, person: sqlite3.Row) -> list[str]:
 class Ingested:
     document_id: int
     rows: int
+    kind: str = "laboratorio"  # o "imagen" (informe leído localmente, sin IA)
 
 
 def ingest_pdf(
@@ -104,6 +132,9 @@ def ingest_pdf(
             422, "El PDF parece un escaneo sin texto. Los escaneos llegan en una fase posterior."
         )
 
+    if looks_like_imaging_report(text) and (reports := parse_reports(text)):
+        return _ingest_imaging(db, vault, person, filename, data, sha, reports)
+
     outcome = extract_document(
         text, router, anonymizer=Anonymizer(person_names(db, person)), reference_date=today or date.today()
     )
@@ -118,6 +149,43 @@ def ingest_pdf(
     return Ingested(cur.lastrowid, len(outcome.rows))
 
 
+def _ingest_imaging(
+    db: sqlite3.Connection,
+    vault: Vault,
+    person: sqlite3.Row,
+    filename: str,
+    data: bytes,
+    sha: str,
+    reports: list[ImagingReport],
+) -> Ingested:
+    """Informes de imagen: se leen aquí, en la Mac, con reglas; nada se envía a ninguna IA."""
+    stored = vault.put(data)
+    title = re.sub(r"\.pdf$", "", filename, flags=re.I).strip() or "Informe de imagen"
+    first_date = next((r.performed_on for r in reports if r.performed_on), None)
+    cur = db.execute(
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256) "
+        "VALUES(?, 'imagen', ?, ?, ?, ?)",
+        (person["id"], title, first_date, stored, sha),
+    )
+    _store_imaging_drafts(db, cur.lastrowid, reports, first_date)
+    return Ingested(cur.lastrowid, len(reports), "imagen")
+
+
+def _store_imaging_drafts(
+    db: sqlite3.Connection, doc_id: int, reports: list[ImagingReport], first_date: str | None
+) -> None:
+    db.execute(
+        "INSERT INTO extraction(document_id, sent_text, redactions, provider, model, cost_usd, collected_on) "
+        "VALUES(?, '', '{}', 'local', 'reglas', 0, ?)",
+        (doc_id, first_date),
+    )
+    for pos, r in enumerate(reports):
+        db.execute(
+            "INSERT INTO imaging_draft(document_id, position, data) VALUES(?,?,?)",
+            (doc_id, pos, json.dumps(r.to_dict(), ensure_ascii=False)),
+        )
+
+
 def reread(
     db: sqlite3.Connection,
     vault: Vault,
@@ -130,6 +198,16 @@ def reread(
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
     if doc["review_state"] != "pendiente":
         raise IngestError(409, "Solo se puede volver a leer un estudio que aún no revisas.")
+    if doc["doc_type"] == "imagen":
+        reports = parse_reports(pdf_text(vault.get(doc["file_path"])))
+        if not reports:
+            raise IngestError(422, "No se pudo volver a leer este informe de imagen.")
+        first_date = next((r.performed_on for r in reports if r.performed_on), None)
+        db.execute("DELETE FROM imaging_draft WHERE document_id = ?", (doc_id,))
+        db.execute("DELETE FROM extraction WHERE document_id = ?", (doc_id,))
+        db.execute("UPDATE document SET collected_on = ? WHERE id = ?", (first_date, doc_id))
+        _store_imaging_drafts(db, doc_id, reports, first_date)
+        return Ingested(doc_id, len(reports), "imagen")
     outcome = extract_document(
         pdf_text(vault.get(doc["file_path"])),
         router,
@@ -216,13 +294,21 @@ def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
                 "needs_attention": bool(json.loads(r["problems"])) or bool(r["converted"]),
             }
         )
+    imaging = [
+        {"position": d["position"], **json.loads(d["data"])}
+        for d in db.execute(
+            "SELECT position, data FROM imaging_draft WHERE document_id = ? ORDER BY position", (doc_id,)
+        )
+    ]
     return {
         "document": {
-            k: doc[k] for k in ("id", "person_id", "title", "collected_on", "review_state", "uploaded_at")
+            k: doc[k]
+            for k in ("id", "person_id", "doc_type", "title", "collected_on", "review_state", "uploaded_at")
         },
         "ai_saw": ex["sent_text"] if ex else None,
         "redactions": json.loads(ex["redactions"]) if ex else {},
         "rows": rows,
+        "imaging": imaging,
     }
 
 
@@ -372,3 +458,72 @@ def repair_references(db: sqlite3.Connection) -> int:
             )
             changed += 1
     return changed
+
+
+def confirm_imaging_review(
+    db: sqlite3.Connection, doc_id: int, reviewer_id: int, decisions: list[dict]
+) -> int:
+    """Guarda en `imaging_study` solo los informes aceptados (con las correcciones de la persona)."""
+    doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    if doc["doc_type"] != "imagen":
+        raise IngestError(422, "Este estudio no es un informe de imagen.")
+    if doc["review_state"] != "pendiente":
+        raise IngestError(409, "Este estudio ya fue revisado.")
+    drafts = {
+        d["position"]: json.loads(d["data"])
+        for d in db.execute("SELECT position, data FROM imaging_draft WHERE document_id = ?", (doc_id,))
+    }
+    now = datetime.now().isoformat(timespec="seconds")
+    saved, first_date = 0, None
+    for dec in decisions:
+        draft = drafts.get(dec.get("position"))
+        if draft is None:
+            raise IngestError(422, "Informe desconocido.")
+        if not dec.get("accept"):
+            continue
+        performed_on = dec.get("performed_on") or draft.get("performed_on")
+        try:
+            date.fromisoformat(performed_on or "")
+        except ValueError:
+            raise IngestError(422, "Indica la fecha del estudio (AAAA-MM-DD).") from None
+        study = (dec.get("study_name") or draft["study_name"]).strip()
+        flag = dec.get("flag") or draft.get("flag") or "revisar"
+        if flag not in ("normal", "revisar"):
+            raise IngestError(422, "Marca inválida.")
+        report_text = " ".join(
+            draft.get(k, "") for k in ("technique", "indication", "findings", "conclusion", "suggestions")
+        ).strip()
+        db.execute(
+            "INSERT INTO imaging_study(person_id, document_id, modality, region, performed_on, report_text, "
+            "study_name, technique, indication, findings, prior, conclusion, suggestions, radiologist, site, "
+            "flag, confirmed_by, confirmed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                doc["person_id"],
+                doc_id,
+                (dec.get("modality") or draft.get("modality") or "Otro"),
+                study,
+                performed_on,
+                report_text,
+                study,
+                draft.get("technique"),
+                draft.get("indication"),
+                draft.get("findings"),
+                draft.get("prior"),
+                draft.get("conclusion"),
+                draft.get("suggestions"),
+                draft.get("radiologist"),
+                draft.get("site"),
+                flag,
+                reviewer_id,
+                now,
+            ),
+        )
+        first_date = first_date or performed_on
+        saved += 1
+    db.execute("DELETE FROM imaging_draft WHERE document_id = ?", (doc_id,))
+    db.execute(
+        "UPDATE document SET review_state = 'revisada', "
+        "collected_on = COALESCE(?, collected_on) WHERE id = ?",
+        (first_date, doc_id),
+    )
+    return saved

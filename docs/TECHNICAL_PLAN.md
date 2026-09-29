@@ -68,6 +68,7 @@ No se orquestan agentes por moda. El flujo es una tubería con pasos determinist
 ### 2.6 Fase 1: orden de construcción
 1. **Base (hecho):** `python -m house.app` en 127.0.0.1:8765; primer uso crea al admin; perfiles con PIN (scrypt), bloqueo tras 5 intentos y por 15 min de inactividad; cada persona ve solo su perfil; accesos del admin a perfiles ajenos en `access_log`; rechazo de otros Host y de escrituras sin cabecera `X-House`.
 2. **Subir estudio (servidor hecho; pantallas en la parte 3):** `POST /api/people/{id}/documents` → texto (pdfplumber) → limpieza → Claude → verificación → `extraction_row`; `GET /api/documents/{id}` (filas + "lo que vio la IA"), `GET …/file` (original descifrado), `POST …/review` (solo lo aceptado pasa a `observation`). Duplicados por SHA-256; escaneos rechazados hasta tener OCR. `person_alias` guarda cómo aparece el nombre en los estudios para quitarlo antes de enviar.
+2b. **Informes de imagen (hecho, sin IA):** `imaging.py` lee informes de radiología con estructura Técnica / Hallazgos / Conclusión / Sugerencias (varios por PDF) con reglas, en la Mac; nada se envía a ninguna IA. Se revisan junto al original y pasan a `imaging_study`. La marca "normal" es solo una ayuda conservadora. Pendiente: formatos distintos (lectura con Claude), imágenes DICOM, escaneos.
 3. Resumen y gráficas según la maqueta (incluye aviso de métodos mezclados).
 4. Expediente clínico manual.
 
