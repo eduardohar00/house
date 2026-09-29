@@ -99,3 +99,22 @@ def test_learns_patient_name_from_header_without_being_told():
     res = Anonymizer().scrub(doc)
     assert "PEREZ" not in res.text.upper() and "FICTICIO" not in res.text.upper()
     assert "Glucosa 90 55 - 99 mg/dL" in res.text
+
+
+def test_imaging_report_header_comma_name_month_birth_date_and_reservation():
+    doc = (
+        "Fecha: domingo, 4 de mayo de 2025 Reservación: 1030214879\n"
+        "Paciente: PEREZ FICTICIO, JUAN CARLOS Sexo: Masculino\n"
+        "Fecha de nacimiento: 11/Jul./1992 Edad: 32 años\n"
+        "Médico solicitante: A QUIEN CORRESPONDA\n"
+        "Hallazgos.\nEstructuras óseas con radiopacidad normal.\n"
+        "DR. ALGUIEN INVENTADO SOTO\n"
+        "Médico Especialista en Radiología e Imagen. Ced. 12473329"
+    )
+    res = Anonymizer().scrub(doc, reference_date=date(2026, 9, 28))
+    for leak in ["PEREZ", "FICTICIO", "JUAN", "CARLOS", "11/Jul", "1030214879", "ALGUIEN", "INVENTADO"]:
+        assert leak not in res.text, leak
+    assert "[EDAD: 34 años]" in res.text
+    assert "Médico Especialista en Radiología e Imagen" in res.text  # no es un nombre
+    assert "radiopacidad normal" in res.text
+    assert len(res.text.splitlines()) == len(doc.splitlines())

@@ -25,7 +25,7 @@ LABELED_ID = re.compile(
 # Números administrativos en cualquier parte del renglón ("56392629 Orden:OK0350125",
 # "Episodio : 1501338810 Habitación/Cama: LMCA411-Cama411") y códigos solos al inicio de renglón.
 INLINE_ID = re.compile(
-    r"(?i)(?P<label>\b(?:orden|solicitud|episodio|habitaci[oó]n/cama|n[°º]\s*paciente|id\s*paciente)"
+    r"(?i)(?P<label>\b(?:orden|reservaci[oó]n|solicitud|episodio|habitaci[oó]n/cama|n[°º]\s*paciente|id\s*paciente)"
     r"[ \t]*:[ \t]*)(?P<val>[A-Z0-9][A-Z0-9-]*)"
 )
 ID_AT_LINE_START = re.compile(r"(?m)^(?:\d{7,}|[A-Z]{1,3}\d{6,})(?=[ \t]|$)")
@@ -33,16 +33,35 @@ ADDRESS_LINE = re.compile(r"(?im)^(?P<label>\s*(?:domicilio|direcci[oó]n|calle)
 DOB = re.compile(
     r"(?i)(?P<label>(?:fecha\s+de\s+nacimiento|fec(?:ha)?\.?[ \t]*(?:de[ \t]+)?nac(?:\.|imiento)?)"
     r"[ \t]*:?[ \t]*)"
-    r"(?P<d>\d{1,2})[/-](?P<m>\d{1,2})[/-](?P<y>\d{4})"
+    r"(?:(?P<d>\d{1,2})[/-](?P<m>\d{1,2})[/-](?P<y>\d{4})"
+    r"|(?P<d2>\d{1,2})[ \t]*(?:[/-]|de)?[ \t]*(?P<mon>[A-Za-zÁÉÍÓÚáéíóú]{3,10})\.?"
+    r"[ \t]*(?:[/-]|de)?[ \t]*(?P<y2>\d{4}))"
 )
+_MONTHS = {
+    "ene": 1,
+    "feb": 2,
+    "mar": 3,
+    "abr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "ago": 8,
+    "sep": 9,
+    "set": 9,
+    "oct": 10,
+    "nov": 11,
+    "dic": 12,
+}
 # Nombre tras un encabezado ("Paciente: ORTIZ HARO", "Médico : Dr. NOMBRE", "Dirigido a:DR(A). NOMBRE").
 # Nunca cruza de renglón: [ \t] en vez de \s, para no juntar líneas y perder resultados.
 # El nombre exige mayúscula inicial aunque la etiqueta se busque sin distinguir mayúsculas.
 HEADER_NAME = re.compile(
-    r"(?im)(?P<label>\b(?:paciente|nombre|m[eé]dico(?:[ \t]+solicitante)?|solicit[oó]|referido[ \t]+por|"
-    r"dirigido[ \t]+a|dra?)\b[ \t]*[:.]?[ \t]*(?:(?:dr\(a\)|dra?)\.?[ \t]*)?)"
+    r"(?im)(?P<label>(?:\b(?:paciente|nombre|m[eé]dico(?:[ \t]+solicitante)?|solicit[oó]|referido[ \t]+por|"
+    r"dirigido[ \t]+a|dra?)\b[ \t]*:[ \t]*(?:(?:dr\(a\)|dra?)\.?[ \t]*)?"
+    r"|\bdr\(a\)\.?[ \t]*|\bdra?\.[ \t]+))"
     r"(?P<name>(?-i:[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ'-]+)"
-    r"(?:[ \t](?!(?:sexo|edad|hoja|fecha|folio|orden|solicitud)\b)(?-i:[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ'-]+)){0,4})"
+    r"(?:,?[ \t](?!(?:sexo|edad|hoja|fecha|folio|orden|solicitud|reservaci[oó]n|especialista|"
+    r"m[eé]dico|paciente|sucursal)\b)(?-i:[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ'-]+)){0,4})"
 )
 
 
@@ -93,7 +112,13 @@ class Anonymizer:
 
         def dob(m: re.Match[str]) -> str:
             ref = reference_date or date.today()
-            born = date(int(m["y"]), int(m["m"]), int(m["d"]))
+            if m["mon"]:  # mes en letras
+                month = _MONTHS.get(_fold(m["mon"])[:3])
+                if month is None:
+                    raise ValueError("mes desconocido")
+                born = date(int(m["y2"]), month, int(m["d2"]))
+            else:
+                born = date(int(m["y"]), int(m["m"]), int(m["d"]))
             age = ref.year - born.year - ((ref.month, ref.day) < (born.month, born.day))
             found.append(Redaction("EDAD", f"[EDAD: {age} años]"))
             return f"{m['label']}[EDAD: {age} años]"
