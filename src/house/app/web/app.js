@@ -410,11 +410,13 @@ const PROBLEMS = {
   unidad_no_reconocida: 'Unidad no reconocida',
   valor_no_numerico: 'Valor no numérico',
   valor_implausible: 'Valor poco probable: revísalo',
+  mismo_valor_en_otra_unidad: 'Es el mismo resultado en otra unidad: no se guardará dos veces',
+  aparece_mas_de_una_vez: 'Aparece más de una vez en este estudio',
 };
 
 async function openReview(id) {
   const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
-  const rows = d.rows.map(r => ({ ...r, accept: !!r.analyte_key && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') }));
+  const rows = d.rows.map(r => ({ ...r, accept: !!r.analyte_key && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
   let onlyFlags = false, showAi = false, active = null;
   view().innerHTML = `<div class="rv">
     <div class="pages" id="pages" aria-label="Estudio original">

@@ -272,3 +272,44 @@ Proteus OX-19 Negativo Negativo"""
         ("proteus_ox19", "Negativo"),
     }
     assert unrecognized == []
+
+
+def test_homa_block_repeats_and_urate_crystals():
+    from house.extract import Provenance, process
+    from house.providers import LLMRequest
+    from house.providers.mock import BaselineRegexProvider
+    from house.schema import RawExtraction
+
+    doc = """QUÍMICA INTEGRAL DE 45 ELEMENTOS
+Glucosa 90 55 - 99 mg/dL
+sd LDL 2.00 0 - 1.35
+HOMA-IR
+Glucosa 91 55 - 99 mg/dL
+Glucosa 5.05 < 5.55 mmol/L
+Insulina basal 10.00 2.6 - 24.9 µU/mL
+HOMA-IR 2.30 < 2.7
+Vitamina D (25,hidroxi) 35.0 30 - 100 ng/mL
+EXAMEN GENERAL DE ORINA
+EXAMEN MICROSCÓPICO ___
+Cristales . Ausentes
+Urato Amorfo Presentes Ausentes"""
+    raw = RawExtraction.model_validate(
+        BaselineRegexProvider().complete_json(LLMRequest(task="extract", system="", user=doc, schema={})).data
+    )
+    rows = process(raw, doc)
+    glucose = [r for r in rows if r.key == "glucose"]
+    assert [r.value for r in glucose] == [90, 91, 90.98]
+    assert Provenance.SAME_IN_OTHER_UNIT in glucose[2].problems
+    assert all(Provenance.REPEATED in r.problems for r in glucose[:2])
+    got = {
+        r.key: (r.value if r.value is not None else r.value_label, r.status)
+        for r in rows
+        if r.key != "glucose"
+    }
+    assert got == {
+        "sd_ldl": (2.0, "high"),
+        "insulin": (10.0, "ok"),
+        "homa_ir": (2.3, "ok"),
+        "vitamin_d": (35.0, "ok"),
+        "urine_urate_crystals": ("Presentes", "abnormal"),
+    }

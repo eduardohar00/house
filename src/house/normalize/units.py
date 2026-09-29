@@ -65,6 +65,7 @@ _CANON = {
     "ml/min/173m2": "mL/min/1.73m2",
     "ml/min/173": "mL/min/1.73m2",  # "ml/min/1.73" con el "m2" en el renglón siguiente
     "mosm/kg": "mOsm/kg",
+    "uu/ml": "µU/mL",
 }
 
 
@@ -79,11 +80,10 @@ _SAME_VALUE = {
     ("potassium", "meq/l"),
     ("chloride", "meq/l"),
     ("co2_total", "meq/l"),
-    ("egfr", "ml/min/172m2"),
-    (
-        "bun_creat_ratio",
-        "mg/dl",
-    ),  # cociente impreso con "mg/dL"  # errata de Chopo 2018: "1.72m2" por "1.73m2"
+    ("egfr", "ml/min/172m2"),  # errata de Chopo 2018: "1.72m2" por "1.73m2"
+    ("bun_creat_ratio", "mg/dl"),  # cociente impreso con "mg/dL"
+    ("insulin", "uui/ml"),  # µUI/mL = µU/mL
+    ("sd_ldl", ""),  # Chopo a veces lo imprime sin unidad, con el mismo rango (mg/dL)
 }
 
 

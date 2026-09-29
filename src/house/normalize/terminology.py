@@ -451,6 +451,8 @@ _CHOPO: tuple[Analyte, ...] = (
     _a("tg_hdl_ratio", "Relación triglicéridos/HDL", "", "", "lipidos", "relacion trigliceridos hdl"),
     _a("ggt_ast_ratio", "Cociente GGT/AST", "", "", "higado", "cociente ggt ast"),
     _a("amylase_lipase_ratio", "Relación amilasa/lipasa", "", "", "pancreas", "relacion amilasa lipasa"),
+    _a("insulin", "Insulina basal", "", "µU/mL", "glucosa", "insulina basal", "insulina"),
+    _a("homa_ir", "Índice HOMA-IR", "", "", "glucosa", "homa ir"),
 )
 
 
@@ -491,6 +493,7 @@ _QUALITATIVE: tuple[Analyte, ...] = (
     _q("urine_dysmorphic_rbc", "Eritrocitos dismórficos (orina)", "orina", "eritrocitos dismorficos"),
     _q("urine_casts", "Cilindros (orina)", "orina", "cilindros"),
     _q("urine_crystals", "Cristales (orina)", "orina", "cristales"),
+    _q("urine_urate_crystals", "Cristales de urato amorfo (orina)", "orina"),
     _q(
         "urine_squamous",
         "Células epiteliales escamosas",
@@ -551,6 +554,7 @@ _BY_SECTION = {
         "albumina": "albumin_urine",
     },
     "orina_micro": {
+        "urato amorfo": "urine_urate_crystals",
         "leucocitos": "urine_wbc_micro",
         "eritrocitos": "urine_rbc_micro",
     },
@@ -595,6 +599,7 @@ _MORE_ALIASES = {
     "rdw": ("ancho de distrib de eritrocitos cv",),
     "urine_sg": ("densidad",),
     "egfr": ("tasa de filtracion glomerular", "tasa de filtracion estimada"),
+    "vitamin_d": ("vitamina d 25 hidroxi", "25 hidroxi vitamina d", "vitamina d 25 hidroxi total"),
     "tibc": ("capacidad total de fijacion del hierro",),
     "uibc": ("capacidad no saturada de fijacion de hierro", "capacidad no saturada de fijacion de"),
     "iron_sat": ("indice de saturacion de transferrina", "saturacion de transferrina"),

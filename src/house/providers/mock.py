@@ -105,6 +105,8 @@ def _text_row(line: str) -> dict | None:
             if " ".join(plain[k : k + n]) != phrase:
                 continue
             name, rest = toks[:k], toks[k:]
+            if name[-1] == ".":
+                return None  # "Cristales . Ausentes": sin resultado; el tipo viene en el renglón siguiente
             if _NUMBER.match(name[-1]) and len(name) > 1:
                 name, value, rest = name[:-1], name[-1], rest
             else:

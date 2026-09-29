@@ -33,6 +33,8 @@ class Provenance:
     UNIT_PROBLEM = "unidad_no_reconocida"
     NOT_NUMERIC = "valor_no_numerico"
     IMPLAUSIBLE = "valor_implausible"
+    SAME_IN_OTHER_UNIT = "mismo_valor_en_otra_unidad"  # "Glucosa 93 mg/dL" y "Glucosa 5.16 mmol/L"
+    REPEATED = "aparece_mas_de_una_vez"
 
 
 @dataclass
@@ -155,7 +157,31 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
                 if not row.converted:
                     row.status = ranges.classify_ref(row.value, ref)
         rows.append(row)
+    _mark_repeats(rows)
     return rows
+
+
+def _mark_repeats(rows: list[Row]) -> None:
+    """Un mismo análisis más de una vez en el estudio: si es el mismo valor en otra unidad, se marca
+    para no guardarlo dos veces; si no, se avisa para que la persona decida."""
+    by_key: dict[str, list[Row]] = {}
+    for r in rows:
+        if r.key:
+            by_key.setdefault(r.key, []).append(r)
+    for same in by_key.values():
+        if len(same) < 2:
+            continue
+        for r in same:
+            twin = any(
+                o is not r
+                and not o.converted
+                and r.converted
+                and o.value is not None
+                and r.value is not None
+                and abs(o.value - r.value) <= max(0.01, 0.01 * abs(o.value))
+                for o in same
+            )
+            r.problems.append(Provenance.SAME_IN_OTHER_UNIT if twin else Provenance.REPEATED)
 
 
 def extract_document(

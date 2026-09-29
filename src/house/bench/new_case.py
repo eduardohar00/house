@@ -56,7 +56,12 @@ def prefill_expected(text: str) -> tuple[dict, list[str]]:
     data = BaselineRegexProvider().complete_json(req).data
     raw = RawExtraction.model_validate(data)
     results, unrecognized = [], []
-    blocking = {Provenance.UNKNOWN_ANALYTE, Provenance.NOT_NUMERIC, Provenance.UNIT_PROBLEM}
+    blocking = {
+        Provenance.UNKNOWN_ANALYTE,
+        Provenance.NOT_NUMERIC,
+        Provenance.UNIT_PROBLEM,
+        Provenance.SAME_IN_OTHER_UNIT,
+    }
     for row in process(raw, text):
         if row.key is None or blocking & set(row.problems):
             unrecognized.append(row.evidence)

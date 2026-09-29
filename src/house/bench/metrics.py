@@ -52,13 +52,18 @@ def score_case(case: str, provider: str, expected: dict, outcome: Outcome, forbi
     s = CaseScore(case=case, provider=provider)
     exp = {r["key"]: r for r in expected["results"]}
     s.expected = len(exp)
-    by_key = {r.key: r for r in outcome.rows if r.key}
+    by_key: dict[str, list[Row]] = {}
+    for r in outcome.rows:
+        if r.key:
+            by_key.setdefault(r.key, []).append(r)
     for key, e in exp.items():
-        row = by_key.get(key)
-        if row is None:
+        candidates = by_key.get(key)
+        if not candidates:
             s.missing.append(key)
             continue
         s.found += 1
+        # Un análisis puede aparecer más de una vez (p. ej. glucosa en la química y en el HOMA-IR).
+        row = next((c for c in candidates if _value_ok(c, e["value"])), candidates[0])
         if _value_ok(row, e["value"]):
             s.value_ok += 1
         else:
