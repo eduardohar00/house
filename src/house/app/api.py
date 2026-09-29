@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -21,7 +21,7 @@ from ..normalize import summary as summary_mod
 from ..normalize import terminology
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import auth, backup, ingest, store
+from . import auth, backup, clinical, ingest, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -160,6 +160,7 @@ def create_app(
     ingest.migrate_imaging(db)
     ingest.migrate_observation(db)
     db.executescript(backup.SETTINGS_SCHEMA)
+    clinical.migrate(db)
     ingest.repair_references(db)
     fixed_router = router
     vault = Vault(data_dir / "originals", key_provider)
@@ -443,6 +444,53 @@ def create_app(
         except ingest.IngestError as e:
             raise HTTPException(e.status, e.message) from None
         return {"saved": saved}
+
+    def clinical_call(fn, *args):
+        try:
+            return fn(*args)
+        except clinical.ClinicalError as e:
+            raise HTTPException(e.status, e.message) from None
+
+    @app.get("/api/clinical/suggestions")
+    def clinical_suggestions(_: Me) -> dict:
+        return clinical.SUGGESTIONS
+
+    @app.get("/api/people/{person_id}/clinical")
+    def clinical_overview(person_id: int, actor: Me) -> dict:
+        subject(person_id, actor, "ver_expediente")
+        return clinical.overview(db, person_id)
+
+    @app.post("/api/people/{person_id}/clinical/{kind}")
+    def clinical_add(person_id: int, kind: str, actor: Me, data: Annotated[dict, Body()]) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        return {"id": clinical_call(clinical.add, db, person_id, kind, data)}
+
+    @app.put("/api/people/{person_id}/clinical/{kind}/{item_id}")
+    def clinical_update(
+        person_id: int, kind: str, item_id: int, actor: Me, data: Annotated[dict, Body()]
+    ) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        clinical_call(clinical.update, db, person_id, kind, item_id, data)
+        return {"ok": True}
+
+    @app.delete("/api/people/{person_id}/clinical/{kind}/{item_id}")
+    def clinical_delete(person_id: int, kind: str, item_id: int, actor: Me) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        clinical_call(clinical.remove, db, person_id, kind, item_id)
+        return {"ok": True}
+
+    @app.put("/api/people/{person_id}/clinical-none/{section}")
+    def clinical_none(person_id: int, section: str, actor: Me) -> dict:
+        """Confirma que no hay datos en la sección (p. ej. sin alergias conocidas)."""
+        subject(person_id, actor, "editar_expediente")
+        clinical_call(clinical.set_none, db, person_id, section, True)
+        return {"ok": True}
+
+    @app.delete("/api/people/{person_id}/clinical-none/{section}")
+    def clinical_none_off(person_id: int, section: str, actor: Me) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        clinical_call(clinical.set_none, db, person_id, section, False)
+        return {"ok": True}
 
     @app.get("/api/people/{person_id}/imaging")
     def imaging_list(person_id: int, actor: Me) -> list[dict]:

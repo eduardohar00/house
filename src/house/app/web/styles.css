@@ -166,3 +166,28 @@ button.qp.old{opacity:.6}
 .qds{display:inline-flex;gap:3px;margin-left:2px}
 .qd{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--line)}
 .qd.k{background:var(--good)}.qd.o{background:var(--warn)}
+
+/* --- Expediente clínico --- */
+.xg{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.xc{padding:18px;display:grid;gap:10px;align-content:start;min-width:0}
+.xc h3{margin:0;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.xl{display:grid;gap:0;margin:0;padding:0;list-style:none}
+.xl li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;padding:8px 0;border-top:1px solid var(--line)}
+.xl li:first-child{border-top:0}
+.xl .s,.xc .s{color:var(--muted);font-size:13px}
+.rowact{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.add-x{text-transform:none;letter-spacing:0;font-size:12px;padding:2px 8px}
+.alg{background:var(--good-bg);color:var(--good);font-weight:600;border-radius:10px;padding:8px 12px}
+.sp{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
+.sp.a{background:var(--warn-bg);color:var(--warn)}.sp.c{background:var(--accent-soft);color:var(--accent)}.sp.r{background:var(--good-bg);color:var(--good)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:500;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.tl{display:grid;gap:0}
+.ev{display:grid;grid-template-columns:110px 1fr;gap:4px 14px;padding:12px 0;border-top:1px solid var(--line)}
+.ev:first-child{border-top:0}
+.ev .dt{color:var(--muted);font-size:13px;padding-top:2px}
+.ev .tt{font-weight:600}
+.ev .sb{color:var(--muted);font-size:14px}
+.ty{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin-right:8px;white-space:nowrap}
+@media (max-width:520px){.ev{grid-template-columns:1fr}}

@@ -2,7 +2,7 @@
 /* House: interfaz local. Sin compilación ni dependencias; habla con la API en 127.0.0.1. */
 
 const app = document.getElementById('app');
-const S = { me: null, people: [], subject: null, catalog: {}, tab: 'res', sel: null, view: 'g' };
+const S = { me: null, people: [], subject: null, catalog: {}, tab: 'res', sel: null, view: 'g', clinFilter: 'todo', clinEdit: null, sug: null };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ts = d => Date.parse(d + 'T00:00:00Z');
@@ -108,7 +108,7 @@ async function enter() {
   if (!Object.keys(S.catalog).length) S.catalog = await api('/api/catalog');
   S.people = await api('/api/people');
   S.subject = S.subject && S.people.some(p => p.id === S.subject) ? S.subject : S.me.id;
-  S.tab = 'res'; S.sel = null;
+  S.tab = 'res'; S.sel = null; S.clinEdit = null;
   renderShell();
 }
 
@@ -118,7 +118,7 @@ function brandIcon() {
 
 function renderShell() {
   const admin = S.me.is_admin, subj = S.people.find(p => p.id === S.subject);
-  const tabs = [['res', 'Resumen'], ['img', 'Imagen'], ['doc', 'Documentos']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
+  const tabs = [['res', 'Resumen'], ['exp', 'Expediente'], ['doc', 'Documentos'], ['img', 'Imagen']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
   app.innerHTML = `<div class="wrap">
     <header>
       <div class="brand">${brandIcon()}House</div>
@@ -139,7 +139,7 @@ function renderShell() {
   const ps = document.getElementById('psel');
   if (ps) ps.onchange = () => { S.subject = Number(ps.value); S.sel = null; renderShell(); };
   app.querySelectorAll('.nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.t; renderShell(); });
-  ({ res: renderSummary, img: renderImaging, doc: renderDocs, fam: renderFamily, cfg: renderConfig, priv: renderPrivacy })[S.tab]();
+  ({ res: renderSummary, exp: renderClinical, img: renderImaging, doc: renderDocs, fam: renderFamily, cfg: renderConfig, priv: renderPrivacy })[S.tab]();
 }
 
 const view = () => document.getElementById('view');
@@ -660,6 +660,115 @@ async function openReview(id) {
     };
   };
   draw();
+}
+
+/* ---------- Expediente clínico ---------- */
+
+const F = (name, label, type = 'text', extra = {}) => ({ name, label, type, ...extra });
+const STCLS = { 'En control': 'c', 'En tratamiento': 'a', 'Seguimiento': 'a', 'Resuelta': 'r' };
+const CLIN = {
+  allergy: { key: 'allergies', title: 'Alergias', add: 'Agregar alergia', none: 'Sin alergias conocidas',
+    fields: [F('substance', 'Sustancia', 'text', { list: 'allergy' }), F('reaction', 'Reacción (opcional)'), F('notes', 'Notas (opcional)')],
+    line: a => `<b>${esc(a.substance)}</b>${a.reaction ? ' · ' + esc(a.reaction) : ''}`, sub: a => a.notes },
+  problem: { key: 'problems', title: 'Problemas de salud', add: 'Agregar problema', none: 'Sin problemas de salud conocidos',
+    fields: [F('name', 'Problema', 'text', { list: 'problem' }), F('status', 'Estado', 'select', { options: 'statuses' }), F('since_year', 'Desde (año)', 'text', { ph: '2021' }), F('notes', 'Notas (opcional)')],
+    line: p => `<b>${esc(p.name)}</b>${p.since_year ? ` <span class="s">desde ${esc(p.since_year)}</span>` : ''}`, sub: p => p.notes,
+    badge: p => `<span class="sp ${STCLS[p.status] || 'c'}">${esc(p.status)}</span>` },
+  medication: { key: 'medications', title: 'Medicamentos', add: 'Agregar medicamento', none: 'Sin medicamentos actuales',
+    fields: [F('name', 'Medicamento', 'text', { list: 'medication' }), F('dose', 'Dosis (por ejemplo 50 mg al día)'), F('reason', 'Para qué'), F('prescriber', 'Médico que lo indicó (opcional)'),
+      F('since_year', 'Desde (año)', 'text', { ph: '2022' }), F('until_year', 'Hasta (año, si ya lo suspendiste)', 'text', { ph: '2024' }), F('active', 'Lo tomo actualmente', 'check')],
+    line: m => `<b>${esc(m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
+    sub: m => [m.reason, m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
+  family: { key: 'family', title: 'Antecedentes familiares', add: 'Agregar antecedente', none: 'Sin antecedentes familiares relevantes',
+    fields: [F('relative', 'Parentesco', 'text', { list: 'relative' }), F('condition', 'Condición', 'text', { list: 'problem' })],
+    line: f => `<b>${esc(f.relative)}</b> · ${esc(f.condition)}`, sub: () => '' },
+  procedure: { key: 'procedures', title: 'Cirugías', add: 'Agregar cirugía', none: 'Sin cirugías previas',
+    fields: [F('name', 'Procedimiento', 'text', { list: 'procedure' }), F('year', 'Año', 'text', { ph: '2012' }), F('notes', 'Notas (opcional)')],
+    line: x => `<b>${esc(x.name)}</b>${x.year ? ` <span class="s">${esc(x.year)}</span>` : ''}`, sub: x => x.notes },
+  vaccine: { key: 'vaccines', title: 'Vacunas', add: 'Agregar vacuna',
+    fields: [F('name', 'Vacuna', 'text', { list: 'vaccine' }), F('given_on', 'Fecha', 'date'), F('dose_label', 'Dosis (por ejemplo refuerzo)'), F('place', 'Dónde (opcional)')],
+    line: v => `<b>${esc(v.name)}</b> <span class="s">${fd(v.given_on)}</span>`, sub: v => [v.dose_label, v.place].filter(Boolean).join(' · ') },
+  consultation: { key: 'consultations', title: 'Consultas', add: 'Agregar consulta',
+    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)')],
+    line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
+};
+const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
+const EV_KIND = { consulta: 'Consulta', laboratorio: 'Laboratorio', imagen: 'Imagen', vacuna: 'Vacuna', cirugia: 'Cirugía' };
+
+async function renderClinical() {
+  view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
+  const [c, sug] = await Promise.all([api(`/api/people/${S.subject}/clinical`), S.sug ? Promise.resolve(S.sug) : api('/api/clinical/suggestions')]);
+  S.sug = sug;
+  const reload = () => renderClinical();
+  const itemsOf = kind => c[CLIN[kind].key];
+  const row = (kind, it) => { const cfg = CLIN[kind], sub = cfg.sub(it);
+    return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
+      <span class="rowact">${cfg.badge ? cfg.badge(it) : ''}<button class="mini" data-edit="${kind}:${it.id}">Editar</button><button class="mini dn" data-del="${kind}:${it.id}">Quitar</button></span></li>`; };
+  const card = kind => {
+    const cfg = CLIN[kind]; let items = itemsOf(kind), past = [];
+    if (kind === 'medication') { past = items.filter(m => !m.active); items = items.filter(m => m.active); }
+    const confirmed = c.none.includes(kind);
+    const empty = items.length ? '' : HAS_NONE.includes(kind)
+      ? (confirmed ? `<div class="alg none">${esc(cfg.none)}</div><button class="link" data-none-off="${kind}">Quitar la confirmación</button>`
+        : `<p class="s" style="margin:0">Sin registrar todavía.</p><button class="mini" data-none="${kind}">Confirmar: ${esc(cfg.none.toLowerCase())}</button>`)
+      : '<p class="s" style="margin:0">Sin registros.</p>';
+    return `<section class="card xc"><h3>${cfg.title}<button class="mini add-x" data-add="${kind}">${cfg.add}</button></h3>
+      ${items.length ? `<ul class="xl">${items.map(it => row(kind, it)).join('')}</ul>` : empty}
+      ${past.length ? `<details class="hist"><summary>Suspendidos (${past.length})</summary><ul class="xl">${past.map(it => row(kind, it)).join('')}</ul></details>` : ''}</section>`;
+  };
+  const chips = ['todo', ...Object.keys(EV_KIND)];
+  const evs = c.timeline.filter(e => S.clinFilter === 'todo' || e.kind === S.clinFilter);
+  const editing = S.clinEdit;
+  view().innerHTML = `
+    <div id="clinform"></div>
+    <div class="xg">${['allergy', 'problem', 'medication', 'family', 'procedure', 'vaccine', 'consultation'].map(card).join('')}</div>
+    <section class="card xc"><h3>Historial cronológico</h3>
+      <div class="chips" role="group" aria-label="Filtrar por tipo">${chips.map(k => `<button class="chip" data-f="${k}" aria-pressed="${k === S.clinFilter}">${k === 'todo' ? 'Todo' : EV_KIND[k]}</button>`).join('')}</div>
+      <div class="tl">${evs.length ? evs.map(e => `<div class="ev"><div class="dt">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</div><div>
+          <div class="tt"><span class="ty">${EV_KIND[e.kind]}</span>${esc(e.title)}${e.flag ? ' ' + flagPill(e.flag) : ''}</div>
+          ${e.subtitle ? `<div class="sb">${esc(e.subtitle)}</div>` : ''}
+          ${e.ref ? `<a class="mini" href="/api/documents/${e.ref.id}/file" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;margin-top:4px">Ver original</a>` : ''}</div></div>`).join('')
+        : '<p class="tip">Todavía no hay eventos. Sube estudios o agrega consultas, vacunas y cirugías.</p>'}</div></section>`;
+
+  view().querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.clinFilter = b.dataset.f; reload(); });
+  view().querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.clinEdit = { kind: b.dataset.add, item: null }; reload(); });
+  view().querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+    const [kind, id] = b.dataset.edit.split(':'); S.clinEdit = { kind, item: itemsOf(kind).find(x => x.id == id) }; reload();
+  });
+  view().querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    const [kind, id] = b.dataset.del.split(':'); const it = itemsOf(kind).find(x => x.id == id);
+    if (!confirm(`¿Quitar «${CLIN[kind].line(it).replace(/<[^>]+>/g, '')}» del expediente?`)) return;
+    await api(`/api/people/${S.subject}/clinical/${kind}/${id}`, { method: 'DELETE' }); toast('Quitado del expediente.'); reload();
+  });
+  view().querySelectorAll('[data-none]').forEach(b => b.onclick = async () => { try { await api(`/api/people/${S.subject}/clinical-none/${b.dataset.none}`, { method: 'PUT' }); reload(); } catch (e) { toast(e.message); } });
+  view().querySelectorAll('[data-none-off]').forEach(b => b.onclick = async () => { await api(`/api/people/${S.subject}/clinical-none/${b.dataset.noneOff}`, { method: 'DELETE' }); reload(); });
+
+  if (editing) {
+    const cfg = CLIN[editing.kind], it = editing.item || {};
+    const lists = [...new Set(cfg.fields.filter(f => f.list).map(f => f.list))];
+    const input = f => {
+      const v = it[f.name] ?? (f.type === 'check' ? 1 : '');
+      if (f.type === 'select') return `<select name="${f.name}">${c[f.options].map(o => `<option ${o === (it[f.name] || c[f.options][0]) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+      if (f.type === 'check') return `<input type="checkbox" name="${f.name}" ${v ? 'checked' : ''}>`;
+      return `<input type="${f.type === 'date' ? 'date' : 'text'}" name="${f.name}" value="${esc(v)}" ${f.list ? `list="dl_${f.list}"` : ''} ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} autocomplete="off" style="width:100%">`;
+    };
+    document.getElementById('clinform').innerHTML = `<form class="card cfg fg2" id="cf"><h2>${editing.item ? 'Editar' : cfg.add}</h2>
+      ${lists.map(l => `<datalist id="dl_${l}">${(S.sug[l] || []).map(x => `<option value="${esc(x)}">`).join('')}</datalist>`).join('')}
+      ${cfg.fields.map(f => `<label>${esc(f.label)}${input(f)}</label>`).join('')}
+      <p class="err" id="cfe"></p><div class="bar"><button type="button" class="mini" id="cfc">Cancelar</button><button class="btn">Guardar</button></div></form>`;
+    document.getElementById('cf').elements[0].focus();
+    document.getElementById('cfc').onclick = () => { S.clinEdit = null; reload(); };
+    document.getElementById('cf').onsubmit = async ev => {
+      ev.preventDefault();
+      const body = {};
+      cfg.fields.forEach(f => { const el = ev.target.elements[f.name]; body[f.name] = f.type === 'check' ? el.checked : el.value; });
+      try {
+        await api(editing.item ? `/api/people/${S.subject}/clinical/${editing.kind}/${editing.item.id}` : `/api/people/${S.subject}/clinical/${editing.kind}`,
+          { method: editing.item ? 'PUT' : 'POST', body });
+        S.clinEdit = null; toast('Guardado en el expediente.'); reload();
+      } catch (e) { document.getElementById('cfe').textContent = e.message; }
+    };
+  }
 }
 
 /* ---------- Imagen: informes de radiografía, ultrasonido, resonancia... ---------- */
