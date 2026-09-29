@@ -281,7 +281,7 @@ def test_integral_review_runs_in_background_is_saved_and_can_fail_cleanly(tmp_pa
         "https://medlineplus.gov"
     )
     kw = spy.calls[0]["kw"]  # la revisión usa el máximo esfuerzo y más búsquedas
-    assert kw["effort"] == "high" and kw["max_tokens"] == 16000 and kw["web_search"]["max_uses"] == 8
+    assert kw["effort"] == "high" and kw["max_tokens"] == 20000 and kw["web_search"]["max_uses"] == 8
     assert [x["id"] for x in c.get(f"/api/people/{me}/reviews").json()] == [rid]
     assert (
         c.delete(f"/api/reviews/{rid}", headers=H).status_code == 200
@@ -371,3 +371,65 @@ def test_web_search_tool_collects_cited_pages_continues_pause_turn_and_falls_bac
         "s", [{"role": "user", "content": "hola"}], [], lambda *_: {}, web_search={"allowed_domains": []}
     )
     assert res.text == "Sin web." and "búsqueda web" in res.web_note and len(seq) == 2
+
+
+def test_assistant_sees_the_tables_read_from_scanned_reports(tmp_path):
+    import sqlite3
+    from datetime import date
+
+    c = make_client(tmp_path, FakeChat())
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    db = sqlite3.connect(tmp_path / "house.db")
+    db.row_factory = sqlite3.Row
+    db.execute(
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256, review_state) "
+        "VALUES(?, 'imagen', 'Pruebas', '2026-04-18', 'x', 'h', 'revisada')", (me,))  # fmt: skip
+    doc = db.execute("SELECT id FROM document").fetchone()["id"]
+    tables = {
+        "tables": [{"caption": "Batería", "columns": ["Extracto", "Grado"], "rows": [["Ácaros", "4+"]]}],
+        "notes": "Grado según salino",
+    }
+    db.execute(
+        "INSERT INTO imaging_study(person_id, document_id, modality, performed_on, study_name, conclusion, tables_json) "
+        "VALUES(?, ?, 'Estudio', '2026-04-18', 'Pruebas cutáneas', '', ?)", (me, doc, json.dumps(tables)))  # fmt: skip
+    study = db.execute("SELECT id FROM imaging_study").fetchone()["id"]
+    db.commit()
+    box = assistant.Toolbox(
+        db, db.execute("SELECT * FROM person WHERE id = ?", (me,)).fetchone(), [], date(2026, 9, 29)
+    )
+    assert box.get_imaging_report(study)["tables"][0]["rows"] == [["Ácaros", "4+"]]
+    assert box.get_full_history()["studies"][0]["tables"][0]["columns"] == ["Extracto", "Grado"]
+    assert box.get_full_history()["studies"][0]["table_notes"] == "Grado según salino"
+
+
+def test_a_reply_cut_by_length_is_returned_with_a_note_but_pure_reasoning_is_an_error():
+    import pytest
+
+    from house.providers import ProviderError
+    from house.providers.anthropic_provider import AnthropicProvider
+
+    def reply(text):
+        return NS(
+            stop_reason="max_tokens",
+            usage=NS(input_tokens=1, output_tokens=1),
+            content=[NS(type="text", text=text, citations=None)],
+        )
+
+    def client(text):
+        class C:
+            class messages:  # noqa: N801
+                @staticmethod
+                def create(**_):
+                    return reply(text)
+
+        return C()
+
+    cut = AnthropicProvider("claude", "m", client=client("Análisis largo. " * 30)).chat_with_tools(
+        "s", [{"role": "user", "content": "hola"}], [], lambda *_: {}
+    )
+    assert cut.text.startswith("Análisis largo.") and "se cortó" in cut.text
+    with pytest.raises(ProviderError, match="truncada"):
+        AnthropicProvider("claude", "m", client=client("")).chat_with_tools(
+            "s", [{"role": "user", "content": "hola"}], [], lambda *_: {}
+        )

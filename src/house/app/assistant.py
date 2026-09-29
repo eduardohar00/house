@@ -8,6 +8,7 @@ No diagnostica ni recomienda tratamientos (ver docs/PRODUCT.md, «Fuera de alcan
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from datetime import date
@@ -343,7 +344,8 @@ class Toolbox:
         for d in docs:
             if d["doc_type"] == "imagen":
                 for i in self.db.execute(
-                    "SELECT id, study_name, modality, performed_on, conclusion, flag FROM imaging_study "
+                    "SELECT id, study_name, modality, performed_on, conclusion, flag, tables_json "
+                    "FROM imaging_study "
                     "WHERE document_id = ? ORDER BY id",
                     (d["id"],),
                 ):
@@ -357,19 +359,33 @@ class Toolbox:
                             "title": i["study_name"],
                             "date": i["performed_on"],
                             "conclusion": self._text(i["conclusion"]),
+                            **self._tables(i["tables_json"]),
                         }
                     )
             else:
+                kind = {"laboratorio": "laboratorio", "receta": "receta"}.get(d["doc_type"], "documento")
                 studies.append(
                     {
-                        "src": self._src("laboratorio", d["id"], d["title"], d["collected_on"]),
-                        "type": "laboratorio",
+                        "src": self._src(kind, d["id"], d["title"], d["collected_on"]),
+                        "type": kind if kind != "documento" else d["doc_type"],
                         "title": d["title"],
                         "date": d["collected_on"],
-                        "results": d["results"],
+                        **({"results": d["results"]} if kind == "laboratorio" else {}),
                     }
                 )
         return {"studies": studies}
+
+    @staticmethod
+    def _tables(raw: str | None) -> dict:
+        """Tablas transcritas de un informe escaneado (p. ej. pruebas cutáneas), en forma compacta."""
+        if not raw:
+            return {}
+        data = json.loads(raw)
+        tables = [
+            {"caption": t.get("caption"), "columns": t["columns"], "rows": t["rows"]}
+            for t in data.get("tables", [])
+        ]
+        return {"tables": tables, "table_notes": data.get("notes")}
 
     def get_imaging_report(self, study_id: int) -> dict:
         r = self.db.execute(
@@ -392,6 +408,7 @@ class Toolbox:
                 for k in ("technique", "indication", "findings", "prior", "conclusion", "suggestions")
             },
             "marked_by_house": r["flag"],
+            **self._tables(r["tables_json"]),
         }
 
     def _linked(self, problem: dict) -> list[dict]:
@@ -632,14 +649,14 @@ def ask(
     system = f"{SYSTEM}\nPersona: {box.person_context()}.\nFecha de hoy: {today.isoformat()}."
     limits = (
         {
-            "max_tokens": 16000,
+            "max_tokens": 20000,
             "max_rounds": 16,
             "effort": "high",
             "web_search": {"allowed_domains": WEB_DOMAINS, "max_uses": 8},
         }
         if deep
         else {
-            "max_tokens": 6000,
+            "max_tokens": 12000,
             "max_rounds": 10,
             "web_search": {"allowed_domains": WEB_DOMAINS, "max_uses": 3},
         }

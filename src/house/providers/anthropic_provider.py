@@ -192,7 +192,9 @@ class AnthropicProvider:
                 continue
             text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
             if stop == "max_tokens":
-                raise ProviderError(f"{self.name}: respuesta truncada (max_tokens)")
+                if len(text) < 200:  # se fue casi todo en razonar: no hay respuesta que mostrar
+                    raise ProviderError(f"{self.name}: respuesta truncada (max_tokens)")
+                text += "\n\n(La respuesta se cortó por su longitud. Pídeme que continúe donde se quedó.)"
             return ChatResult(
                 text=text,
                 provider=self.name,
