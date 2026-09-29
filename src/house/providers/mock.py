@@ -162,6 +162,8 @@ class BaselineRegexProvider:
             m = _LINE.match(line) if ", " not in line else None  # ", ": texto explicativo
             if m and re.search(r"[<>=]", m.group("name")):
                 m = None  # "Leucocitos Negativo Negativo ó < 10 leu/uL": el 10 es la referencia
+            if m and m.group("name").rstrip().endswith(":"):
+                m = None  # "Normal: 4.0% a 5.7%": leyenda de interpretación, no un resultado
             if m:
                 row = {
                     "analyte_name": m.group("name").strip(),

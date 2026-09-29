@@ -313,3 +313,15 @@ Urato Amorfo Presentes Ausentes"""
         "vitamin_d": (35.0, "ok"),
         "urine_urate_crystals": ("Presentes", "abnormal"),
     }
+
+
+def test_hba1c_name_and_interpretation_legend():
+    from house.bench.new_case import prefill_expected
+
+    doc = """HEMOGLOBINA GLICOSILADA A1c
+Hemoglobina glicosilada A1c 5.0 4.0 - 5.7 %
+Normal: 4.0% a 5.7%
+Prediabetes: 5.7% a 6.4%"""
+    exp, unrecognized = prefill_expected(doc)
+    assert [(r["key"], r["value"]) for r in exp["results"]] == [("hba1c", 5.0)]
+    assert unrecognized == []

@@ -599,6 +599,7 @@ _MORE_ALIASES = {
     "rdw": ("ancho de distrib de eritrocitos cv",),
     "urine_sg": ("densidad",),
     "egfr": ("tasa de filtracion glomerular", "tasa de filtracion estimada"),
+    "hba1c": ("hemoglobina glicosilada a1c", "hemoglobina glucosilada a1c"),
     "vitamin_d": ("vitamina d 25 hidroxi", "25 hidroxi vitamina d", "vitamina d 25 hidroxi total"),
     "tibc": ("capacidad total de fijacion del hierro",),
     "uibc": ("capacidad no saturada de fijacion de hierro", "capacidad no saturada de fijacion de"),
