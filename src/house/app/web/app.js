@@ -195,89 +195,132 @@ async function renderSummary() {
   obs.forEach(o => (series[o.analyte_key] ||= []).push(o));
   Object.values(series).forEach(v => v.sort((a, b) => a.collected_on.localeCompare(b.collected_on)));
   const last = k => series[k][series[k].length - 1];
-  const numeric = Object.keys(series).filter(k => last(k).value_num != null);
   const recent = new Set(sm.recent_keys);
   const stOf = k => sm.last_status[k]?.status ?? last(k).status;
   const yr = o => o.collected_on.slice(0, 4);
-  const valTxt = o => o.value_num != null ? `${fnum(o.value_num)} ${esc(o.unit)}` : esc(o.value_text);
-  const shown = sm.attention.slice(0, 6), hidden = sm.attention.length - shown.length;
-  if (!S.sel || !series[S.sel] || last(S.sel).value_num == null) {
-    S.sel = [...shown.map(a => a.key), ...numeric.filter(k => recent.has(k))].find(k => numeric.includes(k)) || numeric[0];
-  }
+  const isNum = k => last(k).value_num != null;
+  const valTxt = o => o.value_num != null ? `${fnum(o.value_num)} ${esc(o.unit)}` : esc(qlabel(o));
+  S.sel = null;
 
-  const ic = {
-    at: '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1l5.5 10h-11z"/></svg>',
-    vi: '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="4"/></svg>',
-    me: '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>',
-  };
-  const row = (cls, label, k, sub) => `<button class="fr" data-k="${esc(k)}"><span class="tag ${cls}">${ic[cls]}${label}</span><span class="fm">${esc(name(k))} · ${valTxt(last(k))}</span><span class="fs">${sub}</span></button>`;
-  const attRow = a => {
-    const l = last(a.key), p = a.previous;
-    const how = l.value_num != null && l.status !== 'ok' && distOut(l) > 0
-      ? `${Math.round(distOut(l) * 100)} % ${l.status === 'high' ? 'por encima' : 'por debajo'} del rango (${esc(refText(l))}).`
-      : `Referencia: ${esc(refText(l))}.`;
-    const kind = { persistente: `Persistente: fuera de rango en ${a.streak} estudios seguidos.`, continua: 'Continúa: también estaba fuera de rango en el estudio anterior.',
-      nuevo: 'Nuevo: en el estudio anterior estaba en rango.', unico: '' }[a.kind];
-    const trend = a.trend && p && p.value_num != null && l.value_num != null
-      ? ` ${{ mejorando: 'Mejorando', empeorando: 'Empeorando', estable: 'Estable' }[a.trend]}: ${fnum(p.value_num)} en ${yr(p)} a ${fnum(l.value_num)} en ${yr(l)}.` : '';
-    const borrowed = l.ref_from ? ` Este estudio no trae rango; se compara con el del estudio del ${fd(l.ref_from)}.` : '';
-    return row('at', 'Atención', a.key, `${fd(l.collected_on)}. ${how} ${kind}${trend}${borrowed}`);
-  };
-  const rows = [
-    ...shown.map(attRow),
-    ...(hidden > 0 ? [`<div class="fq">Y ${hidden} más fuera de rango, de menor relevancia (incluye valores calculados); se ven por sistema abajo.</div>`] : []),
-    ...sm.watch.slice(0, 3).map(w => row('vi', 'Vigilar', w.key, `Dentro de rango, pero ${w.toward === 'el tope' ? 'sube' : 'baja'} de forma sostenida hacia ${w.toward} (${esc(refText(w.last))}): ${valTxt(w.first)} en ${yr(w.first)} a ${valTxt(w.last)} en ${yr(w.last)}.`)),
-    ...(sm.watch.length > 3 ? [`<div class="fq">Y ${sm.watch.length - 3} tendencias más hacia un límite; se ven en la gráfica de cada análisis.</div>`] : []),
-    ...sm.improved.map(i => row('me', 'Mejoró', i.key, `Volvió al rango (${esc(refText(i.last))}). Antes: ${valTxt(i.previous)} en ${yr(i.previous)}.`)),
-  ];
-  const parts = [];
-  if (sm.attention.length) {
-    const per = sm.attention.filter(a => a.kind === 'persistente').length;
-    parts.push(`${sm.attention.length} ${sm.attention.length === 1 ? 'resultado fuera de rango ahora' : 'resultados fuera de rango ahora'}${per ? ` (${per} persistente${per > 1 ? 's' : ''})` : ''}`);
-  }
-  if (sm.watch.length) parts.push(`${sm.watch.length} a vigilar`);
-  if (sm.improved.length) parts.push(`${sm.improved.length} ${sm.improved.length > 1 ? 'mejoraron' : 'mejoró'}`);
-  const stale = sm.counts.stale;
-  const oldNote = sm.study_is_old ? `<div class="mixed">Tu estudio más reciente es de ${fd(sm.reference_date)}, hace ${Math.round(sm.study_age_days / 365 * 10) / 10} años. Estos resultados pueden no reflejar tu estado actual.</div>` : '';
-  const hist = sm.history.length ? `<details class="hist"><summary>Historial: ${sm.history.length} ${sm.history.length === 1 ? 'análisis estuvo' : 'análisis estuvieron'} fuera de rango antes y hoy no es motivo de alerta</summary>
-    <div class="fl">${sm.history.map(h => `<button class="fr" data-k="${esc(h.key)}"><span class="tag na">${h.stale ? 'Sin medición reciente' : 'Ya en rango'}</span><span class="fm">${esc(name(h.key))} · último: ${valTxt(h.last)} (${fd(h.last.collected_on)})</span><span class="fs">Fuera de rango en ${h.times_out} de ${h.results} ${h.results === 1 ? 'estudio' : 'estudios'}.${h.stale ? ' No se ha vuelto a medir en el último año.' : ''}</span></button>`).join('')}</div></details>` : '';
-
-  const groups = GROUPS.map(([g, gname]) => {
-    const keys = Object.keys(series).filter(k => (S.catalog[k]?.group || 'otros') === g);
-    if (!keys.length) return '';
-    const nums = keys.filter(k => numeric.includes(k)), texts = keys.filter(k => !numeric.includes(k));
-    const withRef = keys.filter(k => recent.has(k) && stOf(k)), ok = withRef.filter(k => stOf(k) === 'ok').length;
-    const cards = nums.map(k => {
-      const s = series[k], l = last(k), vals = s.map(o => o.value_num).filter(v => v != null), old = !recent.has(k);
-      const f = s[0], delta = s.length < 2 ? `${fd(l.collected_on)}` :
-        (l.value_num === f.value_num ? 'sin cambio' : (l.value_num < f.value_num ? '▼ ' : '▲ ') + Math.round(Math.abs((l.value_num - f.value_num) / (f.value_num || 1)) * 100) + ' % desde ' + f.collected_on.slice(0, 4));
-      return `<button class="bm ${old ? 'old' : ''}" data-k="${esc(k)}" aria-pressed="${k === S.sel}">
-        <span class="nm">${esc(name(k))}</span><div>${old ? `<span class="pill na">Último: ${yr(l)}</span>` : pill(stOf(k))}</div>
-        <div class="row"><div><div class="val">${fnum(l.value_num)}<small>${esc(l.unit)}</small></div><div class="delta">${delta}</div></div>${vals.length > 1 ? spark(vals) : ''}</div></button>`;
-    }).join('');
-    const quals = texts.map(k => {
-      const l = last(k), old = !recent.has(k);
-      return `<button class="qp ${!old && OUT(stOf(k)) ? 'out' : ''} ${old ? 'old' : ''}" data-k="${esc(k)}" aria-pressed="${k === S.sel}" title="Ver cómo ha cambiado">${esc(name(k))}: <b>${esc(qlabel(l))}</b>${old ? ` (${yr(l)})` : ''}<span class="qds">${series[k].slice(-6).map(o => `<i class="qd ${OUT(o.status) ? 'o' : o.status === 'ok' ? 'k' : ''}" title="${esc(fd(o.collected_on) + ': ' + qlabel(o))}"></i>`).join('')}</span></button>`;
-    }).join('');
-    return `<section class="grp"><div class="gh"><h3>${gname}</h3>${withRef.length ? `<span class="gc ${ok === withRef.length ? 'ok' : 'out'}">${ok} de ${withRef.length} en rango</span>` : ''}</div>
-      ${cards ? `<div class="cards">${cards}</div>` : ''}${quals ? `<div class="qual">${quals}</div>` : ''}</section>`;
-  }).join('');
-
+  // ---- cifras del encabezado
+  const nOut = sm.attention.length, nRecent = sm.counts.recent;
+  const nOk = [...recent].filter(k => stOf(k) === 'ok').length, nNoRef = Math.max(0, nRecent - nOk - nOut);
+  const nPersist = sm.attention.filter(a => a.kind === 'persistente').length;
   const nDocs = new Set(obs.map(o => o.document_id)).size;
-  view().innerHTML = `
-    <section class="card insight"><h2>Resumen</h2>
-      <p class="lead">${parts.length ? parts.join(' · ') : 'Nada fuera de rango en tus análisis recientes'}. Al ${fd(sm.reference_date)}, con ${nDocs} ${nDocs === 1 ? 'estudio' : 'estudios'} en total.</p>
-      <p class="tip">Solo cuenta lo medido en el último año de tu expediente${stale ? `; ${stale} ${stale === 1 ? 'análisis no se ha' : 'análisis no se han'} vuelto a medir desde entonces y ${stale === 1 ? 'aparece' : 'aparecen'} como «Último: año»` : ''}.</p>
-      ${oldNote}
-      <div class="fl">${rows.join('')}</div>${hist}
-      <p class="tip">Para comentar con tu médico. Es informativo y no sustituye una valoración médica.</p></section>
-    <section class="card detail" id="detail"></section>
-    <div class="grid">${groups}</div>`;
-  view().querySelectorAll('[data-k]').forEach(el => el.onclick = () => {
-    if (series[el.dataset.k]) { S.sel = el.dataset.k; renderSummaryDetail(series); markSel(); document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  const pct = n => nRecent ? Math.round(100 * n / nRecent) : 0;
+
+  const hero = `<section class="card hero">
+    <div class="hero-main">
+      <p class="eyebrow">Al ${fd(sm.reference_date)} · ${nDocs} ${nDocs === 1 ? 'estudio' : 'estudios'}</p>
+      <h2 class="hero-title ${nOut ? '' : 'good'}">${nOut ? `${nOut} ${nOut === 1 ? 'resultado fuera de rango' : 'resultados fuera de rango'}` : 'Todo en orden'}</h2>
+      <p class="hero-sub">${nOut ? `de ${nRecent} análisis medidos en el último año${nPersist ? ` · ${nPersist} se ${nPersist === 1 ? 'repite' : 'repiten'} en varios estudios seguidos` : ''}` : `Nada fuera de rango en los ${nRecent} análisis del último año`}</p>
+      <div class="segbar" role="img" aria-label="${nOk} en rango, ${nOut} fuera de rango, ${nNoRef} sin referencia">
+        <i class="ok" style="flex:${nOk}"></i><i class="out" style="flex:${nOut}"></i><i class="na" style="flex:${nNoRef}"></i></div>
+      <p class="seglegend"><span><i class="dot ok"></i>${nOk} en rango (${pct(nOk)} %)</span><span><i class="dot out"></i>${nOut} fuera de rango</span>${nNoRef ? `<span><i class="dot na"></i>${nNoRef} sin referencia</span>` : ''}</p>
+    </div>
+    <div class="hero-stats">
+      <button class="stat" data-more="watch" ${sm.watch.length ? '' : 'disabled'}><b>${sm.watch.length}</b><span>a vigilar</span></button>
+      <button class="stat" data-more="improved" ${sm.improved.length ? '' : 'disabled'}><b>${sm.improved.length}</b><span>${sm.improved.length === 1 ? 'mejoró' : 'mejoraron'}</span></button>
+      <button class="stat" data-more="history" ${sm.history.length ? '' : 'disabled'}><b>${sm.history.length}</b><span>en el historial</span></button>
+    </div></section>
+    ${sm.study_is_old ? `<div class="mixed">Tu estudio más reciente es de ${fd(sm.reference_date)}, hace ${Math.round(sm.study_age_days / 365 * 10) / 10} años. Estos resultados pueden no reflejar tu estado actual.</div>` : ''}`;
+
+  // ---- lo más importante: 4 tarjetas
+  const measured = sm.attention.filter(a => !a.derived), derived = sm.attention.filter(a => a.derived);
+  const ranked = [...measured, ...derived], top = ranked.slice(0, 4), rest = ranked.slice(4);
+  const KIND = { persistente: 'Persistente', continua: 'Continúa', nuevo: 'Nuevo', unico: '' };
+  const change = a => {
+    const p = a.previous, l = a.last;
+    if (!p || p.value_num == null || l.value_num == null || !a.trend || a.trend === 'estable') return '';
+    return `<span class="chg ${a.trend === 'mejorando' ? 'good' : 'bad'}">${l.value_num < p.value_num ? '↘' : '↗'} ${a.trend} · antes ${fnum(p.value_num)} (${fd(p.collected_on).replace(/ \d{4}$/, '')})</span>`;
+  };
+  const priCard = a => {
+    const l = a.last, vals = series[a.key].map(o => o.value_num).filter(v => v != null);
+    const how = l.value_num != null && distOut(l) > 0 ? `${Math.round(distOut(l) * 100)} % ${l.status === 'high' ? 'sobre' : 'bajo'} el rango` : 'Fuera de lo esperado';
+    return `<button class="pri" data-k="${esc(a.key)}"><span class="pri-top"><span class="pri-name">${esc(name(a.key))}</span>${KIND[a.kind] ? `<span class="tag at">${KIND[a.kind]}</span>` : ''}</span>
+      <span class="pri-row"><span class="pri-val">${l.value_num != null ? fnum(l.value_num) : esc(qlabel(l))}${l.value_num != null ? `<small>${esc(l.unit)}</small>` : ''}</span>${vals.length > 1 && l.value_num != null ? spark(vals) : ''}</span>
+      <span class="pri-meta">${how} · rango ${esc(refText(l))}${l.ref_from ? ` (del estudio de ${yr({ collected_on: l.ref_from })})` : ''}</span>${change(a)}</button>`;
+  };
+  const line = (cls, label, k, sub) => `<button class="fr" data-k="${esc(k)}"><span class="tag ${cls}">${label}</span><span class="fm">${esc(name(k))} · ${valTxt(last(k))}</span><span class="fs">${sub}</span></button>`;
+  const importantes = nOut ? `<section class="sec"><div class="sec-h"><h3>Lo más importante</h3><span class="tip">Ordenado por qué tan lejos está del rango y cuánto se repite</span></div>
+    <div class="pri-grid">${top.map(priCard).join('')}</div>
+    ${rest.length ? `<button class="link" id="moreAtt">Ver los ${rest.length} restantes</button><div class="fl" id="restAtt" hidden>${rest.map(a => line('at', a.derived ? 'Calculado' : 'Atención', a.key, `${fd(last(a.key).collected_on)} · rango ${esc(refText(last(a.key)))}`)).join('')}</div>` : ''}</section>` : '';
+
+  // ---- por sistema
+  const sysList = GROUPS.map(([g, gname]) => {
+    const keys = Object.keys(series).filter(k => (S.catalog[k]?.group || 'otros') === g);
+    if (!keys.length) return null;
+    const rec = keys.filter(k => recent.has(k)), out = rec.filter(k => OUT(stOf(k))), ok = rec.filter(k => stOf(k) === 'ok');
+    return { g, gname, keys, rec, out, ok };
+  }).filter(Boolean).sort((a, b) => (b.out.length > 0) - (a.out.length > 0) || b.out.length - a.out.length);
+  const marker = k => {
+    const s = series[k], l = last(k), old = !recent.has(k);
+    if (!isNum(k)) return `<button class="qp ${!old && OUT(stOf(k)) ? 'out' : ''} ${old ? 'old' : ''}" data-k="${esc(k)}" title="Ver cómo ha cambiado">${esc(name(k))}: <b>${esc(qlabel(l))}</b>${old ? ` (${yr(l)})` : ''}<span class="qds">${s.slice(-6).map(o => `<i class="qd ${OUT(o.status) ? 'o' : o.status === 'ok' ? 'k' : ''}"></i>`).join('')}</span></button>`;
+    const vals = s.map(o => o.value_num).filter(v => v != null);
+    return `<button class="bm ${old ? 'old' : ''}" data-k="${esc(k)}"><span class="nm">${esc(name(k))}</span><div>${old ? `<span class="pill na">Último: ${yr(l)}</span>` : pill(stOf(k))}</div>
+      <div class="row"><div><div class="val">${fnum(l.value_num)}<small>${esc(l.unit)}</small></div></div>${vals.length > 1 ? spark(vals) : ''}</div></button>`;
+  };
+  const splitMarkers = ks => `<div class="cards">${ks.filter(isNum).map(marker).join('')}</div><div class="qual">${ks.filter(k => !isNum(k)).map(marker).join('')}</div>`;
+  const sysRow = sy => {
+    const flagged = sy.keys.filter(k => recent.has(k) && OUT(stOf(k))), calm = sy.keys.filter(k => !flagged.includes(k));
+    const names = sy.out.filter(k => !(sm.attention.find(a => a.key === k)?.derived)).slice(0, 3).map(name);
+    const status = sy.out.length ? `<span class="sys-n out">${sy.out.length} fuera de rango</span>` : sy.rec.length ? '<span class="sys-n ok">todo en rango</span>' : '<span class="sys-n na">sin medición reciente</span>';
+    return `<div class="sys" data-g="${sy.g}"><button class="sys-head" aria-expanded="false">
+        <span class="sys-name">${sy.gname}<small>${names.length ? esc(names.join(', ')) : `${sy.rec.length} ${sy.rec.length === 1 ? 'análisis' : 'análisis'}`}</small></span>
+        <span class="sys-bar"><i class="ok" style="flex:${sy.ok.length}"></i><i class="out" style="flex:${sy.out.length}"></i></span>${status}<span class="chev" aria-hidden="true">▾</span></button>
+      <div class="sys-body" hidden>${flagged.length ? splitMarkers(flagged) : ''}
+        ${calm.length ? `<details class="hist"><summary>${flagged.length ? `Y ${calm.length} más ${calm.length === 1 ? 'que está' : 'que están'} en rango o sin medición reciente` : `Ver los ${calm.length} análisis`}</summary>${splitMarkers(calm)}</details>` : ''}</div></div>`;
+  };
+  const alerts = sysList.filter(sy => sy.out.length), quiet = sysList.filter(sy => !sy.out.length);
+  const sysHtml = alerts.map(sysRow).join('') + (quiet.length ? `<details class="sys quiet"><summary class="sys-head"><span class="sys-name">${quiet.length} ${quiet.length === 1 ? 'sistema' : 'sistemas'} sin alertas<small>${esc(quiet.map(q => q.gname).join(', '))}</small></span><span class="sys-n ok">todo en rango</span><span class="chev" aria-hidden="true">▾</span></summary>${quiet.map(sysRow).join('')}</details>` : '');
+
+  const morePanel = `<section class="sec" id="morepanel" hidden></section>`;
+  view().innerHTML = `${hero}${importantes}
+    <section class="sec"><div class="sec-h"><h3>Por sistema</h3><span class="tip">Toca un sistema para ver sus análisis</span></div><div class="card syslist">${sysHtml}</div></section>
+    ${morePanel}
+    <p class="tip fine">Informativo; no sustituye una valoración médica. Los criterios de «atención» y «vigilar» son provisionales y están pendientes de revisión por un médico.</p>
+    <div class="scrim" id="scrim" hidden></div><aside class="drawer" id="detail" hidden aria-label="Detalle del análisis"></aside>`;
+
+  // ---- interacción
+  view().querySelectorAll('button.sys-head').forEach(h => h.onclick = () => {
+    const open = h.getAttribute('aria-expanded') === 'true';
+    h.setAttribute('aria-expanded', String(!open)); h.nextElementSibling.hidden = open;
   });
-  renderSummaryDetail(series);
+  const moreAtt = document.getElementById('moreAtt');
+  if (moreAtt) moreAtt.onclick = () => { const r = document.getElementById('restAtt'); r.hidden = !r.hidden; moreAtt.textContent = r.hidden ? `Ver los ${rest.length} restantes` : 'Ocultar'; };
+  const panels = {
+    watch: () => ({ title: 'A vigilar', note: 'Dentro de rango, pero avanzando de forma sostenida hacia un límite.', rows: sm.watch.map(w => line('vi', 'Vigilar', w.key, `Sube o baja hacia ${w.toward}: ${valTxt(w.first)} en ${yr(w.first)} a ${valTxt(w.last)} en ${yr(w.last)}`)) }),
+    improved: () => ({ title: sm.improved.length === 1 ? 'Mejoró' : 'Mejoraron', note: 'Estaban fuera de rango y volvieron al rango.', rows: sm.improved.map(i => line('me', 'Mejoró', i.key, `Antes ${valTxt(i.previous)} en ${yr(i.previous)}`)) }),
+    history: () => ({ title: 'Historial', note: 'Estuvieron fuera de rango más de una vez, o ya no se miden, y hoy no son motivo de alerta.', rows: sm.history.map(h => line('na', h.stale ? 'Sin medición reciente' : 'Ya en rango', h.key, `Último ${valTxt(h.last)} (${fd(h.last.collected_on)}) · fuera de rango en ${h.times_out} de ${h.results}`)) }),
+  };
+  view().querySelectorAll('[data-more]').forEach(b => b.onclick = () => {
+    const panel = document.getElementById('morepanel'), same = S.sumMore === b.dataset.more;
+    S.sumMore = same ? null : b.dataset.more;
+    view().querySelectorAll('[data-more]').forEach(x => x.classList.toggle('on', x.dataset.more === S.sumMore));
+    if (!S.sumMore) { panel.hidden = true; return; }
+    const d = panels[S.sumMore]();
+    panel.innerHTML = `<div class="sec-h"><h3>${d.title}</h3><span class="tip">${d.note}</span></div><div class="fl card" style="padding:6px 16px">${d.rows.join('')}</div>`;
+    panel.hidden = false; bindOpen(panel); panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  const bindOpen = root => root.querySelectorAll('[data-k]').forEach(el => el.onclick = () => openDetail(el.dataset.k, series));
+  bindOpen(view());
+  S.sumMore = null;
 }
+
+function openDetail(k, series) {
+  S.sel = k;
+  renderSummaryDetail(series);
+  document.getElementById('scrim').hidden = false;
+  document.body.classList.add('noscroll');
+  document.getElementById('scrim').onclick = closeDetail;
+}
+function closeDetail() {
+  S.sel = null;
+  const d = document.getElementById('detail'), sc = document.getElementById('scrim');
+  if (d) d.hidden = true; if (sc) sc.hidden = true;
+  document.body.classList.remove('noscroll');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sel) closeDetail(); });
 
 function distOut(o) {
   if (o.value_num == null) return 0;
@@ -286,7 +329,7 @@ function distOut(o) {
   return 0;
 }
 
-function markSel() { view().querySelectorAll('.bm, .qp').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === S.sel)); }
+function markSel() {}
 
 function normMethod(m) { return (m || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 
@@ -305,7 +348,7 @@ function renderSummaryDetail(series) {
   const methods = [...new Map(pts.filter(o => o.method).map(o => [normMethod(o.method), o.method])).values()];
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>${esc(l.unit)} · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
-      <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div></div>
+      <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}). Compara la tendencia con cautela.</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
@@ -313,6 +356,7 @@ function renderSummaryDetail(series) {
     </tbody></table></div>
     <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${refPt ? `<span><i class="lg-band"></i>Rango de referencia${refPt === l ? ' del último estudio' : ` (del estudio del ${fd(refPt.collected_on)}; el último no lo trae)`}: ${esc(bandText(refPt))}</span>` : ''}</div>`;
   box.hidden = false;
+  document.getElementById('dclose').onclick = closeDetail;
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
   document.getElementById('tt').onclick = () => { S.view = 't'; renderSummaryDetail(series); };
   if (S.view === 'g') drawChart(pts, refPt);
@@ -329,7 +373,7 @@ function renderQualDetail(series) {
     : `Ha cambiado: ${kinds.size} resultados distintos en ${pts.length} estudios. Último: «${qlabel(l)}»${OUT(l.status) ? ' (fuera de lo esperado)' : ''}.${outs.length ? ` Fuera de lo esperado en ${outs.length} de ${pts.length}.` : ''}`;
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>Resultado de texto · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
-      <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div></div>
+      <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
     <p class="lead" style="font-size:16px;margin:0">${esc(summary)}</p>
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}).</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
@@ -338,6 +382,7 @@ function renderQualDetail(series) {
     </tbody></table></div>
     <div class="legend"><span><i class="lg-line"></i>Tus resultados</span><span><i class="lg-band"></i>Lo esperado según el informe${l.ref_printed ? ': ' + esc(l.ref_printed) : ''}</span></div>`;
   box.hidden = false;
+  document.getElementById('dclose').onclick = closeDetail;
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
   document.getElementById('tt').onclick = () => { S.view = 't'; renderSummaryDetail(series); };
   if (S.view === 'g') drawQualChart(pts);
