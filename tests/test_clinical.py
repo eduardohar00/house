@@ -334,3 +334,63 @@ def test_problems_can_be_linked_to_studies_reports_and_analytes(world):
         f"/api/people/{me}/clinical/problem/{problem}", headers=H
     )  # borrar el padecimiento limpia sus relaciones
     assert c.get(f"/api/people/{me}/imaging").json()[0]["problems"] == []
+
+
+def test_problems_link_to_treatments_and_surgeries_and_old_tables_are_upgraded(world):
+    c, me, _ = world
+    problem = add(c, me, "problem", name="Prediabetes", status="Seguimiento").json()["id"]
+    med = add(
+        c, me, "medication", name="Metformina", dose="850 mg al día", reason="Prediabetes", since_year="2024"
+    ).json()["id"]
+    old = add(c, me, "medication", name="Otra", active=False, until_year="2020").json()["id"]
+    surgery = add(c, me, "procedure", name="Bypass gástrico", year="2019").json()["id"]
+    cand = c.get(f"/api/people/{me}/link-candidates").json()
+    assert [(m["title"], m["reason"]) for m in cand["medications"]][0] == (
+        "Metformina · 850 mg al día",
+        "Prediabetes",
+    )
+    assert [p["title"] for p in cand["procedures"]] == ["Bypass gástrico"]
+
+    url = f"/api/people/{me}/clinical/problem/{problem}/links"
+    for kind, ref in (("medication", med), ("medication", old), ("procedure", surgery)):
+        assert c.post(url, json={"kind": kind, "ref": str(ref)}, headers=H).status_code == 200
+    (p,) = c.get(f"/api/people/{me}/clinical").json()["problems"]
+    by = {ln["title"]: ln for ln in p["links"]}
+    assert (
+        by["Metformina"]["value"] == "850 mg al día"
+        and by["Metformina"]["extra"] == "desde 2024"
+        and by["Metformina"]["active"]
+    )
+    assert (
+        by["Otra"]["active"] is False
+        and by["Otra"]["extra"] == "hasta 2020"
+        and by["Bypass gástrico"]["extra"] == "2019"
+    )
+    meds = {m["name"]: m for m in c.get(f"/api/people/{me}/clinical").json()["medications"]}
+    assert meds["Metformina"]["problems"] == [{"id": problem, "name": "Prediabetes"}]
+    assert c.post(url, json={"kind": "medication", "ref": "9999"}, headers=H).status_code == 404
+    # quitar el medicamento limpia la relación
+    c.delete(f"/api/people/{me}/clinical/medication/{med}", headers=H).raise_for_status()
+    (p,) = c.get(f"/api/people/{me}/clinical").json()["problems"]
+    assert "Metformina" not in [ln["title"] for ln in p["links"]]
+
+    # base anterior: la tabla solo admitía tres tipos; se reconstruye sin perder lo ya ligado
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.executescript(
+        "CREATE TABLE person(id INTEGER PRIMARY KEY); CREATE TABLE problem(id INTEGER PRIMARY KEY, person_id, name, status);"
+        "CREATE TABLE problem_link(id INTEGER PRIMARY KEY, problem_id INTEGER NOT NULL REFERENCES problem(id) ON DELETE CASCADE, "
+        "kind TEXT NOT NULL CHECK (kind IN ('document', 'imaging', 'analyte')), ref TEXT NOT NULL, UNIQUE (problem_id, kind, ref));"
+        "INSERT INTO problem(id, person_id, name, status) VALUES (1, 1, 'X', 'En control');"
+        "INSERT INTO problem_link(problem_id, kind, ref) VALUES (1, 'analyte', 'glucose'), (1, 'imaging', '4');"
+    )
+    clinical.migrate(db)
+    assert [tuple(r) for r in db.execute("SELECT kind, ref FROM problem_link ORDER BY id")] == [
+        ("analyte", "glucose"),
+        ("imaging", "4"),
+    ]
+    db.execute(
+        "INSERT INTO problem_link(problem_id, kind, ref) VALUES (1, 'medication', '1')"
+    )  # ya se admite
+    clinical.migrate(db)  # idempotente
+    assert db.execute("SELECT COUNT(*) FROM problem_link").fetchone()[0] == 3

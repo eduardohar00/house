@@ -44,8 +44,8 @@ CREATE TABLE IF NOT EXISTS consultation (
 CREATE TABLE IF NOT EXISTS problem_link (
   id INTEGER PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problem(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('document', 'imaging', 'analyte')),
-  ref TEXT NOT NULL,                              -- id del documento o informe, o clave del análisis
+  kind TEXT NOT NULL CHECK (kind IN ('document', 'imaging', 'analyte', 'medication', 'procedure')),
+  ref TEXT NOT NULL,                              -- id del documento, informe, tratamiento o cirugía; o clave
   UNIQUE (problem_id, kind, ref)
 );
 CREATE TABLE IF NOT EXISTS clinical_none (
@@ -64,7 +64,24 @@ _EXTRA_COLUMNS = {
 }
 
 
+def _upgrade_problem_link(db) -> None:
+    """Bases anteriores: la tabla solo admitía laboratorios, informes y análisis; ahora también más."""
+    row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'problem_link'"
+    ).fetchone()
+    if row is None or "'medication'" in row["sql"]:
+        return
+    db.execute("ALTER TABLE problem_link RENAME TO problem_link_old")
+    db.executescript(SCHEMA)
+    db.execute(
+        "INSERT INTO problem_link(id, problem_id, kind, ref) "
+        "SELECT id, problem_id, kind, ref FROM problem_link_old"
+    )
+    db.execute("DROP TABLE problem_link_old")
+
+
 def migrate(db) -> None:
+    _upgrade_problem_link(db)
     db.executescript(SCHEMA)
     had_brand = "brand" in {r["name"] for r in db.execute("PRAGMA table_info(vaccine)")}
     for table, cols in _EXTRA_COLUMNS.items():
@@ -226,7 +243,7 @@ def set_none(db, person_id: int, section: str, confirmed: bool) -> None:
 
 # ---------- Padecimientos ligados a estudios ----------
 
-LINK_KINDS = ("document", "imaging", "analyte")
+LINK_KINDS = ("document", "imaging", "analyte", "medication", "procedure")
 
 
 def link_candidates(db, person_id: int) -> dict:
@@ -257,7 +274,32 @@ def link_candidates(db, person_id: int) -> dict:
         analytes.append({"ref": r["analyte_key"], "title": a.name if a else r["analyte_key"],
                          "date": r["last"], "results": r["n"]})  # fmt: skip
     analytes.sort(key=lambda a: _plain(a["title"]))
-    return {"documents": documents, "imaging": imaging, "analytes": analytes}
+    medications = [
+        {"ref": str(r["id"]), "title": _med_title(r), "reason": r["reason"], "active": bool(r["active"])}
+        for r in db.execute(
+            "SELECT id, name, dose, reason, active FROM medication WHERE person_id = ? "
+            "ORDER BY active DESC, name COLLATE NOCASE",
+            (person_id,),
+        )
+    ]
+    procedures = [
+        {"ref": str(r["id"]), "title": r["name"], "date": r["year"]}
+        for r in db.execute(
+            "SELECT id, name, year FROM procedure_history WHERE person_id = ? ORDER BY year DESC, name",
+            (person_id,),
+        )
+    ]
+    return {
+        "documents": documents,
+        "imaging": imaging,
+        "analytes": analytes,
+        "medications": medications,
+        "procedures": procedures,
+    }
+
+
+def _med_title(r) -> str:
+    return f"{r['name']} · {r['dose']}" if r["dose"] else r["name"]
 
 
 def _link_target(db, person_id: int, kind: str, ref: str) -> dict | None:
@@ -284,6 +326,24 @@ def _link_target(db, person_id: int, kind: str, ref: str) -> dict | None:
             if r
             else None
         )
+    if kind == "medication":
+        r = db.execute(
+            "SELECT name, dose, active, since_year, until_year FROM medication "
+            "WHERE id = ? AND person_id = ?",
+            (ref, person_id),
+        ).fetchone()
+        if r is None:
+            return None
+        years = f"desde {r['since_year']}" if r["since_year"] else ""
+        if r["until_year"]:
+            years += f" hasta {r['until_year']}"
+        return {"title": r["name"], "date": None, "value": r["dose"], "extra": years.strip() or None,
+                "active": bool(r["active"])}  # fmt: skip
+    if kind == "procedure":
+        r = db.execute(
+            "SELECT name, year FROM procedure_history WHERE id = ? AND person_id = ?", (ref, person_id)
+        ).fetchone()
+        return {"title": r["name"], "date": None, "extra": r["year"]} if r else None
     last = db.execute(
         "SELECT value_num, value_text, unit, status, collected_on FROM observation "
         "WHERE person_id = ? AND analyte_key = ? ORDER BY collected_on DESC, id DESC LIMIT 1",
@@ -435,6 +495,9 @@ def overview(db, person_id: int) -> dict:
     links = problem_links(db, person_id)
     for p in problems:
         p["links"] = links.get(p["id"], [])
+    reverse = problems_of(db, person_id)
+    for m in meds:
+        m["problems"] = reverse.get(("medication", str(m["id"])), [])
     return {
         "allergies": _rows(db, "allergy", person_id, "substance COLLATE NOCASE"),
         "problems": problems,

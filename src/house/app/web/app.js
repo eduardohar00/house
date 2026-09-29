@@ -803,7 +803,7 @@ const CLIN = {
     fields: [F('name', 'Medicamento', 'text', { list: 'medication' }), F('dose', 'Dosis (por ejemplo 50 mg al día)'), F('reason', 'Para qué'), F('prescriber', 'Médico que lo indicó (opcional)'),
       F('since_year', 'Desde (año)', 'text', { ph: '2022' }), F('until_year', 'Hasta (año, si ya lo suspendiste)', 'text', { ph: '2024' }), F('active', 'Lo tomo actualmente', 'check')],
     line: m => `<b>${esc(m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
-    sub: m => [m.reason, m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
+    sub: m => [m.reason, (m.problems || []).filter(p => p.name.toLowerCase() !== (m.reason || '').toLowerCase()).length && 'ligado a ' + m.problems.map(p => p.name).join(', '), m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
   family: { key: 'family', title: 'Antecedentes familiares', add: 'Agregar antecedente', none: 'Sin antecedentes familiares relevantes',
     fields: [F('relative', 'Parentesco', 'text', { list: 'relative' }), F('condition', 'Condición', 'text', { list: 'problem' })],
     line: f => `<b>${esc(f.relative)}</b> · ${esc(f.condition)}`, sub: () => '' },
@@ -827,16 +827,18 @@ async function renderClinical() {
   const reload = () => renderClinical();
   const itemsOf = kind => c[CLIN[kind].key];
   // Estudios ligados a un padecimiento: fichas compactas, siempre visibles, con un menú para ligar más.
-  const KL = { document: 'Laboratorio', imaging: 'Informe', analyte: 'Análisis' };
+  const KL = { document: 'Laboratorio', imaging: 'Informe', analyte: 'Análisis', medication: 'Tratamiento', procedure: 'Cirugía' };
   const plinks = p => {
     const have = new Set(p.links.map(l => l.kind + ':' + l.ref));
-    const opts = (kind, arr) => arr.filter(x => !have.has(kind + ':' + x.ref)).map(x => `<option value="${kind}:${esc(x.ref)}">${esc(x.title)}${x.date ? ' · ' + fd(x.date) : ''}</option>`).join('');
-    const groups = [['Informes de estudios', 'imaging', cand.imaging], ['Laboratorios', 'document', cand.documents], ['Análisis', 'analyte', cand.analytes]]
+    const opts = (kind, arr) => arr.filter(x => !have.has(kind + ':' + x.ref)).map(x => `<option value="${kind}:${esc(x.ref)}">${esc(x.title)}${x.active === false ? ' (suspendido)' : ''}${x.date ? ' · ' + (x.date.length > 4 ? fd(x.date) : x.date) : ''}</option>`).join('');
+    const groups = [['Tratamientos', 'medication', cand.medications], ['Informes de estudios', 'imaging', cand.imaging], ['Laboratorios', 'document', cand.documents], ['Análisis', 'analyte', cand.analytes], ['Cirugías', 'procedure', cand.procedures]]
       .map(([label, kind, arr]) => { const o = opts(kind, arr); return o ? `<optgroup label="${label}">${o}</optgroup>` : ''; }).join('');
-    const chip = l => `<span class="lchip"><span class="lk ${l.kind}">${KL[l.kind]}</span><span class="lt">${esc(l.title)}${l.value ? ' · ' + esc(l.value) : ''}${l.date ? ' · ' + fd(l.date) : ''}</span>
+    const chip = l => `<span class="lchip"><span class="lk ${l.kind}">${KL[l.kind]}</span><span class="lt">${esc(l.title)}${l.value ? ' · ' + esc(l.value) : ''}${l.extra ? ' · ' + esc(l.extra) : ''}${l.active === false ? ' · suspendido' : ''}${l.date ? ' · ' + fd(l.date) : ''}</span>
       ${l.document_id ? `<a href="/api/documents/${l.document_id}/file" target="_blank" rel="noopener" title="Ver original" aria-label="Ver el original de ${esc(l.title)}">↗</a>` : ''}
       <button data-punlink="${p.id}:${l.id}" title="Quitar" aria-label="Quitar la relación con ${esc(l.title)}">✕</button></span>`;
-    return `<div class="plw">${p.links.map(chip).join('')}${groups ? `<label class="lchip add"><select data-plink="${p.id}" aria-label="Ligar un estudio a este padecimiento"><option value="">＋ Ligar estudio</option>${groups}</select></label>` : ''}</div>`;
+    const sugg = (cand.medications || []).filter(m => m.reason && plainName(m.reason) === plainName(p.name) && !have.has('medication:' + m.ref));
+    const suggChips = sugg.map(m => `<button class="lchip add" data-psug="${p.id}:${m.ref}" title="Ese medicamento dice que es para este padecimiento">Sugerido: ${esc(m.title)} ＋</button>`).join('');
+    return `<div class="plw">${p.links.map(chip).join('')}${suggChips}${groups ? `<label class="lchip add"><select data-plink="${p.id}" aria-label="Ligar un estudio a este padecimiento"><option value="">＋ Ligar estudio o tratamiento</option>${groups}</select></label>` : ''}</div>`;
   };
   const row = (kind, it, cfg = CLIN[kind]) => { const sub = cfg.sub(it);
     return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
@@ -905,6 +907,10 @@ async function renderClinical() {
     const [kind, ...rest] = sel.value.split(':');
     try { await api(`/api/people/${S.subject}/clinical/problem/${sel.dataset.plink}/links`, { method: 'POST', body: { kind, ref: rest.join(':') } }); toast('Estudio ligado.'); reload(); }
     catch (e) { toast(e.message); }
+  });
+  view().querySelectorAll('[data-psug]').forEach(b => b.onclick = async () => {
+    const [pid, ref] = b.dataset.psug.split(':');
+    try { await api(`/api/people/${S.subject}/clinical/problem/${pid}/links`, { method: 'POST', body: { kind: 'medication', ref } }); toast('Tratamiento ligado.'); reload(); } catch (e) { toast(e.message); }
   });
   view().querySelectorAll('[data-punlink]').forEach(b => b.onclick = async () => {
     const [pid, lid] = b.dataset.punlink.split(':');
