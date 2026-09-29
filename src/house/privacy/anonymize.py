@@ -50,6 +50,10 @@ def _fold(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
 
 
+def _name_words(names: list[str]) -> set[str]:
+    return {w for n in names for w in re.findall(r"\w+", _fold(n)) if len(w) >= 3 and not w.isdigit()}
+
+
 @dataclass(frozen=True)
 class Redaction:
     kind: str  # NOMBRE | CURP | RFC | CORREO | TELEFONO | FOLIO | DIRECCION | EDAD
@@ -71,12 +75,7 @@ class ScrubResult:
 class Anonymizer:
     def __init__(self, known_names: list[str] | None = None) -> None:
         # Cada palabra de cada nombre conocido (>= 3 letras) se busca sin acentos ni mayúsculas.
-        words = {w for n in (known_names or []) for w in re.findall(r"\w+", _fold(n)) if len(w) >= 3}
-        self._name_re = (
-            re.compile(r"\b(" + "|".join(sorted(map(re.escape, words), key=len, reverse=True)) + r")\b")
-            if words
-            else None
-        )
+        self._words = _name_words(known_names or [])
 
     def scrub(self, text: str, *, reference_date: date | None = None) -> ScrubResult:
         found: list[Redaction] = []
@@ -126,12 +125,23 @@ class Anonymizer:
             found.append(Redaction("NOMBRE", "[NOMBRE]"))
             return f"{m['label']}[NOMBRE]"
 
+        # El nombre del paciente tal como lo escribe ESTE laboratorio ("Paciente: ORTIZ HARO CARLOS")
+        # se aprende del propio documento y se quita en todo el texto, no solo en el encabezado.
+        patient = [
+            m["name"] for m in HEADER_NAME.finditer(s) if re.match(r"(?i)\s*(paciente|nombre)", m["label"])
+        ]
+        words = self._words | _name_words(patient)
+        name_re = (
+            re.compile(r"\b(" + "|".join(sorted(map(re.escape, words), key=len, reverse=True)) + r")\b")
+            if words
+            else None
+        )
         s = HEADER_NAME.sub(hdr, s)
-        if self._name_re:
+        if name_re:
             out, pos = [], 0
             folded = _fold(s)  # misma longitud que s salvo combinaciones raras; se valida abajo
             if len(folded) == len(s):
-                for m in self._name_re.finditer(folded):
+                for m in name_re.finditer(folded):
                     out.append(s[pos : m.start()])
                     out.append("[NOMBRE]")
                     found.append(Redaction("NOMBRE", "[NOMBRE]"))

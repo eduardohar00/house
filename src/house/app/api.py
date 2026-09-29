@@ -343,6 +343,21 @@ def create_app(
             headers={"Content-Disposition": "inline", "Cache-Control": "no-store"},
         )
 
+    @app.get("/api/documents/{doc_id}/layout")
+    def get_layout(doc_id: int, actor: Me) -> dict:
+        doc = document(doc_id, actor, "ver_original")
+        rows = db.execute("SELECT * FROM extraction_row WHERE document_id = ?", (doc_id,)).fetchall()
+        return ingest.page_layout(vault.get(doc["file_path"]), rows)
+
+    @app.get("/api/documents/{doc_id}/pages/{n}")
+    def get_page(doc_id: int, n: int, actor: Me) -> Response:
+        doc = document(doc_id, actor, "ver_original")
+        try:
+            png = ingest.render_page(vault.get(doc["file_path"]), n)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        return Response(png, media_type="image/png", headers={"Cache-Control": "no-store"})
+
     @app.post("/api/documents/{doc_id}/review")
     def review(doc_id: int, body: Review, actor: Me) -> dict:
         document(doc_id, actor, "revisar_estudio")

@@ -272,3 +272,18 @@ def test_serves_web_app_and_catalog(client):
     assert client.get("/app.js").status_code == 200
     cat = client.get("/api/catalog").json()
     assert cat["glucose"]["group"] == "glucosa" and cat["urine_nitrite"]["kind"] == "qual"
+
+
+def test_review_pages_and_row_locations(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    doc_id = upload(c, me, make_pdf(LAB_LINES)).json()["document_id"]
+    lay = c.get(f"/api/documents/{doc_id}/layout").json()
+    assert lay["pages"] == [{"n": 1, "width": 612.0, "height": 792.0}]
+    rows = {r["analyte_key"]: r["id"] for r in c.get(f"/api/documents/{doc_id}").json()["rows"]}
+    box = lay["boxes"][str(rows["glucose"])]
+    assert box["page"] == 1 and box["x1"] > box["x0"] and box["bottom"] > box["top"]
+    png = c.get(f"/api/documents/{doc_id}/pages/1")
+    assert png.headers["content-type"] == "image/png" and png.content.startswith(b"\x89PNG")
+    assert c.get(f"/api/documents/{doc_id}/pages/2").status_code == 404

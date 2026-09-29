@@ -257,3 +257,54 @@ def confirm_review(
         "UPDATE document SET review_state = 'revisada', collected_on = ? WHERE id = ?", (collected_on, doc_id)
     )
     return saved
+
+
+# --- Original junto a la revisión: páginas como imagen y ubicación de cada resultado ---
+
+
+def _norm_line(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def page_layout(data: bytes, rows: list[sqlite3.Row]) -> dict:
+    """Tamaño de cada página y, por fila extraída, el renglón del PDF donde aparece (en puntos)."""
+    import pdfplumber
+
+    pages, lines = [], []
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for n, page in enumerate(pdf.pages, 1):
+            pages.append({"n": n, "width": float(page.width), "height": float(page.height)})
+            for ln in page.extract_text_lines(strip=True):
+                lines.append((n, _norm_line(ln["text"]), ln))
+    boxes: dict[int, dict] = {}
+    for r in rows:
+        ev, name, val = (
+            _norm_line(r["evidence"]),
+            _norm_line(r["printed_name"]),
+            _norm_line(r["value_printed"]),
+        )
+        hit = next((x for x in lines if x[1] == ev), None) or next(
+            (x for x in lines if ev and ev in x[1]), None
+        )
+        hit = hit or next((x for x in lines if x[1].startswith(name) and f" {val}" in x[1]), None)
+        if hit:
+            n, _, ln = hit
+            boxes[r["id"]] = {
+                "page": n,
+                "x0": ln["x0"],
+                "top": ln["top"],
+                "x1": ln["x1"],
+                "bottom": ln["bottom"],
+            }
+    return {"pages": pages, "boxes": boxes}
+
+
+def render_page(data: bytes, n: int, resolution: int = 110) -> bytes:
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        if not 1 <= n <= len(pdf.pages):
+            raise IngestError(404, "Página no encontrada.")
+        buf = io.BytesIO()
+        pdf.pages[n - 1].to_image(resolution=resolution).original.save(buf, "PNG")
+        return buf.getvalue()

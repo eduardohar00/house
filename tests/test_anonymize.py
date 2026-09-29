@@ -90,3 +90,12 @@ def test_administrative_ids_anywhere_in_line():
         assert leak not in res.text, leak
     assert "Glucosa 90 55 - 99 mg/dL" in res.text and "5 0 6" in res.text
     assert len(res.text.splitlines()) == len(doc.splitlines())
+
+
+def test_learns_patient_name_from_header_without_being_told():
+    doc = (
+        "Paciente: PEREZ FICTICIO JUAN Sexo: M\nGlucosa 90 55 - 99 mg/dL\nPie de página: Perez Ficticio, Juan"
+    )
+    res = Anonymizer().scrub(doc)
+    assert "PEREZ" not in res.text.upper() and "FICTICIO" not in res.text.upper()
+    assert "Glucosa 90 55 - 99 mg/dL" in res.text

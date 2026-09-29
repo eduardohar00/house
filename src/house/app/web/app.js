@@ -53,7 +53,6 @@ function showSetup() {
     <label>Tu nombre<input type="text" name="display_name" required maxlength="60" autocomplete="off"></label>
     <label>Fecha de nacimiento<input type="date" name="birth_date" required></label>
     <label>Sexo al nacer (define los rangos de referencia)<select name="sex_at_birth"><option value="M">Masculino</option><option value="F">Femenino</option></select></label>
-    <label>Cómo aparece tu nombre en tus estudios (opcional)<input type="text" name="other_names" placeholder="Por ejemplo: PÉREZ LÓPEZ JUAN CARLOS"></label>
     <label>PIN de 4 a 8 dígitos<input type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,8}" required></label>
     <label>Repite el PIN<input type="password" name="pin2" inputmode="numeric" pattern="[0-9]{4,8}" required></label>
     <p class="err" id="e"></p>
@@ -65,8 +64,7 @@ function showSetup() {
     if (f.pin !== f.pin2) return (document.getElementById('e').textContent = 'Los PIN no coinciden.');
     try {
       await api('/api/setup', { method: 'POST', body: {
-        display_name: f.display_name, birth_date: f.birth_date, sex_at_birth: f.sex_at_birth, pin: f.pin,
-        other_names: f.other_names.split(',').map(x => x.trim()).filter(Boolean) } });
+        display_name: f.display_name, birth_date: f.birth_date, sex_at_birth: f.sex_at_birth, pin: f.pin } });
       S.me = await api('/api/me'); await enter();
     } catch (e) { document.getElementById('e').textContent = e.message; }
   };
@@ -395,39 +393,60 @@ const PROBLEMS = {
 };
 
 async function openReview(id) {
-  const d = await api(`/api/documents/${id}`);
+  const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
   const rows = d.rows.map(r => ({ ...r, accept: !!r.analyte_key && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') }));
-  let onlyFlags = false, showAi = false;
+  let onlyFlags = false, showAi = false, active = null;
+  view().innerHTML = `<div class="rv">
+    <div class="pages" id="pages" aria-label="Estudio original">
+      ${layout.pages.length ? layout.pages.map(pg => `<div class="pg" data-n="${pg.n}"><img src="/api/documents/${id}/pages/${pg.n}" alt="Página ${pg.n}" loading="lazy" style="aspect-ratio:${pg.width}/${pg.height}"><div class="hl" hidden></div></div>`).join('')
+        : `<iframe class="pdf" src="/api/documents/${id}/file" title="Estudio original"></iframe>`}
+    </div>
+    <section class="card cfg" id="side"></section></div>`;
+  const pagesEl = document.getElementById('pages');
+  const focusRow = rid => {
+    active = rid;
+    pagesEl.querySelectorAll('.hl').forEach(h => h.hidden = true);
+    view().querySelectorAll('tr[data-row]').forEach(tr => tr.classList.toggle('active', Number(tr.dataset.row) === rid));
+    const b = layout.boxes[rid]; if (!b) return;
+    const pg = layout.pages[b.page - 1], el = pagesEl.querySelector(`.pg[data-n="${b.page}"]`), hl = el.querySelector('.hl');
+    const padX = 3, padY = 2;
+    Object.assign(hl.style, { left: `${(b.x0 - padX) / pg.width * 100}%`, top: `${(b.top - padY) / pg.height * 100}%`,
+      width: `${(b.x1 - b.x0 + 2 * padX) / pg.width * 100}%`, height: `${(b.bottom - b.top + 2 * padY) / pg.height * 100}%` });
+    hl.hidden = false;
+    const target = el.offsetTop + (b.top / pg.height) * el.clientHeight - pagesEl.clientHeight / 2;
+    pagesEl.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  };
   const draw = () => {
     const shown = rows.filter(r => !onlyFlags || r.needs_attention || !r.analyte_key);
     const n = rows.filter(r => r.accept).length;
-    view().innerHTML = `<div class="rv">
-      <iframe class="pdf" src="/api/documents/${id}/file" title="Estudio original"></iframe>
-      <section class="card cfg">
-        <div class="bar"><h2>Revisa «${esc(d.document.title)}»</h2><button class="mini" id="back">Volver</button></div>
-        <p class="tip">Compara con el original de la izquierda. Corrige lo necesario y desmarca lo que no quieras guardar. Solo lo que confirmes entra a tu expediente.</p>
-        <div class="bar"><label class="kv"><b>Fecha de toma</b><input type="date" id="date" value="${esc(d.document.collected_on || '')}"></label>
-          <label><input type="checkbox" id="only" ${onlyFlags ? 'checked' : ''}> Solo lo que requiere atención</label>
-          <button class="mini" id="ai">${showAi ? 'Ocultar' : 'Ver'} lo que vio la IA</button></div>
-        ${showAi ? `<div class="anon">${esc(d.ai_saw)}</div><p class="tip">Datos personales quitados antes de enviar: ${Object.entries(d.redactions).map(([k, v]) => `${esc(k.toLowerCase())} (${v})`).join(', ') || 'ninguno'}.</p>` : ''}
-        <div class="tblwrap"><table class="rt"><thead><tr><th></th><th>Análisis</th><th>Resultado</th><th>Referencia</th><th>Estado</th></tr></thead><tbody>
-          ${shown.map(r => `<tr class="${r.accept ? (r.needs_attention ? 'fl2' : '') : 'skip'}">
-            <td><input type="checkbox" data-acc="${r.id}" ${r.accept ? 'checked' : ''} ${r.analyte_key ? '' : 'disabled'} aria-label="Guardar"></td>
-            <td><b>${esc(r.name || r.printed_name)}</b><small>${esc(r.printed_name)}${r.section ? ' · ' + esc(r.section) : ''}</small>
-              ${r.analyte_key ? '' : '<span class="flag">No reconocido: no se guardará</span>'}
-              ${r.problems.filter(p => p !== 'analito_desconocido').map(p => `<span class="flag">${esc(PROBLEMS[p] || p)}</span>`).join('')}
-              ${r.converted ? `<span class="flag">Convertido de ${esc(r.value_printed)} ${esc(r.unit_printed || '')}</span>` : ''}</td>
-            <td><input type="text" data-val="${r.id}" value="${esc(r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed)}"> ${esc(r.unit || '')}</td>
-            <td>${esc(r.ref_printed || '—')}</td><td>${pill(r.status)}</td></tr>`).join('')}
-        </tbody></table></div>
-        <p class="err" id="e"></p>
-        <div class="bar"><button class="btn danger" id="discard">Descartar estudio</button><button class="btn" id="ok">Confirmar ${n} ${n === 1 ? 'resultado' : 'resultados'}</button></div>
-      </section></div>`;
+    document.getElementById('side').innerHTML = `
+      <div class="bar"><h2>Revisa «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir PDF</a><button class="mini" id="back">Volver</button></div></div>
+      <p class="tip">Toca un resultado para ver su renglón resaltado en el original. Corrige lo necesario y desmarca lo que no quieras guardar. Solo lo que confirmes entra a tu expediente.</p>
+      <div class="bar"><label class="kv"><b>Fecha de toma</b><input type="date" id="date" value="${esc(d.document.collected_on || '')}"></label>
+        <label><input type="checkbox" id="only" ${onlyFlags ? 'checked' : ''}> Solo lo que requiere atención</label>
+        <button class="mini" id="ai">${showAi ? 'Ocultar' : 'Ver'} lo que vio la IA</button></div>
+      ${showAi ? `<div class="anon">${esc(d.ai_saw)}</div><p class="tip">Datos personales quitados antes de enviar: ${Object.entries(d.redactions).map(([k, v]) => `${esc(k.toLowerCase())} (${v})`).join(', ') || 'ninguno'}.</p>` : ''}
+      <div class="tblwrap"><table class="rt"><thead><tr><th></th><th>Análisis</th><th>Resultado</th><th>Referencia</th><th>Estado</th></tr></thead><tbody>
+        ${shown.map(r => `<tr data-row="${r.id}" class="${r.accept ? (r.needs_attention ? 'fl2' : '') : 'skip'} ${r.id === active ? 'active' : ''}">
+          <td><input type="checkbox" data-acc="${r.id}" ${r.accept ? 'checked' : ''} ${r.analyte_key ? '' : 'disabled'} aria-label="Guardar"></td>
+          <td><b>${esc(r.name || r.printed_name)}</b><small>${esc(r.printed_name)}${r.section ? ' · ' + esc(r.section) : ''}${layout.boxes[r.id] ? ` · pág. ${layout.boxes[r.id].page}` : ''}</small>
+            ${r.analyte_key ? '' : '<span class="flag">No reconocido: no se guardará</span>'}
+            ${r.problems.filter(p => p !== 'analito_desconocido').map(p => `<span class="flag">${esc(PROBLEMS[p] || p)}</span>`).join('')}
+            ${r.converted ? `<span class="flag">Convertido de ${esc(r.value_printed)} ${esc(r.unit_printed || '')}</span>` : ''}</td>
+          <td><input type="text" data-val="${r.id}" value="${esc(r.edited ?? (r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed))}"> ${esc(r.unit || '')}</td>
+          <td>${esc(r.ref_printed || '—')}</td><td>${pill(r.status)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="err" id="e"></p>
+      <div class="bar"><button class="btn danger" id="discard">Descartar estudio</button><button class="btn" id="ok">Confirmar ${n} ${n === 1 ? 'resultado' : 'resultados'}</button></div>`;
     document.getElementById('back').onclick = () => renderDocs();
     document.getElementById('only').onchange = e => { onlyFlags = e.target.checked; draw(); };
     document.getElementById('ai').onclick = () => { showAi = !showAi; draw(); };
+    view().querySelectorAll('tr[data-row]').forEach(tr => {
+      tr.onclick = e => { if (e.target.type !== 'checkbox') focusRow(Number(tr.dataset.row)); };
+      tr.querySelector('[data-val]').onfocus = () => focusRow(Number(tr.dataset.row));
+    });
     view().querySelectorAll('[data-acc]').forEach(c => c.onchange = () => { rows.find(r => r.id == c.dataset.acc).accept = c.checked; draw(); });
-    view().querySelectorAll('[data-val]').forEach(i => i.onchange = () => { rows.find(r => r.id == i.dataset.val).edited = i.value; });
+    view().querySelectorAll('[data-val]').forEach(i => i.oninput = () => { rows.find(r => r.id == i.dataset.val).edited = i.value; });
     document.getElementById('discard').onclick = async () => {
       if (!confirm('¿Descartar este estudio? Se borra el original y no se guarda ningún resultado.')) return;
       await api(`/api/documents/${id}`, { method: 'DELETE' }); toast('Estudio descartado.'); renderDocs();
@@ -441,7 +460,7 @@ async function openReview(id) {
         if (r.accept && r.edited != null) {
           if (r.value_num != null) {
             const v = Number(String(r.edited).replace(',', '.'));
-            if (!isFinite(v)) return (e.textContent = `«${r.name || r.printed_name}»: escribe un número.`);
+            if (!isFinite(v) || String(r.edited).trim() === '') return (e.textContent = `«${r.name || r.printed_name}»: escribe un número.`);
             dd.value_num = v;
           } else dd.value_text = r.edited.trim();
         }
@@ -471,7 +490,6 @@ async function renderFamily() {
         <label>Nombre<input type="text" name="display_name" required maxlength="60"></label>
         <label>Fecha de nacimiento<input type="date" name="birth_date" required></label>
         <label>Sexo al nacer (define los rangos)<select name="sex_at_birth"><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
-        <label>Cómo aparece su nombre en sus estudios (opcional)<input type="text" name="other_names" placeholder="Por ejemplo: LÓPEZ GARCÍA MARÍA"></label>
         <label>Acceso<select name="access"><option value="pin">Entra con su propio PIN</option><option value="managed">Lo administro yo (sin acceso propio)</option></select></label>
         <label id="pinl">PIN inicial que le vas a entregar (4 a 8 dígitos)<input type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,8}"></label>
         <p class="tip">Si tiene acceso propio, verá solo su perfil. Tú, como administrador, también puedes verlo; cada vez que lo hagas quedará registrado y esa persona podrá consultarlo.</p>
@@ -484,7 +502,7 @@ async function renderFamily() {
     const v = Object.fromEntries(new FormData(f)), own = v.access === 'pin';
     try {
       await api('/api/people', { method: 'POST', body: { display_name: v.display_name, birth_date: v.birth_date, sex_at_birth: v.sex_at_birth,
-        has_login: own, pin: own ? v.pin : null, other_names: v.other_names.split(',').map(x => x.trim()).filter(Boolean) } });
+        has_login: own, pin: own ? v.pin : null } });
       toast(`${v.display_name} agregado.`); renderFamily();
     } catch (e) { document.getElementById('e').textContent = e.message; }
   };
