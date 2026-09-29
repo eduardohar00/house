@@ -295,3 +295,18 @@ details.quiet .sys{border-top:1px solid var(--line);background:var(--bg)}
 .srcs li.flash{background:var(--accent-soft);border-radius:6px}
 .askf{display:flex;gap:8px;align-items:flex-end}
 .askf textarea{flex:1;resize:vertical;min-height:44px}
+.xl li:has(.plw){flex-wrap:wrap}
+.plw{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.lchip{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 4px;font-size:12.5px;background:var(--surface);color:var(--ink)}
+.lchip .lk{flex:none;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;background:var(--accent-soft)}
+.lchip .lk.imaging{background:color-mix(in srgb,#8b7cf6 24%,transparent)}
+.lchip .lk.analyte{background:var(--warn-bg);color:var(--warn)}
+.lchip .lt{min-width:0;overflow-wrap:anywhere}
+.lchip a{font-weight:700;text-decoration:none;color:var(--accent)}
+.lchip button{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0 4px;font-size:13px;line-height:1}
+.lchip button:hover{color:var(--crit)}
+.lchip.add{border-style:dashed;padding:2px 4px;color:var(--muted)}
+.lchip.add select{border:0;background:transparent;font-size:12.5px;color:var(--muted);max-width:170px;padding:2px}
+.xg>*{min-width:0}
+.xl li>span:first-child{min-width:0;flex:1 1 140px}
+.plw{min-width:0}
