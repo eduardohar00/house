@@ -303,3 +303,22 @@ def test_parallel_requests_do_not_break_the_database(tmp_path):
     with ThreadPoolExecutor(max_workers=16) as pool:
         results = list(pool.map(lambda _: auth.current_person(db, token)["id"], range(400)))
     assert results == [1] * 400
+
+
+def test_reread_pending_document(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    doc_id = upload(c, me, make_pdf(LAB_LINES)).json()["document_id"]
+    before = [r["id"] for r in c.get(f"/api/documents/{doc_id}").json()["rows"]]
+    r = c.post(f"/api/documents/{doc_id}/reread", headers=H)
+    assert r.status_code == 200 and r.json()["rows"] == len(before)
+    after = c.get(f"/api/documents/{doc_id}").json()["rows"]
+    assert {x["analyte_key"] for x in after} >= {"glucose", "urine_nitrite"}
+    rows = {x["analyte_key"]: x["id"] for x in after}
+    c.post(
+        f"/api/documents/{doc_id}/review",
+        headers=H,
+        json={"collected_on": "2026-03-01", "decisions": [{"row_id": rows["glucose"], "accept": True}]},
+    )
+    assert c.post(f"/api/documents/{doc_id}/reread", headers=H).status_code == 409

@@ -428,6 +428,29 @@ _CHOPO: tuple[Analyte, ...] = (
         "espermatozoides con morfologia normal",
     ),
     _a("semen_wbc", "Leucocitos en semen", "", "10^6/mL", "seminal"),
+    # Perfil hospitalario (febrero 2026).
+    _a("transferrin", "Transferrina", "", "mg/dL", "sangre", "transferrina"),
+    _a("calcium_ionized", "Calcio iónico", "", "mg/dL", "electrolitos", "calcio ionico"),
+    _a(
+        "osmolality",
+        "Osmolaridad sérica",
+        "",
+        "mOsm/kg",
+        "electrolitos",
+        "osmolaridad serica",
+        "osmolalidad serica",
+    ),
+    _a("cystatin_c", "Cistatina C", "", "mg/L", "rinon", "cistatina c"),
+    _a(
+        "egfr_cys",
+        "Filtración glomerular estimada (cistatina C)",
+        "",
+        "mL/min/1.73m2",
+        "rinon",
+    ),
+    _a("tg_hdl_ratio", "Relación triglicéridos/HDL", "", "", "lipidos", "relacion trigliceridos hdl"),
+    _a("ggt_ast_ratio", "Cociente GGT/AST", "", "", "higado", "cociente ggt ast"),
+    _a("amylase_lipase_ratio", "Relación amilasa/lipasa", "", "", "pancreas", "relacion amilasa lipasa"),
 )
 
 
@@ -531,6 +554,10 @@ _BY_SECTION = {
         "leucocitos": "urine_wbc_micro",
         "eritrocitos": "urine_rbc_micro",
     },
+    "cistatina": {
+        "tasa de filtracion estimada": "egfr_cys",
+        "tasa de filtracion glomerular estimada": "egfr_cys",
+    },
     "semen": {
         "volumen": "semen_volume",
         "ph": "semen_ph",
@@ -549,6 +576,8 @@ def section_context(section: str | None) -> list[str]:
         return ["orina_micro", "orina"] if "microscop" in s else ["orina"]
     if "espermato" in s or "seminograma" in s or "seminal" in s or "espermograma" in s:
         return ["semen"]
+    if "cistatina" in s:
+        return ["cistatina"]
     return []
 
 
@@ -565,7 +594,10 @@ _MORE_ALIASES = {
     "mchc": ("conc media de hemoglobina corp",),
     "rdw": ("ancho de distrib de eritrocitos cv",),
     "urine_sg": ("densidad",),
-    "egfr": ("tasa de filtracion glomerular",),
+    "egfr": ("tasa de filtracion glomerular", "tasa de filtracion estimada"),
+    "tibc": ("capacidad total de fijacion del hierro",),
+    "uibc": ("capacidad no saturada de fijacion de hierro", "capacidad no saturada de fijacion de"),
+    "iron_sat": ("indice de saturacion de transferrina", "saturacion de transferrina"),
     "ast_alt_ratio": ("relacion tgo tgp",),
 }
 

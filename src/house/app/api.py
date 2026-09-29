@@ -343,6 +343,21 @@ def create_app(
             headers={"Content-Disposition": "inline", "Cache-Control": "no-store"},
         )
 
+    @app.post("/api/documents/{doc_id}/reread")
+    def reread(doc_id: int, actor: Me) -> dict:
+        doc = document(doc_id, actor, "releer_estudio")
+        person = db.execute("SELECT * FROM person WHERE id = ?", (doc["person_id"],)).fetchone()
+        router, reader = current_router()
+        try:
+            done = ingest.reread(db, vault, router, doc_id, person)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
+        return {"document_id": doc_id, "rows": done.rows, "reader": reader}
+
     @app.get("/api/documents/{doc_id}/layout")
     def get_layout(doc_id: int, actor: Me) -> dict:
         doc = document(doc_id, actor, "ver_original")

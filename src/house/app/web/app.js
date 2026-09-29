@@ -420,7 +420,7 @@ async function openReview(id) {
     const shown = rows.filter(r => !onlyFlags || r.needs_attention || !r.analyte_key);
     const n = rows.filter(r => r.accept).length;
     document.getElementById('side').innerHTML = `
-      <div class="bar"><h2>Revisa «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir PDF</a><button class="mini" id="back">Volver</button></div></div>
+      <div class="bar"><h2>Revisa «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><button class="mini" id="reread" title="Útil si House mejoró o si conectaste Claude">Volver a leer</button><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir PDF</a><button class="mini" id="back">Volver</button></div></div>
       <p class="tip">Toca un resultado para ver su renglón resaltado en el original. Corrige lo necesario y desmarca lo que no quieras guardar. Solo lo que confirmes entra a tu expediente.</p>
       <div class="bar"><label class="kv"><b>Fecha de toma</b><input type="date" id="date" value="${esc(d.document.collected_on || '')}"></label>
         <label><input type="checkbox" id="only" ${onlyFlags ? 'checked' : ''}> Solo lo que requiere atención</label>
@@ -439,6 +439,12 @@ async function openReview(id) {
       <p class="err" id="e"></p>
       <div class="bar"><button class="btn danger" id="discard">Descartar estudio</button><button class="btn" id="ok">Confirmar ${n} ${n === 1 ? 'resultado' : 'resultados'}</button></div>`;
     document.getElementById('back').onclick = () => renderDocs();
+    document.getElementById('reread').onclick = async () => {
+      if (!confirm('¿Volver a leer este estudio? Se pierden las correcciones que no hayas confirmado.')) return;
+      const b = document.getElementById('reread'); b.disabled = true; b.textContent = 'Leyendo…';
+      try { const r = await api(`/api/documents/${id}/reread`, { method: 'POST' }); toast(`Leído de nuevo: ${r.rows} renglones.`); openReview(id); }
+      catch (err) { document.getElementById('e').textContent = err.message; b.disabled = false; b.textContent = 'Volver a leer'; }
+    };
     document.getElementById('only').onchange = e => { onlyFlags = e.target.checked; draw(); };
     document.getElementById('ai').onclick = () => { showAi = !showAi; draw(); };
     view().querySelectorAll('tr[data-row]').forEach(tr => {

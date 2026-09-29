@@ -114,7 +114,36 @@ def ingest_pdf(
         "VALUES(?, 'laboratorio', ?, ?, ?, ?)",
         (person["id"], title, outcome.collected_on, stored, sha),
     )
-    doc_id = cur.lastrowid
+    _store_extraction(db, cur.lastrowid, person["id"], outcome)
+    return Ingested(cur.lastrowid, len(outcome.rows))
+
+
+def reread(
+    db: sqlite3.Connection,
+    vault: Vault,
+    router: Router,
+    doc_id: int,
+    person: sqlite3.Row,
+    today: date | None = None,
+) -> Ingested:
+    """Vuelve a leer un estudio pendiente (catálogo mejorado o lector distinto) sin volver a subirlo."""
+    doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    if doc["review_state"] != "pendiente":
+        raise IngestError(409, "Solo se puede volver a leer un estudio que aún no revisas.")
+    outcome = extract_document(
+        pdf_text(vault.get(doc["file_path"])),
+        router,
+        anonymizer=Anonymizer(person_names(db, person)),
+        reference_date=today or date.today(),
+    )
+    db.execute("DELETE FROM extraction_row WHERE document_id = ?", (doc_id,))
+    db.execute("DELETE FROM extraction WHERE document_id = ?", (doc_id,))
+    db.execute("UPDATE document SET collected_on = ? WHERE id = ?", (outcome.collected_on, doc_id))
+    _store_extraction(db, doc_id, person["id"], outcome)
+    return Ingested(doc_id, len(outcome.rows))
+
+
+def _store_extraction(db: sqlite3.Connection, doc_id: int, person_id: int, outcome) -> None:
     llm = outcome.llm
     db.execute(
         "INSERT INTO extraction(document_id, sent_text, redactions, provider, model, cost_usd, collected_on) "
@@ -139,12 +168,11 @@ def ingest_pdf(
             llm.output_tokens,
             llm.cost_usd,
             llm.request_id,
-            person["id"],
+            person_id,
         ),
     )
     for r in outcome.rows:
         _save_row(db, doc_id, r)
-    return Ingested(doc_id, len(outcome.rows))
 
 
 def _save_row(db: sqlite3.Connection, doc_id: int, r: Row) -> None:
