@@ -35,6 +35,8 @@ python -m house.bench.names bench/private/<id>                    # solo nombres
 python -m house.app.restore <archivo.housebak> --to <carpeta vacía>   # recupera un respaldo (pide la llave)
 swiftc -O tools/webtest.swift -o /tmp/webtest && /tmp/webtest pasos.json   # prueba la interfaz en WebKit real: captura errores de JS y pantallas (pasos: [{load|eval|wait|shot}])
 python -m house.app                         # la app en http://127.0.0.1:8765 (datos en ~/Library/Application Support/House)
+python -m house.app.service install         # House como servicio de macOS: se levanta solo al abrir la página (no al iniciar sesión)
+python -m house.app.service restart         # detiene House; la siguiente visita lo levanta con el código nuevo (status | uninstall)
 ```
 - Python 3.11+, tipado con pydantic, `ruff` (línea 110). Pruebas con `pytest` para todo cambio de comportamiento.
 - El catálogo de analitos está en `src/house/normalize/terminology.py`. **No inventes códigos LOINC**: déjalos en blanco si no estás seguro.

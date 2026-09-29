@@ -186,3 +186,16 @@ def test_status_flags_overdue_and_due(world):
     assert (backup.status(db, now)["due"], backup.status(db, now)["overdue"]) == (True, False)
     backup.put_settings(db, backup_last_at=(now - timedelta(days=9)).isoformat())
     assert backup.status(db, now)["overdue"] is True
+
+
+def test_service_definition_starts_only_on_demand_and_never_at_login():
+    from house.app import launchd
+
+    d = launchd.build_plist("/x/.venv/bin/python", "/x", 8765, "/log/House.log")
+    assert d["Label"] == "com.house.app" and d["ProgramArguments"][-1] == "--launchd"
+    assert d["Sockets"]["Listeners"] == {
+        "SockNodeName": "127.0.0.1",
+        "SockServiceName": "8765",
+    }  # solo esta Mac
+    assert "RunAtLoad" not in d and "KeepAlive" not in d  # no arranca al iniciar sesión ni queda encendido
+    assert d["StandardOutPath"] == d["StandardErrorPath"] == "/log/House.log"
