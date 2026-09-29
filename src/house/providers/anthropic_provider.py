@@ -138,8 +138,10 @@ class AnthropicProvider:
             kwargs: dict = {
                 "model": self.model,
                 "max_tokens": max_tokens,
-                "system": system,
-                "messages": history,
+                # Caché de Anthropic: lo ya leído (instrucciones, herramientas, historial) se relee a
+                # ~10 % del precio en las siguientes vueltas y preguntas.
+                "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+                "messages": self._cached(history),
                 "tools": all_tools,
             }
             if effort or self.effort:
@@ -153,8 +155,14 @@ class AnthropicProvider:
                     use_web, web_note = None, "La búsqueda web no está disponible en tu cuenta de Anthropic."
                     continue
                 raise ProviderError(self._why(e)) from e
-            tin += resp.usage.input_tokens
-            tout += resp.usage.output_tokens
+            u = resp.usage
+            # Tokens de entrada «equivalentes en costo»: la caché se escribe a 1.25× y se lee a 0.1×.
+            tin += (
+                u.input_tokens
+                + 1.25 * (getattr(u, "cache_creation_input_tokens", 0) or 0)
+                + 0.1 * (getattr(u, "cache_read_input_tokens", 0) or 0)
+            )
+            tout += u.output_tokens
             request_id = getattr(resp, "_request_id", None) or request_id
             self._collect_web(resp.content, web)
             stop = getattr(resp, "stop_reason", None)
@@ -209,6 +217,21 @@ class AnthropicProvider:
                 web_note=web_note,
             )
         raise ProviderError(f"{self.name}: demasiadas consultas seguidas sin respuesta")
+
+    @staticmethod
+    def _cached(history: list[dict]) -> list[dict]:
+        """Marca el último bloque del último mensaje como punto de caché, sin tocar el historial original."""
+        if not history:
+            return history
+        *head, last = history
+        content = last["content"]
+        if isinstance(content, str):
+            blocks: list = [{"type": "text", "text": content}]
+        else:
+            blocks = list(content)
+        if blocks and isinstance(blocks[-1], dict):
+            blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
+        return [*head, {**last, "content": blocks}]
 
     @staticmethod
     def _web_tool(cfg: dict) -> dict:

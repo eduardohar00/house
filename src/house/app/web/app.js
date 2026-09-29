@@ -1546,7 +1546,7 @@ async function renderAssistant() {
         ${chat.msgs.map(m => m.role === 'user' ? `<div class="msg me"><p>${esc(m.content)}</p></div>`
           : `<div class="msg bot">${answerHtml(m.content, m.sources || [])}
               ${m.warning ? '<p class="warnline">Esta respuesta menciona datos sin fuente: verifícalos en tus documentos.</p>' : ''}
-              ${(m.sources || []).length ? `<ol class="srcs">${m.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${srcLink(x)}</li>`).join('')}</ol>` : ''}${webLinks(m.web_sources)}</div>`).join('')}
+              ${(m.sources || []).length ? `<ol class="srcs">${m.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${srcLink(x)}</li>`).join('')}</ol>` : ''}${webLinks(m.web_sources)}${m.cost != null ? `<p class="tip" style="margin:6px 0 0;font-size:12px">Costo de esta respuesta: ≈ ${m.cost < 0.01 ? '<0.01' : m.cost.toFixed(2)} USD${m.fromReview ? ' · apoyada en tu última revisión' : ''}</p>` : ''}</div>`).join('')}
         ${chat.busy ? '<p class="tip"><span class="spin"></span>Buscando en tu expediente… puede tardar hasta un minuto.</p>' : ''}
         ${chat.error ? `<p class="err">${esc(chat.error)}</p>` : ''}
       </div>
@@ -1567,7 +1567,7 @@ async function renderAssistant() {
     chat.msgs.push({ role: 'user', content: q }); chat.busy = true; chat.error = ''; draw();
     try {
       const r = await api(`/api/people/${S.subject}/assistant`, { method: 'POST', body: { messages: chat.msgs.map(m => ({ role: m.role, content: m.content })) } });
-      chat.msgs.push({ role: 'assistant', content: r.answer, sources: r.sources, warning: r.warning, web_sources: r.web_sources });
+      chat.msgs.push({ role: 'assistant', content: r.answer, sources: r.sources, warning: r.warning, web_sources: r.web_sources, cost: r.usage?.cost_usd, fromReview: r.used_review });
     } catch (e) { chat.error = e.message; chat.msgs.pop(); }
     chat.busy = false; if (S.tab === 'ask') draw();
   };

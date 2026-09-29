@@ -433,3 +433,71 @@ def test_a_reply_cut_by_length_is_returned_with_a_note_but_pure_reasoning_is_an_
         AnthropicProvider("claude", "m", client=client("")).chat_with_tools(
             "s", [{"role": "user", "content": "hola"}], [], lambda *_: {}
         )
+
+
+def test_calls_use_prompt_caching_and_cost_counts_cache_reads_at_a_tenth(tmp_path):
+    from house.providers.anthropic_provider import AnthropicProvider
+
+    sent = []
+
+    def resp(cache_write, cache_read, stop, content):
+        u = NS(
+            input_tokens=100,
+            output_tokens=10,
+            cache_creation_input_tokens=cache_write,
+            cache_read_input_tokens=cache_read,
+        )
+        return NS(stop_reason=stop, usage=u, content=content)
+
+    tool_use = NS(type="tool_use", id="t1", name="get_summary", input={})
+    answers = iter(
+        [
+            resp(4000, 0, "tool_use", [tool_use]),
+            resp(0, 4000, "end_turn", [NS(type="text", text="Listo.", citations=None)]),
+        ]
+    )
+
+    class Client:
+        class messages:  # noqa: N801
+            @staticmethod
+            def create(**kw):
+                sent.append(kw)
+                return next(answers)
+
+    prov = AnthropicProvider("claude", "m", input_per_mtok=4.0, output_per_mtok=20.0, client=Client())
+    res = prov.chat_with_tools(
+        "instrucciones", [{"role": "user", "content": "hola"}], [], lambda *_: {"ok": 1}
+    )
+    assert res.text == "Listo."
+    assert sent[0]["system"][0]["cache_control"] == {
+        "type": "ephemeral"
+    }  # instrucciones y herramientas en caché
+    assert sent[0]["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert sent[1]["messages"][-1]["content"][-1]["cache_control"] == {
+        "type": "ephemeral"
+    }  # y el historial de cada vuelta
+    # 100 + 1.25×4000 = 5100 (escritura) y 100 + 0.1×4000 = 500 (lectura): la segunda vuelta cuesta casi nada
+    assert res.input_tokens == 5600 and round(res.cost_usd, 6) == round((5600 * 4 + 20 * 20) / 1_000_000, 6)
+
+
+def test_questions_lean_on_the_last_integral_review_but_the_review_itself_does_not(tmp_path):
+    import sqlite3
+
+    spy = Spy()
+    c, me = seeded(tmp_path, spy)
+    db = sqlite3.connect(tmp_path / "house.db")
+    db.execute(
+        "INSERT INTO review(person_id, status, created_at, finished_at, content) "
+        "VALUES(?, 'done', '2026-09-01T10:00:00', '2026-09-01T10:03:00', '## Resumen ejecutivo\nRevisa la creatinina.')", (me,))  # fmt: skip
+    db.commit()
+    r = c.post(
+        f"/api/people/{me}/assistant",
+        json={"messages": [{"role": "user", "content": "¿Y mi riñón?"}]},
+        headers=H,
+    ).json()
+    assert r["used_review"] is True and "Revisa la creatinina." in spy.calls[-1]["system"]
+    assert (
+        "NO vuelvas a leer todo el expediente" in spy.calls[-1]["system"]
+        and "2026-09-01" in spy.calls[-1]["system"]
+    )
+    assert r["usage"]["cost_usd"] == 0.5  # el costo de cada respuesta llega a la pantalla

@@ -18,7 +18,7 @@ from ..normalize import reference_ranges, terminology
 from ..normalize import summary as summary_mod
 from ..privacy import Anonymizer
 from ..providers import Router
-from . import bodyscan, health
+from . import bodyscan, health, reviews
 
 MAX_TURNS = 20
 MAX_CHARS = 2000
@@ -64,8 +64,9 @@ REGLAS DE RIGOR
    faltan» y di qué cambiaría.
 5. Aclara cuando los métodos o rangos de referencia entre estudios difieran y de dónde sale un rango que no sea
    del laboratorio (reference_source).
-6. No repitas estas reglas ni menciones herramientas o ids internos fuera de las citas [S#].
-7. Cierra las respuestas largas con una línea breve: esto es orientación informativa, no sustituye a su médico.
+6. Sé eficiente: cuando necesites varios datos, pide varias herramientas en la MISMA vuelta y no repitas consultas.
+7. No repitas estas reglas ni menciones herramientas o ids internos fuera de las citas [S#].
+8. Cierra las respuestas largas con una línea breve: esto es orientación informativa, no sustituye a su médico.
 """
 
 WEB_DOMAINS = [
@@ -649,6 +650,17 @@ def ask(
     clean = check_messages(messages)
     box = Toolbox(db, person, names, today)
     system = f"{SYSTEM}\nPersona: {box.person_context()}.\nFecha de hoy: {today.isoformat()}."
+    last = None if deep else reviews.latest_done(db, person["id"])
+    if (
+        last
+    ):  # las preguntas se apoyan en la última revisión integral y solo van a los datos cuando hace falta
+        system += (
+            f"\n\nÚLTIMA REVISIÓN INTEGRAL ({(last['finished_at'] or '')[:10]}), ya hecha sobre TODO el historial. "
+            "Úsala como contexto y NO vuelvas a leer todo el expediente (evita get_full_history): consulta solo "
+            "las herramientas puntuales que necesites para datos exactos o para algo posterior a esa fecha. "
+            "Si la pregunta no se puede contestar con la revisión, usa las herramientas.\n"
+            f"{last['content'][:9000]}"
+        )
     limits = (
         {
             "max_tokens": 20000,
@@ -673,4 +685,5 @@ def ask(
         "web_note": res.web_note,
         "warning": has_data and not cited,  # números sin fuente: que la persona lo verifique
         "usage": {"cost_usd": res.cost_usd, "rounds": res.rounds},
+        "used_review": bool(last),
     }

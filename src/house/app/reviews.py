@@ -121,6 +121,16 @@ def interrupted(db: sqlite3.Connection) -> None:
     )
 
 
+def latest_done(db: sqlite3.Connection, person_id: int) -> dict | None:
+    """La revisión integral terminada más reciente (para que las preguntas se apoyen en ella)."""
+    r = db.execute(
+        "SELECT id, finished_at, content FROM review WHERE person_id = ? AND status = 'done' "
+        "AND content IS NOT NULL ORDER BY id DESC LIMIT 1",
+        (person_id,),
+    ).fetchone()
+    return dict(r) if r else None
+
+
 def listing(db: sqlite3.Connection, person_id: int) -> list[dict]:
     rows = db.execute(
         "SELECT id, status, created_at, finished_at, cost_usd, error FROM review WHERE person_id = ? "
