@@ -355,3 +355,27 @@ def test_reference_range_is_converted_with_the_value_and_old_rows_are_repaired(l
     row = db.execute("SELECT ref_high, status FROM observation WHERE analyte_key = 'crp_hs'").fetchone()
     assert (row["ref_high"], row["status"]) == (5.0, "ok")
     assert ingest.repair_references(db) == 0  # idempotente
+
+
+def test_result_without_printed_reference_has_no_status_and_old_rows_are_repaired(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    doc_id = upload(
+        c,
+        me,
+        make_pdf(["Informe de Resultados de Laboratorio", "Fecha de Toma : 01/03/2026", "Glucosa 90 mg/dL"]),
+    ).json()["document_id"]
+    rows = c.get(f"/api/documents/{doc_id}").json()["rows"]
+    assert rows[0]["ref_printed"] is None and rows[0]["status"] is None
+    c.post(
+        f"/api/documents/{doc_id}/review",
+        headers=H,
+        json={"collected_on": "2026-03-01", "decisions": [{"row_id": rows[0]["id"], "accept": True}]},
+    )
+    db = c.app.state.db
+    db.execute("UPDATE observation SET status = 'ok'")  # como lo guardaba la versión anterior
+    from house.app import ingest
+
+    assert ingest.repair_references(db) == 1
+    assert db.execute("SELECT status FROM observation").fetchone()["status"] is None

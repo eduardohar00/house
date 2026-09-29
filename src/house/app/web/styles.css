@@ -151,3 +151,9 @@ input[type=text],input[type=date],input[type=password],input[type=number]{font:i
 .hl{position:absolute;background:rgba(240,162,79,.25);outline:2px solid #e0a04a;border-radius:3px;pointer-events:none}
 .rt tr[data-row]{cursor:pointer}
 .rt tr.active td{background:var(--accent-soft)}
+
+.bm.old{opacity:.72}
+.qual span.old{opacity:.6}
+.tag.na{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+details.hist{border-top:1px solid var(--line);padding-top:10px}
+details.hist summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:600}

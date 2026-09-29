@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from ..config import Config, ProviderConfig
+from ..normalize import summary as summary_mod
 from ..normalize import terminology
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
@@ -284,9 +285,7 @@ def create_app(
             vault.delete(f)
         return {"ok": True}
 
-    @app.get("/api/people/{person_id}/observations")
-    def observations(person_id: int, actor: Me) -> list[dict]:
-        subject(person_id, actor, "ver_resultados")
+    def load_observations(person_id: int) -> list[dict]:
         rows = db.execute(
             "SELECT o.analyte_key, o.printed_name, o.value_num, o.value_text, o.unit, o.ref_low, o.ref_high, "
             "o.ref_printed, o.status, o.method, o.collected_on, o.document_id, d.title AS document_title "
@@ -295,6 +294,18 @@ def create_app(
             (person_id,),
         )
         return [dict(r) for r in rows]
+
+    @app.get("/api/people/{person_id}/observations")
+    def observations(person_id: int, actor: Me) -> list[dict]:
+        subject(person_id, actor, "ver_resultados")
+        return load_observations(person_id)
+
+    @app.get("/api/people/{person_id}/overview")
+    def overview(person_id: int, actor: Me) -> dict:
+        """Resultados y resumen (vigente vs historial) en una sola consulta: un solo registro de acceso."""
+        subject(person_id, actor, "ver_resultados")
+        obs = load_observations(person_id)
+        return {"observations": obs, "summary": summary_mod.summarize(obs)}
 
     def document(doc_id: int, actor: sqlite3.Row, action: str) -> sqlite3.Row:
         doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()

@@ -181,7 +181,7 @@ function refText(o) {
 
 async function renderSummary() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
-  const obs = await api(`/api/people/${S.subject}/observations`);
+  const { observations: obs, summary: sm } = await api(`/api/people/${S.subject}/overview`);
   if (!obs.length) {
     view().innerHTML = `<section class="card empty"><h2>Todavía no hay resultados</h2>
       <p>Sube un estudio de laboratorio en PDF. Lo revisarás junto al original y solo lo que confirmes aparecerá aquí.</p>
@@ -194,59 +194,77 @@ async function renderSummary() {
   Object.values(series).forEach(v => v.sort((a, b) => a.collected_on.localeCompare(b.collected_on)));
   const last = k => series[k][series[k].length - 1];
   const numeric = Object.keys(series).filter(k => last(k).value_num != null);
-  const latestDate = obs.map(o => o.collected_on).sort().pop();
-  const nDocs = new Set(obs.map(o => o.document_id)).size;
-
-  const att = Object.keys(series).filter(k => OUT(last(k).status))
-    .sort((a, b) => last(b).collected_on.localeCompare(last(a).collected_on) || dist(last(b)) - dist(last(a)));
-  const better = Object.keys(series).filter(k => series[k].length > 1 && last(k).status === 'ok' && OUT(series[k][series[k].length - 2].status));
-  if (!S.sel || !series[S.sel] || last(S.sel).value_num == null) S.sel = att.find(k => numeric.includes(k)) || numeric[0];
+  const recent = new Set(sm.recent_keys);
+  const stOf = k => sm.last_status[k]?.status ?? last(k).status;
+  const yr = o => o.collected_on.slice(0, 4);
+  const valTxt = o => o.value_num != null ? `${fnum(o.value_num)} ${esc(o.unit)}` : esc(o.value_text);
+  const shown = sm.attention.slice(0, 6), hidden = sm.attention.length - shown.length;
+  if (!S.sel || !series[S.sel] || last(S.sel).value_num == null) {
+    S.sel = [...shown.map(a => a.key), ...numeric.filter(k => recent.has(k))].find(k => numeric.includes(k)) || numeric[0];
+  }
 
   const ic = {
     at: '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1l5.5 10h-11z"/></svg>',
+    vi: '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="4"/></svg>',
     me: '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>',
   };
-  const trend = k => {
-    const s = series[k]; if (s.length < 2 || last(k).value_num == null) return '';
-    const f = s[0], l = last(k), df = dist(f), dl = dist(l);
-    const t = dl < df * 0.8 ? 'Mejorando' : dl > df * 1.2 || df === 0 ? 'Empeorando' : 'Estable';
-    return ` ${t}: ${fnum(f.value_num)} en ${f.collected_on.slice(0, 4)} a ${fnum(l.value_num)} en ${l.collected_on.slice(0, 4)}.`;
+  const row = (cls, label, k, sub) => `<button class="fr" data-k="${esc(k)}"><span class="tag ${cls}">${ic[cls]}${label}</span><span class="fm">${esc(name(k))} · ${valTxt(last(k))}</span><span class="fs">${sub}</span></button>`;
+  const attRow = a => {
+    const l = last(a.key), p = a.previous;
+    const how = l.value_num != null && l.status !== 'ok' && distOut(l) > 0
+      ? `${Math.round(distOut(l) * 100)} % ${l.status === 'high' ? 'por encima' : 'por debajo'} del rango (${esc(refText(l))}).`
+      : `Referencia: ${esc(refText(l))}.`;
+    const kind = { persistente: `Persistente: fuera de rango en ${a.streak} estudios seguidos.`, continua: 'Continúa: también estaba fuera de rango en el estudio anterior.',
+      nuevo: 'Nuevo: en el estudio anterior estaba en rango.', unico: '' }[a.kind];
+    const trend = a.trend && p && p.value_num != null && l.value_num != null
+      ? ` ${{ mejorando: 'Mejorando', empeorando: 'Empeorando', estable: 'Estable' }[a.trend]}: ${fnum(p.value_num)} en ${yr(p)} a ${fnum(l.value_num)} en ${yr(l)}.` : '';
+    const borrowed = l.ref_from ? ` Este estudio no trae rango; se compara con el del estudio del ${fd(l.ref_from)}.` : '';
+    return row('at', 'Atención', a.key, `${fd(l.collected_on)}. ${how} ${kind}${trend}${borrowed}`);
   };
-  const row = (cls, label, k, sub) => {
-    const l = last(k);
-    const v = l.value_num != null ? `${fnum(l.value_num)} ${esc(l.unit)}` : esc(l.value_text);
-    return `<button class="fr" data-k="${esc(k)}"><span class="tag ${cls}">${ic[cls]}${label}</span><span class="fm">${esc(name(k))} · ${v}</span><span class="fs">${sub}</span></button>`;
-  };
-  const rows = att.slice(0, 8).map(k => {
-    const l = last(k);
-    const how = l.value_num != null ? `${Math.round(dist(l) * 100)} % ${l.status === 'high' ? 'por encima' : 'por debajo'} del rango (${esc(refText(l))}).` : `Referencia: ${esc(refText(l))}.`;
-    return row('at', 'Atención', k, `${fd(l.collected_on)}. ${how}${trend(k)}`);
-  });
-  if (att.length > 8) rows.push(`<div class="fq">Y ${att.length - 8} más fuera de rango; están marcados abajo, por sistema.</div>`);
-  better.slice(0, 3).forEach(k => rows.push(row('me', 'Mejoró', k, `Ya está en rango (${esc(refText(last(k)))}).`)));
+  const rows = [
+    ...shown.map(attRow),
+    ...(hidden > 0 ? [`<div class="fq">Y ${hidden} más fuera de rango, de menor relevancia (incluye valores calculados); se ven por sistema abajo.</div>`] : []),
+    ...sm.watch.slice(0, 3).map(w => row('vi', 'Vigilar', w.key, `Dentro de rango, pero ${w.toward === 'el tope' ? 'sube' : 'baja'} de forma sostenida hacia ${w.toward} (${esc(refText(w.last))}): ${valTxt(w.first)} en ${yr(w.first)} a ${valTxt(w.last)} en ${yr(w.last)}.`)),
+    ...(sm.watch.length > 3 ? [`<div class="fq">Y ${sm.watch.length - 3} tendencias más hacia un límite; se ven en la gráfica de cada análisis.</div>`] : []),
+    ...sm.improved.map(i => row('me', 'Mejoró', i.key, `Volvió al rango (${esc(refText(i.last))}). Antes: ${valTxt(i.previous)} en ${yr(i.previous)}.`)),
+  ];
+  const parts = [];
+  if (sm.attention.length) {
+    const per = sm.attention.filter(a => a.kind === 'persistente').length;
+    parts.push(`${sm.attention.length} ${sm.attention.length === 1 ? 'resultado fuera de rango ahora' : 'resultados fuera de rango ahora'}${per ? ` (${per} persistente${per > 1 ? 's' : ''})` : ''}`);
+  }
+  if (sm.watch.length) parts.push(`${sm.watch.length} a vigilar`);
+  if (sm.improved.length) parts.push(`${sm.improved.length} ${sm.improved.length > 1 ? 'mejoraron' : 'mejoró'}`);
+  const stale = sm.counts.stale;
+  const oldNote = sm.study_is_old ? `<div class="mixed">Tu estudio más reciente es de ${fd(sm.reference_date)}, hace ${Math.round(sm.study_age_days / 365 * 10) / 10} años. Estos resultados pueden no reflejar tu estado actual.</div>` : '';
+  const hist = sm.history.length ? `<details class="hist"><summary>Historial: ${sm.history.length} ${sm.history.length === 1 ? 'análisis estuvo' : 'análisis estuvieron'} fuera de rango antes y hoy no es motivo de alerta</summary>
+    <div class="fl">${sm.history.map(h => `<button class="fr" data-k="${esc(h.key)}"><span class="tag na">${h.stale ? 'Sin medición reciente' : 'Ya en rango'}</span><span class="fm">${esc(name(h.key))} · último: ${valTxt(h.last)} (${fd(h.last.collected_on)})</span><span class="fs">Fuera de rango en ${h.times_out} de ${h.results} ${h.results === 1 ? 'estudio' : 'estudios'}.${h.stale ? ' No se ha vuelto a medir en el último año.' : ''}</span></button>`).join('')}</div></details>` : '';
 
   const groups = GROUPS.map(([g, gname]) => {
     const keys = Object.keys(series).filter(k => (S.catalog[k]?.group || 'otros') === g);
     if (!keys.length) return '';
     const nums = keys.filter(k => numeric.includes(k)), texts = keys.filter(k => !numeric.includes(k));
-    const withRef = keys.filter(k => last(k).status), ok = withRef.filter(k => last(k).status === 'ok').length;
+    const withRef = keys.filter(k => recent.has(k) && stOf(k)), ok = withRef.filter(k => stOf(k) === 'ok').length;
     const cards = nums.map(k => {
-      const s = series[k], l = last(k), vals = s.map(o => o.value_num).filter(v => v != null);
+      const s = series[k], l = last(k), vals = s.map(o => o.value_num).filter(v => v != null), old = !recent.has(k);
       const f = s[0], delta = s.length < 2 ? `${fd(l.collected_on)}` :
         (l.value_num === f.value_num ? 'sin cambio' : (l.value_num < f.value_num ? '▼ ' : '▲ ') + Math.round(Math.abs((l.value_num - f.value_num) / (f.value_num || 1)) * 100) + ' % desde ' + f.collected_on.slice(0, 4));
-      return `<button class="bm" data-k="${esc(k)}" aria-pressed="${k === S.sel}">
-        <span class="nm">${esc(name(k))}</span><div>${pill(l.status)}</div>
+      return `<button class="bm ${old ? 'old' : ''}" data-k="${esc(k)}" aria-pressed="${k === S.sel}">
+        <span class="nm">${esc(name(k))}</span><div>${old ? `<span class="pill na">Último: ${yr(l)}</span>` : pill(stOf(k))}</div>
         <div class="row"><div><div class="val">${fnum(l.value_num)}<small>${esc(l.unit)}</small></div><div class="delta">${delta}</div></div>${vals.length > 1 ? spark(vals) : ''}</div></button>`;
     }).join('');
-    const quals = texts.map(k => { const l = last(k); return `<span class="${OUT(l.status) ? 'out' : ''}">${esc(name(k))}: <b>${esc(l.value_text ?? fnum(l.value_num))}</b></span>`; }).join('');
+    const quals = texts.map(k => { const l = last(k), old = !recent.has(k); return `<span class="${!old && OUT(stOf(k)) ? 'out' : ''} ${old ? 'old' : ''}">${esc(name(k))}: <b>${esc(l.value_text ?? fnum(l.value_num))}</b>${old ? ` (${yr(l)})` : ''}</span>`; }).join('');
     return `<section class="grp"><div class="gh"><h3>${gname}</h3>${withRef.length ? `<span class="gc ${ok === withRef.length ? 'ok' : 'out'}">${ok} de ${withRef.length} en rango</span>` : ''}</div>
       ${cards ? `<div class="cards">${cards}</div>` : ''}${quals ? `<div class="qual">${quals}</div>` : ''}</section>`;
   }).join('');
 
+  const nDocs = new Set(obs.map(o => o.document_id)).size;
   view().innerHTML = `
     <section class="card insight"><h2>Resumen</h2>
-      <p class="lead">${att.length ? `${att.length} ${att.length === 1 ? 'resultado fuera de rango' : 'resultados fuera de rango'}` : 'Todo dentro de rango'} en el último valor de cada análisis. Estudio más reciente: ${fd(latestDate)}; ${nDocs} ${nDocs === 1 ? 'estudio' : 'estudios'} en total.</p>
-      <div class="fl">${rows.join('')}</div>
+      <p class="lead">${parts.length ? parts.join(' · ') : 'Nada fuera de rango en tus análisis recientes'}. Al ${fd(sm.reference_date)}, con ${nDocs} ${nDocs === 1 ? 'estudio' : 'estudios'} en total.</p>
+      <p class="tip">Solo cuenta lo medido en el último año de tu expediente${stale ? `; ${stale} ${stale === 1 ? 'análisis no se ha' : 'análisis no se han'} vuelto a medir desde entonces y ${stale === 1 ? 'aparece' : 'aparecen'} como «Último: año»` : ''}.</p>
+      ${oldNote}
+      <div class="fl">${rows.join('')}</div>${hist}
       <p class="tip">Para comentar con tu médico. Es informativo y no sustituye una valoración médica.</p></section>
     <section class="card detail" id="detail"></section>
     <div class="grid">${groups}</div>`;
@@ -254,6 +272,13 @@ async function renderSummary() {
     if (series[el.dataset.k] && last(el.dataset.k).value_num != null) { S.sel = el.dataset.k; renderSummaryDetail(series); markSel(); document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   });
   renderSummaryDetail(series);
+}
+
+function distOut(o) {
+  if (o.value_num == null) return 0;
+  if (o.ref_high != null && o.value_num > o.ref_high) return (o.value_num - o.ref_high) / (Math.abs(o.ref_high) || 1);
+  if (o.ref_low != null && o.value_num < o.ref_low) return (o.ref_low - o.value_num) / (Math.abs(o.ref_low) || 1);
+  return 0;
 }
 
 function markSel() { view().querySelectorAll('.bm').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === S.sel)); }

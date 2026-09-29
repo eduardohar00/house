@@ -67,7 +67,10 @@ def classify(
     return "ok"
 
 
-def classify_ref(value: float, ref: Ref) -> Status:
+def classify_ref(value: float, ref: Ref) -> Status | None:
+    """Estado contra un rango; sin ningún límite no hay estado (no es lo mismo que "en rango")."""
+    if ref.low is None and ref.high is None:
+        return None
     return classify(value, ref.low, ref.high, low_strict=ref.low_strict, high_strict=ref.high_strict)
 
 

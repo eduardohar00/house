@@ -355,7 +355,7 @@ def repair_references(db: sqlite3.Connection) -> int:
     changed = 0
     rows = db.execute(
         "SELECT id, analyte_key, value_num, unit, unit_printed, ref_printed, ref_low, ref_high, status "
-        "FROM observation WHERE value_num IS NOT NULL AND ref_printed IS NOT NULL"
+        "FROM observation WHERE value_num IS NOT NULL"  # incluye los que no traían rango: sin estado
     ).fetchall()
     for r in rows:
         analyte = terminology.BY_KEY.get(r["analyte_key"])
