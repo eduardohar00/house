@@ -285,25 +285,45 @@ function niceStep(range, n) { const raw = range / n, m = Math.pow(10, Math.floor
 function drawChart(pts) {
   const box = document.getElementById('chart');
   const W = Math.max(box.clientWidth, 280), H = W < 520 ? 250 : 320;
-  const m = { l: W < 520 ? 40 : 48, r: W < 520 ? 52 : 64, t: 14, b: 30 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const m = { l: W < 520 ? 40 : 48, r: W < 520 ? 52 : 64, t: 14, b: 42 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
   const l = pts[pts.length - 1], vals = pts.map(o => o.value_num);
+  // Pocos resultados (lo normal): cada uno en su lugar, con espacio parejo y su fecha debajo; así
+  // dos estudios del mismo mes o año no quedan encimados. Muchos: escala de tiempo con años.
+  const ordinal = pts.length <= 12;
   let t0 = ts(pts[0].collected_on), t1 = ts(l.collected_on);
-  const padT = Math.max((t1 - t0) * 0.06, 150 * 864e5); t0 -= padT; t1 += padT;
+  const padT = Math.max((t1 - t0) * 0.04, 60 * 864e5); t0 -= padT; t1 += padT;
   const lims = [l.ref_low, l.ref_high].filter(v => v != null);
   let mn = Math.min(...vals, ...lims), mx = Math.max(...vals, ...lims);
   const pad = (mx - mn) * 0.18 || Math.abs(mx) * 0.2 || 1; mn -= pad; mx += pad;
   const step = niceStep(mx - mn, 4);
   mn = Math.floor(mn / step) * step; mx = Math.ceil(mx / step) * step; if (mn < 0 && Math.min(...vals) >= 0) mn = 0;
-  const X = t => m.l + (t - t0) / (t1 - t0) * iw, Y = v => m.t + (1 - (v - mn) / (mx - mn)) * ih;
+  const Y = v => m.t + (1 - (v - mn) / (mx - mn)) * ih;
+  const X = ordinal ? i => m.l + iw * (i + 0.5) / pts.length : i => m.l + (ts(pts[i].collected_on) - t0) / (t1 - t0) * iw;
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de ${esc(name(S.sel))}">`;
   if (lims.length) {
     const top = Y(l.ref_high ?? mx), bot = Y(l.ref_low ?? mn);
     s += `<rect x="${m.l}" y="${top}" width="${iw}" height="${Math.max(0, bot - top)}" fill="var(--band)" stroke="var(--band-line)" stroke-dasharray="3 3"/>`;
   }
   for (let v = mn; v <= mx + 1e-9; v += step) s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" opacity=".7"/><text class="ax" x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${Number(v.toFixed(3))}</text>`;
-  const y0 = new Date(t0).getUTCFullYear(), y1 = new Date(t1).getUTCFullYear(), every = Math.ceil((y1 - y0 + 1) / 8);
-  for (let y = y0; y <= y1; y += every) { const x = X(Date.UTC(y, 6, 1)); if (x > m.l && x < m.l + iw) s += `<text class="ax" x="${x}" y="${H - 8}" text-anchor="middle">${y}</text>`; }
-  const P = pts.map(o => [X(ts(o.collected_on)), Y(o.value_num)]);
+  if (ordinal) {
+    const every = Math.max(1, Math.ceil(pts.length * 64 / iw));  // no encimar fechas en pantallas angostas
+    let prevYear = null;
+    pts.forEach((o, i) => {
+      if (i % every && i !== pts.length - 1) return;
+      const d = new Date(ts(o.collected_on)), yr = d.getUTCFullYear();
+      const dm = d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+      s += `<text class="ax" x="${X(i)}" y="${H - 24}" text-anchor="middle">${dm}</text>`;
+      if (yr !== prevYear) s += `<text class="ax" x="${X(i)}" y="${H - 8}" text-anchor="middle" style="font-weight:600">${yr}</text>`;
+      prevYear = yr;
+    });
+  } else {
+    const y0 = new Date(t0).getUTCFullYear() + 1, y1 = new Date(t1).getUTCFullYear(), every = Math.ceil((y1 - y0 + 1) / 8);
+    for (let y = y0; y <= y1; y += every) {
+      const x = m.l + (Date.UTC(y, 0, 1) - t0) / (t1 - t0) * iw;
+      s += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${m.t + ih}" stroke="var(--line)" opacity=".7"/><text class="ax" x="${x}" y="${H - 16}" text-anchor="middle">${y}</text>`;
+    }
+  }
+  const P = pts.map((o, i) => [X(i), Y(o.value_num)]);
   s += `<polyline points="${P.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   P.forEach((q, i) => s += `<circle class="pt" cx="${q[0]}" cy="${q[1]}" r="${i === P.length - 1 ? 5 : 4}" fill="${OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)'}" stroke="var(--surface)" stroke-width="2"/>`);
   const lp = P[P.length - 1];
