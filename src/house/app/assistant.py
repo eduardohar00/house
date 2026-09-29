@@ -113,8 +113,8 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_clinical_record",
         "description": "Expediente clínico: alergias, problemas de salud (con los estudios que la persona "
-        "ligó a cada uno), medicamentos (actuales y pasados), antecedentes familiares, cirugías, vacunas y "
-        "consultas.",
+        "ligó a cada uno), medicamentos y suplementos alimenticios (actuales y pasados), antecedentes "
+        "familiares, cirugías, vacunas y consultas.",
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
@@ -400,6 +400,9 @@ class Toolbox:
             ],
             "medications": pick(
                 c["medications"], "name", "dose", "reason", "since_year", "until_year", "active"
+            ),
+            "supplements": pick(
+                c["supplements"], "name", "dose", "brand", "reason", "since_year", "until_year", "active"
             ),
             "family_history": pick(c["family"], "relative", "condition"),
             "procedures": pick(c["procedures"], "name", "year"),

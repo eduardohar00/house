@@ -394,3 +394,37 @@ def test_problems_link_to_treatments_and_surgeries_and_old_tables_are_upgraded(w
     )  # ya se admite
     clinical.migrate(db)  # idempotente
     assert db.execute("SELECT COUNT(*) FROM problem_link").fetchone()[0] == 3
+
+
+def test_supplements_are_kept_apart_from_medications(world):
+    c, me, member = world
+    r = add(
+        c, me, "supplement", name="Proteína (whey)", dose="1 scoop al día", brand="Marca X", since_year="2024"
+    )
+    assert r.status_code == 200
+    sid = r.json()["id"]
+    add(
+        c, me, "supplement", name="Omega 3", active=False, since_year="2022", until_year="2023"
+    ).raise_for_status()
+    assert add(c, me, "supplement", name="Creatina", since_year="2025", until_year="2020").status_code == 422
+    assert add(c, me, "supplement", name="").status_code == 422
+    add(c, me, "medication", name="Metformina").raise_for_status()
+
+    o = c.get(f"/api/people/{me}/clinical").json()
+    assert [(s["name"], s["active"]) for s in o["supplements"]] == [("Proteína (whey)", 1), ("Omega 3", 0)]
+    assert [m["name"] for m in o["medications"]] == [
+        "Metformina"
+    ]  # los suplementos no se mezclan con los medicamentos
+    assert "Creatina monohidratada" in c.get("/api/clinical/suggestions").json()["supplement"]
+
+    up = c.put(
+        f"/api/people/{me}/clinical/supplement/{sid}",
+        json={"name": "Proteína", "dose": "2 scoops"},
+        headers=H,
+    )
+    assert up.status_code == 200
+    assert c.get(f"/api/people/{me}/clinical").json()["supplements"][0]["dose"] == "2 scoops"
+    # cada persona ve lo suyo
+    assert c.get(f"/api/people/{member}/clinical").json()["supplements"] == []
+    assert c.delete(f"/api/people/{member}/clinical/supplement/{sid}", headers=H).status_code == 404
+    assert c.delete(f"/api/people/{me}/clinical/supplement/{sid}", headers=H).status_code == 200

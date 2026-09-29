@@ -41,6 +41,11 @@ CREATE TABLE IF NOT EXISTS consultation (
   id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
   occurred_on TEXT NOT NULL, reason TEXT NOT NULL, doctor TEXT, specialty TEXT, notes TEXT
 );
+CREATE TABLE IF NOT EXISTS supplement (
+  id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, dose TEXT, brand TEXT, reason TEXT, since_year TEXT, until_year TEXT,
+  active INTEGER NOT NULL DEFAULT 1, notes TEXT
+);
 CREATE TABLE IF NOT EXISTS problem_link (
   id INTEGER PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problem(id) ON DELETE CASCADE,
@@ -131,6 +136,11 @@ SPECS: dict[str, tuple[str, dict[str, Field]]] = {
         "prescriber": Field("text"), "since_year": Field("year"), "until_year": Field("year"),
         "active": Field("bool", default=True), "notes": Field("text", max=1000),
     }),
+    "supplement": ("supplement", {
+        "name": Field("text", True), "dose": Field("text"), "brand": Field("text"), "reason": Field("text"),
+        "since_year": Field("year"), "until_year": Field("year"), "active": Field("bool", default=True),
+        "notes": Field("text", max=1000),
+    }),
     "family": ("family_history", {"relative": Field("text", True), "condition": Field("text", True)}),
     "procedure": ("procedure_history", {
         "name": Field("text", True), "year": Field("year"), "notes": Field("text", max=1000),
@@ -184,7 +194,7 @@ def clean(kind: str, data: dict) -> dict[str, Any]:
     fields = SPECS[kind][1]
     out = {col: _clean_field(col, f, data.get(col)) for col, f in fields.items()}
     if (
-        kind == "medication"
+        kind in ("medication", "supplement")
         and out["since_year"]
         and out["until_year"]
         and out["until_year"] < out["since_year"]
@@ -511,6 +521,7 @@ def overview(db, person_id: int) -> dict:
         "allergies": _rows(db, "allergy", person_id, "substance COLLATE NOCASE"),
         "problems": problems,
         "medications": meds,
+        "supplements": _rows(db, "supplement", person_id, "active DESC, name COLLATE NOCASE"),
         "family": _rows(db, "family_history", person_id, "relative COLLATE NOCASE, condition COLLATE NOCASE"),
         "procedures": _rows(db, "procedure_history", person_id, "year DESC, name COLLATE NOCASE"),
         "vaccines": _rows(db, "vaccine", person_id, "given_on DESC"),
@@ -528,6 +539,30 @@ def overview(db, person_id: int) -> dict:
 # ---------- Sugerencias para autocompletar (solo nombres; no son consejo médico) ----------
 
 SUGGESTIONS = {
+    "supplement": [
+        "Proteína (whey)",
+        "Proteína vegetal",
+        "Creatina monohidratada",
+        "Omega 3",
+        "Vitamina D3",
+        "Vitamina C",
+        "Vitamina B12",
+        "Multivitamínico",
+        "Magnesio",
+        "Zinc",
+        "Hierro",
+        "Calcio",
+        "Colágeno",
+        "Probióticos",
+        "Melatonina",
+        "Cafeína",
+        "BCAA",
+        "Ashwagandha",
+        "Ácido fólico",
+        "Fibra (psyllium)",
+        "Electrolitos",
+        "Pre-entreno",
+    ],
     "medication": [
         "Paracetamol",
         "Ibuprofeno",

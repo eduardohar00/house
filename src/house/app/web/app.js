@@ -838,6 +838,11 @@ const CLIN = {
     badge: m => m.document_id ? `<a class="mini" href="/api/documents/${m.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver receta</a>` : '',
     line: m => `<b>${esc(m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
     sub: m => [m.reason, (m.problems || []).filter(p => p.name.toLowerCase() !== (m.reason || '').toLowerCase()).length && 'ligado a ' + m.problems.map(p => p.name).join(', '), m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
+  supplement: { key: 'supplements', title: 'Suplementos', add: 'Agregar suplemento',
+    fields: [F('name', 'Suplemento', 'text', { list: 'supplement' }), F('dose', 'Cuánto y cuándo (por ejemplo 1 scoop al día)'), F('brand', 'Marca (opcional)'), F('reason', 'Para qué (opcional)'),
+      F('since_year', 'Desde (año)', 'text', { ph: '2024' }), F('until_year', 'Hasta (año, si ya lo dejaste)', 'text', { ph: '2025' }), F('active', 'Lo tomo actualmente', 'check')],
+    line: m => `<b>${esc(m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
+    sub: m => [m.brand, m.reason, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(' · ') },
   family: { key: 'family', title: 'Antecedentes familiares', add: 'Agregar antecedente', none: 'Sin antecedentes familiares relevantes',
     fields: [F('relative', 'Parentesco', 'text', { list: 'relative' }), F('condition', 'Condición', 'text', { list: 'problem' })],
     line: f => `<b>${esc(f.relative)}</b> · ${esc(f.condition)}`, sub: () => '' },
@@ -909,7 +914,7 @@ async function renderClinical() {
   };
   const card = kind => {
     const cfg = CLIN[kind]; let items = itemsOf(kind), past = [];
-    if (kind === 'medication') { past = items.filter(m => !m.active); items = items.filter(m => m.active); }
+    if (kind === 'medication' || kind === 'supplement') { past = items.filter(m => !m.active); items = items.filter(m => m.active); }
     if (kind === 'vaccine' && items.length) return vaccineCard(cfg, items);
     if (kind === 'family' && items.length) return familyCard(cfg, items);
     const confirmed = c.none.includes(kind);
@@ -926,11 +931,11 @@ async function renderClinical() {
   const editing = S.clinEdit;
 
   // ---- Secciones: un resumen al inicio y una sección a la vez, para no ver todo junto.
-  const SECTIONS = [['res', 'Resumen'], ['prob', 'Padecimientos', 'problem'], ['med', 'Medicamentos', 'medication'], ['alg', 'Alergias', 'allergy'],
+  const SECTIONS = [['res', 'Resumen'], ['prob', 'Padecimientos', 'problem'], ['med', 'Medicamentos', 'medication'], ['sup', 'Suplementos', 'supplement'], ['alg', 'Alergias', 'allergy'],
     ['fam', 'Antecedentes', 'family'], ['vac', 'Vacunas', 'vaccine'], ['cir', 'Cirugías', 'procedure'], ['con', 'Consultas', 'consultation'], ['his', 'Historial']];
   const secOfKind = Object.fromEntries(SECTIONS.filter(x => x[2]).map(x => [x[2], x[0]]));
   const sec = SECTIONS.some(x => x[0] === S.expSec) ? S.expSec : 'res';
-  const count = { problem: c.problems.filter(p => p.status !== 'Resuelta').length, medication: c.medications.filter(m => m.active).length, allergy: c.allergies.length,
+  const count = { problem: c.problems.filter(p => p.status !== 'Resuelta').length, medication: c.medications.filter(m => m.active).length, supplement: c.supplements.filter(m => m.active).length, allergy: c.allergies.length,
     family: c.family.length, vaccine: c.vaccines.length, procedure: c.procedures.length, consultation: c.consultations.length };
   const pending = HAS_NONE.filter(k => !count[k] && !c.none.includes(k));  // sin datos y sin confirmar que «no hay»
   const timelineHtml = (list, title) => `<section class="card xc"><h3>${title}</h3>
@@ -950,6 +955,7 @@ async function renderClinical() {
       <div class="xdash">
         <section class="card xc">${head('Padecimientos activos', 'prob')}${mini(act, p => `<li><b>${esc(p.name)}</b> <span class="s">${esc(p.status)}${p.links.length ? ` · ${p.links.length} ${p.links.length === 1 ? 'estudio o tratamiento ligado' : 'estudios o tratamientos ligados'}` : ''}</span></li>`, 'prob', 'Sin padecimientos activos.')}</section>
         <section class="card xc">${head('Medicamentos actuales', 'med')}${mini(meds, m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'med', 'Sin medicamentos actuales.')}</section>
+        <section class="card xc">${head('Suplementos actuales', 'sup')}${mini(c.supplements.filter(m => m.active), m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'sup', 'Sin suplementos registrados.')}</section>
         <section class="card xc">${head('Alergias', 'alg')}${mini(c.allergies, a => `<li><b>${esc(a.substance)}</b>${a.reaction ? ` <span class="s">· ${esc(a.reaction)}</span>` : ''}</li>`, 'alg', c.none.includes('allergy') ? 'Sin alergias conocidas.' : 'Sin registrar.')}</section>
         <section class="card xc">${head('Últimos eventos', 'his')}${recent ? `<ul class="xmini">${recent}</ul>` : '<p class="tip" style="margin:0">Todavía no hay eventos.</p>'}</section>
       </div>`;
