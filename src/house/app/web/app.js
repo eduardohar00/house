@@ -859,6 +859,15 @@ const CLIN = {
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
 const EV_KIND = { consulta: 'Consulta', receta: 'Receta', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
 
+// Un mismo medicamento (misma sustancia activa) que aparece en varias recetas se muestra en una sola fila.
+const medKey = m => String(m.active_ingredient || m.name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const medWhen = m => m.prescribed_on || (m.since_year ? `${m.since_year}-01-01` : '');
+function groupMeds(list) {
+  const groups = new Map();
+  list.forEach(m => (groups.get(medKey(m)) || groups.set(medKey(m), []).get(medKey(m))).push(m));
+  return [...groups.values()].map(g => g.sort((a, b) => medWhen(b).localeCompare(medWhen(a)))).sort((a, b) => medWhen(b[0]).localeCompare(medWhen(a[0])));
+}
+
 async function renderClinical() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
   const [c, sug, cand] = await Promise.all([api(`/api/people/${S.subject}/clinical`), S.sug ? Promise.resolve(S.sug) : api('/api/clinical/suggestions'), api(`/api/people/${S.subject}/link-candidates`)]);
@@ -880,7 +889,7 @@ async function renderClinical() {
     return `<div class="plw">${p.links.map(chip).join('')}${suggChips}${groups ? `<label class="lchip add"><select data-plink="${p.id}" aria-label="Ligar un estudio a este padecimiento"><option value="">＋ Ligar estudio o tratamiento</option>${groups}</select></label>` : ''}</div>`;
   };
   const row = (kind, it, cfg = CLIN[kind]) => { const sub = cfg.sub(it);
-    return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
+    return `<li><span>${cfg.line(it)}${sub ? `<br><span class="s">${esc(sub)}</span>` : ''}${it.duplicate && !cfg.noDup ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
       <span class="rowact">${cfg.badge ? cfg.badge(it) : ''}<button class="mini" data-edit="${kind}:${it.id}">Editar</button><button class="mini dn" data-del="${kind}:${it.id}">Quitar</button></span>${kind === 'problem' ? plinks(it) : ''}</li>`; };
   // Vacunas agrupadas por vacuna: «COVID-19 · 2 dosis · última mayo 2022», con cada dosis al abrir.
   const plainName = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -893,6 +902,18 @@ async function renderClinical() {
       ${list.map(g => `<details class="hist vgrp" ${g.length === 1 ? 'open' : ''}><summary><b>${esc(g[0].name)}</b> · ${g.length} ${g.length === 1 ? 'dosis' : 'dosis'} · última ${fd(g[0].given_on)}</summary>
         <ul class="xl">${g.map(v => row('vaccine', v, dose)).join('')}</ul></details>`).join('')}</section>`;
   };
+  // Medicamentos: una fila por sustancia; si se repite en varias recetas, se abre para ver cada vez.
+  const occ = { noDup: true, badge: CLIN.medication.badge,
+    line: m => `<b>${medWhen(m) ? (m.prescribed_on ? fd(m.prescribed_on) : m.since_year) : 'Sin fecha'}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
+    sub: m => [m.brand, m.notes, m.prescriber && 'indicado por ' + m.prescriber].filter(Boolean).join(' · ') };
+  const medRows = arr => groupMeds(arr).map(g => {
+    if (g.length === 1) return row('medication', g[0]);
+    const last = g[0], brands = [...new Set(g.map(m => m.brand).filter(Boolean))];
+    const title = brands.length ? brands.join(' / ') : (last.active_ingredient || last.name);
+    const dt = last.prescribed_on ? fd(last.prescribed_on) : last.since_year || '';
+    return `<li class="mgrp"><details><summary><span><b>${esc(title)}</b>${last.active_ingredient && brands.length ? ` <span class="s">· ${esc(last.active_ingredient)}</span>` : ''}</span>
+      <span class="s">${g.length} veces${dt ? ' · última ' + dt : ''}</span></summary><ul class="xl">${g.map(m => row('medication', m, occ)).join('')}</ul></details></li>`;
+  }).join('');
   // Antecedentes familiares agrupados por familiar (madre, padre, abuelos…); una condición que se repite se marca.
   const familyCard = (cfg, items) => {
     const order = S.sug.relative || [];
@@ -915,6 +936,7 @@ async function renderClinical() {
   const card = kind => {
     const cfg = CLIN[kind]; let items = itemsOf(kind), past = [];
     if (kind === 'medication' || kind === 'supplement') { past = items.filter(m => !m.active); items = items.filter(m => m.active); }
+    const listOf = arr => kind === 'medication' ? medRows(arr) : arr.map(it => row(kind, it)).join('');
     if (kind === 'vaccine' && items.length) return vaccineCard(cfg, items);
     if (kind === 'family' && items.length) return familyCard(cfg, items);
     const confirmed = c.none.includes(kind);
@@ -923,8 +945,8 @@ async function renderClinical() {
         : `<p class="s" style="margin:0">Sin registrar todavía.</p><button class="mini" data-none="${kind}">Confirmar: ${esc(cfg.none.toLowerCase())}</button>`)
       : '<p class="s" style="margin:0">Sin registros.</p>';
     return `<section class="card xc"><h3>${cfg.title}<button class="mini add-x" data-add="${kind}">${cfg.add}</button></h3>
-      ${items.length ? `<ul class="xl">${items.map(it => row(kind, it)).join('')}</ul>` : empty}
-      ${past.length ? `<details class="hist"><summary>Suspendidos (${past.length})</summary><ul class="xl">${past.map(it => row(kind, it)).join('')}</ul></details>` : ''}</section>`;
+      ${items.length ? `<ul class="xl">${listOf(items)}</ul>` : empty}
+      ${past.length ? `<details class="hist"><summary>Suspendidos (${past.length})</summary><ul class="xl">${listOf(past)}</ul></details>` : ''}</section>`;
   };
   const chips = ['todo', ...Object.keys(EV_KIND)];
   const evs = c.timeline.filter(e => S.clinFilter === 'todo' || e.kind === S.clinFilter);
@@ -954,7 +976,7 @@ async function renderClinical() {
         ${pending.map(k => `<div class="xprow"><span><b>${esc(CLIN[k].title)}</b> <span class="s">sin registrar</span></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini" data-add="${k}">Agregar</button><button class="mini" data-none="${k}">${esc(CLIN[k].none)}</button></span></div>`).join('')}</section>` : ''}
       <div class="xdash">
         <section class="card xc">${head('Padecimientos activos', 'prob')}${mini(act, p => `<li><b>${esc(p.name)}</b> <span class="s">${esc(p.status)}${p.links.length ? ` · ${p.links.length} ${p.links.length === 1 ? 'estudio o tratamiento ligado' : 'estudios o tratamientos ligados'}` : ''}</span></li>`, 'prob', 'Sin padecimientos activos.')}</section>
-        <section class="card xc">${head('Medicamentos actuales', 'med')}${mini(meds, m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'med', 'Sin medicamentos actuales.')}</section>
+        <section class="card xc">${head('Medicamentos actuales', 'med')}${mini(groupMeds(meds).map(g => g[0]), m => `<li><b>${esc(m.brand || m.name)}</b>${m.active_ingredient && m.brand ? ` <span class="s">· ${esc(m.active_ingredient)}</span>` : ''}${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'med', 'Sin medicamentos actuales.')}</section>
         <section class="card xc">${head('Suplementos actuales', 'sup')}${mini(c.supplements.filter(m => m.active), m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'sup', 'Sin suplementos registrados.')}</section>
         <section class="card xc">${head('Alergias', 'alg')}${mini(c.allergies, a => `<li><b>${esc(a.substance)}</b>${a.reaction ? ` <span class="s">· ${esc(a.reaction)}</span>` : ''}</li>`, 'alg', c.none.includes('allergy') ? 'Sin alergias conocidas.' : 'Sin registrar.')}</section>
         <section class="card xc">${head('Últimos eventos', 'his')}${recent ? `<ul class="xmini">${recent}</ul>` : '<p class="tip" style="margin:0">Todavía no hay eventos.</p>'}</section>

@@ -135,6 +135,11 @@ def test_upload_review_and_confirm_a_prescription(tmp_path):
     )
     suc = meds["Sucralfato 1 g"]
     assert suc["active"] == 0 and suc["notes"] == "antes de alimentos"
+    assert om["prescribed_on"] == "2026-03-12" and suc["prescribed_on"] == "2026-03-12"  # fecha de la receta
+    manual = next(
+        m for m in c.get(f"/api/people/{me}/clinical").json()["medications"] if m["document_id"] is None
+    )
+    assert manual["prescribed_on"] is None  # el capturado a mano no viene de una receta
     (p,) = c.get(f"/api/people/{me}/clinical").json()["problems"]
     assert sorted(ln["title"] for ln in p["links"]) == [
         "Omeprazol",

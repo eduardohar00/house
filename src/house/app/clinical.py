@@ -519,6 +519,12 @@ def timeline(db, person_id: int) -> list[dict]:
 
 def overview(db, person_id: int) -> dict:
     meds = _rows(db, "medication", person_id, "active DESC, name COLLATE NOCASE")
+    when = {  # fecha de la receta de la que salió cada medicamento
+        r["id"]: r["collected_on"]
+        for r in db.execute("SELECT id, collected_on FROM document WHERE person_id = ?", (person_id,))
+    }
+    for m in meds:
+        m["prescribed_on"] = when.get(m["document_id"]) if m.get("document_id") else None
     names = [_plain(m["name"]) for m in meds if m["active"]]
     for m in meds:
         m["duplicate"] = bool(m["active"]) and names.count(_plain(m["name"])) > 1
