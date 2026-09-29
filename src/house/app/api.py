@@ -22,7 +22,7 @@ from ..normalize import explanations, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import assistant, auth, backup, clinical, ingest, store
+from . import assistant, auth, backup, clinical, drugs, ingest, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -86,6 +86,8 @@ class RxDecision(BaseModel):
     index: int
     accept: bool
     name: str = ""
+    active_ingredient: str | None = None
+    brand: str | None = None
     dose: str | None = None
     frequency: str | None = None
     duration: str | None = None
@@ -624,6 +626,55 @@ def create_app(
     class LinkBody(BaseModel):
         kind: str
         ref: str
+
+    class Ingredient(BaseModel):
+        active_ingredient: str
+
+    @app.post("/api/people/{person_id}/medications/suggest-ingredients")
+    def suggest_ingredients(person_id: int, actor: Me) -> dict:
+        """Sugerencias de sustancia activa para los medicamentos que no la tienen (no se guarda nada)."""
+        subject(person_id, actor, "editar_expediente")
+        router = assistant_router()
+        if router is None:
+            raise HTTPException(
+                409, "Sugerir sustancias activas necesita Claude: conecta tu clave en Configuración."
+            )
+        rows = db.execute(
+            "SELECT id, name, brand FROM medication "
+            "WHERE person_id = ? AND COALESCE(active_ingredient, '') = ''",
+            (person_id,),
+        ).fetchall()
+        items = [{"id": r["id"], "name": r["brand"] or r["name"]} for r in rows]
+        try:
+            found = drugs.suggest(router, items)
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo consultar a Claude: {e}") from None
+        return {
+            "suggestions": [
+                {"id": i["id"], "name": i["name"], "active_ingredient": found[i["id"]]}
+                for i in items
+                if i["id"] in found
+            ]
+        }
+
+    @app.put("/api/people/{person_id}/medications/{med_id}/ingredient")
+    def set_ingredient(person_id: int, med_id: int, body: Ingredient, actor: Me) -> dict:
+        """Acepta una sustancia activa: el nombre que había pasa a ser el nombre comercial si era otro."""
+        subject(person_id, actor, "editar_expediente")
+        m = db.execute(
+            "SELECT * FROM medication WHERE id = ? AND person_id = ?", (med_id, person_id)
+        ).fetchone()
+        if m is None:
+            raise HTTPException(404, "No encontré ese medicamento en este perfil.")
+        data = dict(m)
+        ingredient = " ".join(body.active_ingredient.split())
+        if not data.get("brand") and clinical._plain(m["name"]) != clinical._plain(ingredient):
+            data["brand"] = m["name"]
+        data["active_ingredient"] = ingredient
+        clinical_call(clinical.update, db, person_id, "medication", med_id, data)
+        return {"ok": True}
 
     @app.get("/api/people/{person_id}/link-candidates")
     def link_candidates(person_id: int, actor: Me) -> dict:

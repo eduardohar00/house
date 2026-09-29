@@ -61,7 +61,14 @@ CREATE TABLE IF NOT EXISTS clinical_none (
 """
 
 _EXTRA_COLUMNS = {
-    "medication": {"prescriber": "TEXT", "until_year": "TEXT", "notes": "TEXT", "document_id": "INTEGER"},
+    "medication": {
+        "prescriber": "TEXT",
+        "until_year": "TEXT",
+        "notes": "TEXT",
+        "document_id": "INTEGER",
+        "active_ingredient": "TEXT",
+        "brand": "TEXT",
+    },
     "problem": {"notes": "TEXT"},
     "allergy": {"notes": "TEXT"},
     "procedure_history": {"notes": "TEXT"},
@@ -132,7 +139,8 @@ SPECS: dict[str, tuple[str, dict[str, Field]]] = {
         "since_year": Field("year"), "notes": Field("text", max=1000),
     }),
     "medication": ("medication", {
-        "name": Field("text", True), "dose": Field("text"), "reason": Field("text"),
+        "name": Field("text"), "active_ingredient": Field("text"), "brand": Field("text"),
+        "dose": Field("text"), "reason": Field("text"),
         "prescriber": Field("text"), "since_year": Field("year"), "until_year": Field("year"),
         "active": Field("bool", default=True), "notes": Field("text", max=1000),
     }),
@@ -193,6 +201,11 @@ def clean(kind: str, data: dict) -> dict[str, Any]:
         raise ClinicalError(404, "Tipo de dato desconocido.")
     fields = SPECS[kind][1]
     out = {col: _clean_field(col, f, data.get(col)) for col, f in fields.items()}
+    if kind == "medication":
+        # `name` es el nombre con el que se identifica: la sustancia activa o, si no se conoce, la marca.
+        out["name"] = out["active_ingredient"] or out["brand"] or out["name"]
+        if not out["name"]:
+            raise ClinicalError(422, "Escribe la sustancia activa o el nombre comercial.")
     if (
         kind in ("medication", "supplement")
         and out["since_year"]

@@ -833,7 +833,7 @@ def confirm_prescription(db: sqlite3.Connection, doc_id: int, person_id: int, bo
     problem_id = body.get("problem_id")
     saved = 0
     for d in picked:
-        name = (d.get("name") or "").strip()
+        name = (d.get("name") or d.get("active_ingredient") or d.get("brand") or "").strip()
         if not name:
             raise IngestError(422, "Todos los medicamentos que guardes necesitan nombre.")
         dose = " ".join(x.strip() for x in (d.get("dose") or "", d.get("frequency") or "") if x and x.strip())
@@ -847,6 +847,8 @@ def confirm_prescription(db: sqlite3.Connection, doc_id: int, person_id: int, bo
                 "medication",
                 {
                     "name": name,
+                    "active_ingredient": (d.get("active_ingredient") or "").strip() or None,
+                    "brand": (d.get("brand") or "").strip() or None,
                     "dose": dose or None,
                     "reason": (body.get("diagnosis") or "").strip() or None,
                     "prescriber": (body.get("prescriber") or "").strip() or None,

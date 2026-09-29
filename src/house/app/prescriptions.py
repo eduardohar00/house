@@ -20,6 +20,9 @@ SYSTEM = """Transcribes recetas médicas. Recibes fotos o páginas escaneadas de
 REGLAS
 1. Copia lo escrito, sin interpretar: nombres de medicamentos, dosis, frecuencia y duración tal como aparecen.
    No agregues medicamentos que no estén escritos ni completes indicaciones que no se ven.
+   «name» es el nombre tal como está escrito. Si la receta escribe la sustancia activa (el genérico),
+   ponla en «active_ingredient»; si escribe un nombre comercial, ponlo en «brand». Si aparecen ambos,
+   llena los dos. NO deduzcas la sustancia activa a partir de una marca: si no está escrita, null.
 2. Una entrada por medicamento. Si dos medicamentos comparten renglón, sepáralos.
 3. Si algo no se lee con seguridad, pon tu mejor lectura y marca legible = false. Si no hay dato, null.
 4. Fecha de la receta en formato AAAA-MM-DD; null si no aparece o no es clara.
@@ -37,13 +40,24 @@ def prescription_schema() -> dict:
         "type": "object",
         "properties": {
             "name": {"type": "string"},
+            "active_ingredient": nullable,
+            "brand": nullable,
             "dose": nullable,
             "frequency": nullable,
             "duration": nullable,
             "instructions": nullable,
             "legible": {"type": "boolean"},
         },
-        "required": ["name", "dose", "frequency", "duration", "instructions", "legible"],
+        "required": [
+            "name",
+            "active_ingredient",
+            "brand",
+            "dose",
+            "frequency",
+            "duration",
+            "instructions",
+            "legible",
+        ],
         "additionalProperties": False,
     }
     return {
@@ -82,6 +96,8 @@ def clean(data: dict) -> dict:
         meds.append(
             {
                 "name": name,
+                "active_ingredient": _s(m.get("active_ingredient"), 120),
+                "brand": _s(m.get("brand"), 120),
                 "dose": _s(m.get("dose")),
                 "frequency": _s(m.get("frequency")),
                 "duration": _s(m.get("duration")),

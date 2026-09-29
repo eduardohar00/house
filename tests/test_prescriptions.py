@@ -167,3 +167,46 @@ def test_prescription_errors(tmp_path):
     plain.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
     r = send(plain, plain.get("/api/me").json()["id"], png())
     assert r.status_code == 409 and "Claude" in r.json()["detail"]
+
+
+def test_ingredient_suggestions_come_from_claude_and_are_not_saved_until_accepted(tmp_path):
+    from house.app import drugs
+
+    class Fake:
+        name = "fake"
+        seen = None
+
+        def complete_json(self, req):
+            Fake.seen = req.user
+            items = [{"id": int(ln.split(":")[0]), "active_ingredient": "metformina" if "Glucophage" in ln else None}
+                     for ln in req.user.splitlines()[1:]]  # fmt: skip
+            return LLMResponse(data={"items": items}, provider="fake", model="m")
+
+    cfg = Config(tasks={"extract": "fake", "interpret": "fake"}, providers={})
+    c = TestClient(
+        create_app(tmp_path, key_provider=lambda: KEY, router=Router(cfg, overrides={"fake": Fake()}))
+    )
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    a = c.post(f"/api/people/{me}/clinical/medication", json={"brand": "Glucophage"}, headers=H).json()["id"]
+    c.post(
+        f"/api/people/{me}/clinical/medication", json={"brand": "Marca Rara"}, headers=H
+    ).raise_for_status()
+    c.post(
+        f"/api/people/{me}/clinical/medication",
+        json={"active_ingredient": "omeprazol", "brand": "Losec"},
+        headers=H,
+    ).raise_for_status()
+
+    out = c.post(f"/api/people/{me}/medications/suggest-ingredients", headers=H).json()
+    assert out == {"suggestions": [{"id": a, "name": "Glucophage", "active_ingredient": "metformina"}]}
+    assert (
+        "Losec" not in Fake.seen and "Glucophage" in Fake.seen
+    )  # solo van los que no tienen sustancia activa
+    assert (
+        next(m for m in c.get(f"/api/people/{me}/clinical").json()["medications"] if m["id"] == a)[
+            "active_ingredient"
+        ]
+        is None
+    )
+    assert drugs.suggest(Router(cfg, overrides={"fake": Fake()}), []) == {}

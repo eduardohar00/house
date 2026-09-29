@@ -399,7 +399,17 @@ class Toolbox:
                 for p in c["problems"]
             ],
             "medications": pick(
-                c["medications"], "name", "dose", "reason", "since_year", "until_year", "active"
+                c["medications"],
+                *(
+                    "name",
+                    "active_ingredient",
+                    "brand",
+                    "dose",
+                    "reason",
+                    "since_year",
+                    "until_year",
+                    "active",
+                ),
             ),
             "supplements": pick(
                 c["supplements"], "name", "dose", "brand", "reason", "since_year", "until_year", "active"

@@ -833,11 +833,11 @@ const CLIN = {
     line: p => `<b>${esc(p.name)}</b>${p.since_year ? ` <span class="s">desde ${esc(p.since_year)}</span>` : ''}`, sub: p => p.notes,
     badge: p => `<span class="sp ${STCLS[p.status] || 'c'}">${esc(p.status)}</span>` },
   medication: { key: 'medications', title: 'Medicamentos', add: 'Agregar medicamento', none: 'Sin medicamentos actuales',
-    fields: [F('name', 'Medicamento', 'text', { list: 'medication' }), F('dose', 'Dosis (por ejemplo 50 mg al día)'), F('reason', 'Para qué'), F('prescriber', 'Médico que lo indicó (opcional)'),
+    fields: [F('brand', 'Nombre comercial (si lo conoces)', 'text', { ph: 'Por ejemplo Glucophage' }), F('active_ingredient', 'Sustancia activa', 'text', { list: 'medication', ph: 'Por ejemplo metformina' }), F('dose', 'Dosis (por ejemplo 50 mg al día)'), F('reason', 'Para qué'), F('prescriber', 'Médico que lo indicó (opcional)'),
       F('since_year', 'Desde (año)', 'text', { ph: '2022' }), F('until_year', 'Hasta (año, si ya lo suspendiste)', 'text', { ph: '2024' }), F('active', 'Lo tomo actualmente', 'check')],
     badge: m => m.document_id ? `<a class="mini" href="/api/documents/${m.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver receta</a>` : '',
-    line: m => `<b>${esc(m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
-    sub: m => [m.reason, (m.problems || []).filter(p => p.name.toLowerCase() !== (m.reason || '').toLowerCase()).length && 'ligado a ' + m.problems.map(p => p.name).join(', '), m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
+    line: m => `<b>${esc(m.brand || m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
+    sub: m => [m.brand && m.active_ingredient && 'Sustancia activa: ' + m.active_ingredient, m.reason, (m.problems || []).filter(p => p.name.toLowerCase() !== (m.reason || '').toLowerCase()).length && 'ligado a ' + m.problems.map(p => p.name).join(', '), m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
   supplement: { key: 'supplements', title: 'Suplementos', add: 'Agregar suplemento',
     fields: [F('name', 'Suplemento', 'text', { list: 'supplement' }), F('dose', 'Cuánto y cuándo (por ejemplo 1 scoop al día)'), F('brand', 'Marca (opcional)'), F('reason', 'Para qué (opcional)'),
       F('since_year', 'Desde (año)', 'text', { ph: '2024' }), F('until_year', 'Hasta (año, si ya lo dejaste)', 'text', { ph: '2025' }), F('active', 'Lo tomo actualmente', 'check')],
@@ -961,12 +961,28 @@ async function renderClinical() {
       </div>`;
   };
   const nav = `<nav class="xnav" role="tablist" aria-label="Secciones del expediente">${SECTIONS.map(([k, label, kind]) => `<button class="xpill" role="tab" data-xs="${k}" aria-selected="${k === sec}" aria-pressed="${k === sec}">${label}${kind ? `<span class="xn">${count[kind]}</span>` : ''}${kind && pending.includes(kind) ? '<i class="xdot" title="Sin registrar"></i>' : ''}</button>`).join('')}</nav>`;
-  const body = sec === 'res' ? dash() : sec === 'his' ? timelineHtml(evs, 'Historial cronológico') : `<div class="xpanel">${card(SECTIONS.find(x => x[0] === sec)[2])}</div>`;
+  // Medicamentos sin sustancia activa: Claude la sugiere a partir del nombre y la persona confirma cada una.
+  const missingIng = c.medications.filter(m => !m.active_ingredient).length;
+  const medTools = () => !missingIng ? '' : `<div class="newan" style="margin-bottom:12px"><b>${missingIng} ${missingIng === 1 ? 'medicamento no tiene' : 'medicamentos no tienen'} sustancia activa</b>
+    <span class="tip">Claude puede sugerirla a partir del nombre (solo se envían los nombres). Tú confirmas cada una; verifícala en la caja o en la receta.</span>
+    ${S.sugIng ? (S.sugIng.length ? S.sugIng.map(x => `<div class="xprow"><span><b>${esc(x.name)}</b> → ${esc(x.active_ingredient)}</span><span style="display:flex;gap:6px"><button class="mini" data-acc-ing="${x.id}" data-ing="${esc(x.active_ingredient)}">Aceptar</button><button class="mini" data-skip-ing="${x.id}">Ignorar</button></span></div>`).join('') : '<span class="tip">Claude no está seguro de ninguna; puedes escribirlas al editar cada medicamento.</span>') : '<span><button class="mini" id="sugIng">Sugerir con Claude</button></span>'}</div>`;
+  const body = sec === 'res' ? dash() : sec === 'his' ? timelineHtml(evs, 'Historial cronológico') : `<div class="xpanel">${sec === 'med' ? medTools() : ''}${card(SECTIONS.find(x => x[0] === sec)[2])}</div>`;
   view().innerHTML = `
     <div id="clinform"></div>
     ${nav}
     ${body}`;
 
+  const sg = document.getElementById('sugIng');
+  if (sg) sg.onclick = async () => {
+    sg.disabled = true; sg.textContent = 'Claude está pensando…';
+    try { S.sugIng = (await api(`/api/people/${S.subject}/medications/suggest-ingredients`, { method: 'POST' })).suggestions; reload(); }
+    catch (e) { sg.disabled = false; sg.textContent = 'Sugerir con Claude'; toast(e.message); }
+  };
+  view().querySelectorAll('[data-acc-ing]').forEach(b => b.onclick = async () => {
+    try { await api(`/api/people/${S.subject}/medications/${b.dataset.accIng}/ingredient`, { method: 'PUT', body: { active_ingredient: b.dataset.ing } }); S.sugIng = S.sugIng.filter(x => x.id != b.dataset.accIng); toast('Sustancia activa guardada.'); reload(); }
+    catch (e) { toast(e.message); }
+  });
+  view().querySelectorAll('[data-skip-ing]').forEach(b => b.onclick = () => { S.sugIng = S.sugIng.filter(x => x.id != b.dataset.skipIng); reload(); });
   view().querySelectorAll('[data-xs]').forEach(b => b.onclick = () => { S.expSec = b.dataset.xs; window.scrollTo({ top: 0 }); reload(); });
   view().querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.clinFilter = b.dataset.f; reload(); });
   view().querySelectorAll('[data-plink]').forEach(sel => sel.onchange = async () => {
@@ -985,7 +1001,8 @@ async function renderClinical() {
   });
   view().querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.clinEdit = { kind: b.dataset.add, item: null }; S.expSec = secOfKind[b.dataset.add] || sec; reload(); });
   view().querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
-    const [kind, id] = b.dataset.edit.split(':'); S.clinEdit = { kind, item: itemsOf(kind).find(x => x.id == id) }; reload();
+    const [kind, id] = b.dataset.edit.split(':'); const found = itemsOf(kind).find(x => x.id == id);
+    S.clinEdit = { kind, item: kind === 'medication' && !found.brand && !found.active_ingredient ? { ...found, active_ingredient: found.name } : found }; reload();
   });
   view().querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     const [kind, id] = b.dataset.del.split(':'); const it = itemsOf(kind).find(x => x.id == id);
@@ -1217,7 +1234,7 @@ function openViewer(images, start) {
 function openPrescriptionReview(id, d) {
   const rx = d.prescription;
   if (!rx) { toast('Esta receta ya fue revisada.'); return renderDocs(); }
-  const meds = rx.medications.map((m, i) => ({ ...m, index: i, accept: true, active: true, dup: d.current_medications.some(n => n.toLowerCase() === m.name.toLowerCase()) }));
+  const meds = rx.medications.map((m, i) => ({ ...m, active_ingredient: m.active_ingredient || (m.brand ? '' : m.name), brand: m.brand || '', index: i, accept: true, active: true, dup: d.current_medications.some(n => n.toLowerCase() === m.name.toLowerCase()) }));
   const head = { date: rx.prescription_date || '', prescriber: rx.prescriber || '', diagnosis: rx.diagnosis || '', problem: rx.suggested_problem_id || '' };
   view().innerHTML = `<div class="rv"><div class="pages" id="pages" aria-label="Receta original">
       ${rx.file_kind === 'pdf' ? `<iframe class="pdf" src="/api/documents/${id}/file" title="Receta original"></iframe>` : `<div class="pg"><img src="/api/documents/${id}/file" alt="Receta original"></div>`}</div>
@@ -1236,7 +1253,8 @@ function openPrescriptionReview(id, d) {
         ${!m.legible ? '<span class="flag">Difícil de leer: revisa el nombre y la dosis contra el original</span>' : ''}
         ${m.dup ? `<span class="flag">Ya tienes «${esc(m.name)}» como medicamento actual</span>` : ''}
         <div class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-          <label>Medicamento<input type="text" data-mf="name" data-i="${m.index}" value="${esc(m.name)}" maxlength="120"></label>
+          <label>Nombre comercial<input type="text" data-mf="brand" data-i="${m.index}" value="${esc(m.brand || '')}" maxlength="120"></label>
+          <label>Sustancia activa<input type="text" data-mf="active_ingredient" data-i="${m.index}" value="${esc(m.active_ingredient || '')}" maxlength="120"></label>
           <label>Dosis<input type="text" data-mf="dose" data-i="${m.index}" value="${esc(m.dose || '')}" maxlength="200"></label>
           <label>Frecuencia<input type="text" data-mf="frequency" data-i="${m.index}" value="${esc(m.frequency || '')}" maxlength="200"></label>
           <label>Duración<input type="text" data-mf="duration" data-i="${m.index}" value="${esc(m.duration || '')}" maxlength="200"></label>
@@ -1259,7 +1277,7 @@ function openPrescriptionReview(id, d) {
       try {
         const res = await api(`/api/documents/${id}/review-prescription`, { method: 'POST', body: {
           prescription_date: head.date || null, prescriber: head.prescriber || null, diagnosis: head.diagnosis || null, problem_id: head.problem ? Number(head.problem) : null,
-          decisions: meds.map(m => ({ index: m.index, accept: m.accept, name: m.name, dose: m.dose || null, frequency: m.frequency || null, duration: m.duration || null, instructions: m.instructions || null, active: m.active })) } });
+          decisions: meds.map(m => ({ index: m.index, accept: m.accept, name: m.active_ingredient || m.brand || m.name, active_ingredient: m.active_ingredient || null, brand: m.brand || null, dose: m.dose || null, frequency: m.frequency || null, duration: m.duration || null, instructions: m.instructions || null, active: m.active })) } });
         toast(`Guardé ${res.saved} ${res.saved === 1 ? 'medicamento' : 'medicamentos'} en tu expediente.`); S.tab = 'exp'; renderShell();
       } catch (err) { e.textContent = err.message; }
     };

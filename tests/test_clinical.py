@@ -428,3 +428,64 @@ def test_supplements_are_kept_apart_from_medications(world):
     assert c.get(f"/api/people/{member}/clinical").json()["supplements"] == []
     assert c.delete(f"/api/people/{member}/clinical/supplement/{sid}", headers=H).status_code == 404
     assert c.delete(f"/api/people/{me}/clinical/supplement/{sid}", headers=H).status_code == 200
+
+
+def test_medications_have_active_ingredient_and_brand(world):
+    c, me, _ = world
+    both = add(c, me, "medication", brand="Glucophage", active_ingredient="metformina", dose="850 mg").json()[
+        "id"
+    ]
+    only_brand = add(c, me, "medication", brand="Aspirina Protect").json()["id"]
+    only_active = add(c, me, "medication", active_ingredient="Omeprazol").json()["id"]
+    legacy = add(c, me, "medication", name="Losartán").json()["id"]  # datos anteriores: solo «nombre»
+    assert add(c, me, "medication", dose="1 al día").status_code == 422  # sin sustancia activa ni marca
+
+    meds = {m["id"]: m for m in c.get(f"/api/people/{me}/clinical").json()["medications"]}
+    assert (meds[both]["name"], meds[both]["brand"], meds[both]["active_ingredient"]) == (
+        "metformina",
+        "Glucophage",
+        "metformina",
+    )
+    assert meds[only_brand]["name"] == "Aspirina Protect" and meds[only_brand]["active_ingredient"] is None
+    assert meds[only_active]["name"] == "Omeprazol" and meds[legacy]["name"] == "Losartán"
+
+    up = c.put(
+        f"/api/people/{me}/clinical/medication/{only_brand}",
+        json={"brand": "Aspirina Protect", "active_ingredient": "ácido acetilsalicílico"},
+        headers=H,
+    )
+    assert up.status_code == 200
+    assert c.get(f"/api/people/{me}/clinical").json()["medications"][0]["name"] in (
+        "ácido acetilsalicílico",
+        "metformina",
+        "Omeprazol",
+        "Losartán",
+    )
+    # aceptar una sugerencia: el nombre que había pasa a ser el comercial si era distinto
+    assert (
+        c.put(
+            f"/api/people/{me}/medications/{legacy}/ingredient",
+            json={"active_ingredient": "losartán"},
+            headers=H,
+        ).status_code
+        == 200
+    )
+    assert (
+        c.put(
+            f"/api/people/{me}/medications/{only_active}/ingredient",
+            json={"active_ingredient": "omeprazol"},
+            headers=H,
+        ).status_code
+        == 200
+    )
+    m = {x["id"]: x for x in c.get(f"/api/people/{me}/clinical").json()["medications"]}
+    assert (
+        m[legacy]["active_ingredient"] == "losartán" and m[legacy]["brand"] is None
+    )  # era la misma sustancia
+    assert m[only_active]["active_ingredient"] == "omeprazol"
+    assert (
+        c.put(
+            f"/api/people/{me}/medications/999/ingredient", json={"active_ingredient": "x"}, headers=H
+        ).status_code
+        == 404
+    )
