@@ -653,6 +653,12 @@ def create_app(
         )
         return [dict(r) for r in rows]
 
+    @app.post("/api/people/{person_id}/imaging/refresh")
+    def refresh_imaging(person_id: int, actor: Me) -> dict:
+        """Vuelve a leer los informes confirmados con la versión actual: solo textos, no lo confirmado."""
+        subject(person_id, actor, "releer_estudio")
+        return ingest.refresh_imaging_text(db, vault, person_id)
+
     @app.get("/api/people/{person_id}/images/loose")
     def loose_images(person_id: int, actor: Me) -> list[dict]:
         """Imágenes que no coinciden con ningún informe (para que no queden escondidas)."""

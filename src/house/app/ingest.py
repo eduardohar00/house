@@ -109,10 +109,12 @@ def related_studies(studies: list[dict], manual: set[tuple[int, int]]) -> dict[i
         for b in studies:
             if a["id"] >= b["id"]:
                 continue
-            auto = (
-                a["performed_on"] == b["performed_on"]
-                and a["modality"] in _TOGETHER
-                and b["modality"] in _TOGETHER
+            same_day = a["performed_on"] == b["performed_on"]
+            auto = same_day and (
+                (a["modality"] in _TOGETHER and b["modality"] in _TOGETHER)
+                or (
+                    a["modality"] and a["modality"] == b["modality"]
+                )  # p. ej. el resumen y el trazo de un ECG
             )
             if auto or (a["id"], b["id"]) in manual:
                 manual_link = (a["id"], b["id"]) in manual
@@ -410,6 +412,62 @@ def _store_imaging_drafts(
             "INSERT INTO imaging_draft(document_id, position, data) VALUES(?,?,?)",
             (doc_id, pos, json.dumps(r.to_dict(), ensure_ascii=False)),
         )
+
+
+_TEXT_FIELDS = (
+    "technique",
+    "indication",
+    "findings",
+    "prior",
+    "conclusion",
+    "suggestions",
+    "radiologist",
+    "site",
+)
+
+
+def refresh_imaging_text(db: sqlite3.Connection, vault: Vault, person_id: int) -> dict:
+    """Vuelve a leer, con la versión actual del lector, los informes ya confirmados de una persona.
+
+    Solo se actualizan los textos (técnica, hallazgos, conclusión…). Lo que la persona confirmó (nombre,
+    fecha, tipo y marca) no se toca, y si el número de informes del PDF cambió, ese documento se salta.
+    """
+    counts = {"updated": 0, "unchanged": 0, "skipped": 0}
+    docs = db.execute(
+        "SELECT id, title, file_path FROM document WHERE person_id = ? AND doc_type = 'imagen' "
+        "AND review_state = 'revisada' ORDER BY id",
+        (person_id,),
+    ).fetchall()
+    for d in docs:
+        existing = db.execute(
+            "SELECT id, " + ", ".join(_TEXT_FIELDS) + " FROM imaging_study WHERE document_id = ? ORDER BY id",
+            (d["id"],),
+        ).fetchall()
+        try:
+            original = vault.get(d["file_path"])
+            text = pdf_text(original)
+            if len(re.sub(r"\s", "", text)) < 40:
+                text = ocr.ocr_bytes(original, ".pdf", vault.root.parent)
+            reports = parse_reports(text, d["title"])
+        except Exception:  # noqa: BLE001 - un documento que no se puede leer no detiene a los demás
+            counts["skipped"] += 1
+            continue
+        if len(reports) != len(existing) or not existing:
+            counts["skipped"] += 1
+            continue
+        changed = False
+        for row, rep in zip(existing, reports, strict=True):
+            new = {f: getattr(rep, f, None) or "" for f in _TEXT_FIELDS}
+            if any((row[f] or "") != new[f] for f in _TEXT_FIELDS):
+                db.execute(
+                    "UPDATE imaging_study SET "
+                    + ", ".join(f"{f} = ?" for f in _TEXT_FIELDS)
+                    + " WHERE id = ?",
+                    (*(new[f] for f in _TEXT_FIELDS), row["id"]),
+                )
+                changed = True
+        counts["updated" if changed else "unchanged"] += 1
+    return counts
 
 
 def reread(

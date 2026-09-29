@@ -102,6 +102,10 @@ def parse_spanish_date(text: str) -> str | None:
     return None
 
 
+MAX_TEXT = 20000  # hallazgos y conclusión: un informe de patología largo debe caber completo
+MAX_SHORT = 2000
+
+
 def detect_modality(*texts: str) -> str | None:
     blob = " ".join(texts).lower()
     if re.search(r"\brx\b", blob):
@@ -230,11 +234,13 @@ _ADMIN = re.compile(
     r"^(?:nom(?:bre)?\.?\s*paciente|paciente|id\s*paciente|nombre\s*:|edad|sexo|fecha\s*de\s*nacimiento|"
     r"fec\.?\s*nac|impreso|order\s*id|orden\b|cp\s*:|folio|ingreso|pedido|perteneciente|solicitado|dirigido|"
     r"m[eé]dico\s*:|hoja\s+\d|p[aá]gina\s+\d|reservaci[oó]n|id\s*:|c[eé]d\.?\s*prof|escaneado\s+con|camscanner|"
-    r"tel[eé]fonos?\b|www\.)",
+    r"tel[eé]fonos?\b|www\.|num\.?\s*historia|fecha\s+nacimiento|\d{10}$|\d{5}$|"
+    r"(?=.*\b(?:calle|calzada|avenida|av\.)\s)|(?=.*\d+\s*°?\s*piso\b))",
     re.I,
 )
 _STOP = re.compile(
-    r"^(?:aprobado\s+por|atentamente|la\s+interpretaci[oó]n\s+del\s+resultado|"
+    r"^(?:aprobado\s+por|atentamente|\(EM\)|especialista\s+en\s+anatom|c[eé]dula\s+profesional|"
+    r"la\s+interpretaci[oó]n\s+del\s+resultado|"
     r"la\s+interpretaci[oó]n\s+de\s+los\s+resultados)",
     re.I,
 )
@@ -469,21 +475,38 @@ def _parse_generic(text: str, filename: str = "") -> list[ImagingReport]:
         (label for key, label in _KINDS if key in _plain_words(title)),
         next((label for key, label in _KINDS if key in _plain_words(text[:500])), None),
     )
-    findings = " ".join(secs.get("findings") or pre)[:4000]
+    findings = " ".join(secs.get("findings") or pre)[:MAX_TEXT]
     report = ImagingReport(
         study_name=title[:1].upper() + title[1:],
         performed_on=when,
         modality=kind or "Estudio",
-        technique=" ".join(secs.get("technique", []))[:500],
-        indication=" ".join(secs.get("indication", []))[:500],
+        technique=" ".join(secs.get("technique", []))[:MAX_SHORT],
+        indication=" ".join(secs.get("indication", []))[:MAX_SHORT],
         findings=findings,
-        prior=" ".join(secs.get("prior", []))[:300],
-        conclusion=_tidy(" ".join(secs.get("conclusion", [])))[:1500],
-        suggestions=" ".join(secs.get("suggestions", []))[:500],
+        prior=" ".join(secs.get("prior", []))[:MAX_SHORT],
+        conclusion=_tidy(" ".join(secs.get("conclusion", [])))[:MAX_TEXT],
+        suggestions=" ".join(secs.get("suggestions", []))[:MAX_SHORT],
         radiologist=_doctor(signature),
     )
+    if report.modality == "Electrocardiograma" and not report.conclusion:
+        report.conclusion = _ecg_interpretation(lines)
     report.flag = "revisar"  # sin estructura conocida no se marca "normal": la persona lo lee
     return [report]
+
+
+_BULLET = re.compile(r"^(?:[•·]\s*\S|[-–]\s+\S|[-–][A-Za-zÁÉÍÓÚÑáéíóúñ])")  # «--LUES--» no es viñeta
+
+
+def _ecg_interpretation(lines: list[str]) -> str:
+    """Interpretación de un electrocardiograma escaneado: renglones con viñeta y el renglón que sigue a una
+    viñeta si es texto corrido (no una medición como «Veloc: 25 mm/s»)."""
+    out: list[str] = []
+    for i, ln in enumerate(lines):
+        if _BULLET.match(ln) and not re.search(r"\d", ln):  # «· 110C: CL» es ruido del escaneo
+            out.append(ln.strip("•·-– ").strip())
+        elif i and _BULLET.match(lines[i - 1]) and len(ln) > 25 and not re.search(r"\d|:", ln):
+            out.append(ln)
+    return _tidy(". ".join(x.rstrip(".") for x in out if x) + ".") if out else ""
 
 
 def _plain_words(s: str) -> str:

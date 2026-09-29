@@ -942,7 +942,7 @@ async function renderImaging() {
   if (!kinds.includes(S.studyFilter)) S.studyFilter = 'Todos';
   const shown = list.filter(x => S.studyFilter === 'Todos' || (x.modality || 'Otro') === S.studyFilter);
   const all = new Map([...list.flatMap(x => x.images), ...loose].map(i => [i.id, i]));
-  view().innerHTML = `<p class="tip">House guarda lo que dice cada informe y te deja ver las imágenes; no interpreta imágenes ni sustituye al médico que las firma.</p>
+  view().innerHTML = `<div class="bar"><p class="tip" style="margin:0">House guarda lo que dice cada informe y te deja ver las imágenes; no interpreta imágenes ni sustituye al médico que las firma.</p><button class="mini" id="refreshrep" title="Vuelve a leer tus informes con la versión actual de House. No cambia lo que confirmaste (nombre, fecha, tipo).">Actualizar lectura de informes</button></div>
     ${kinds.length > 2 ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${kinds.map(k => `<button class="chip" data-sf="${esc(k)}" aria-pressed="${k === S.studyFilter}">${esc(k)}</button>`).join('')}</div>` : ''}
     ${shown.map(x => `<section class="card cfg" id="st-${x.id}"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
         <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Estudio')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
@@ -958,6 +958,14 @@ async function renderImaging() {
     ${loose.length && S.studyFilter === 'Todos' ? `<section class="card cfg"><div class="bar"><div><h2>Imágenes sin informe</h2>
         <span class="tip">No encontré un informe de la misma fecha y nombre parecido. Sube el informe en PDF y se unirán solas.</span></div></div>${thumbs(loose, 'sin informe')}</section>` : ''}`;
   view().querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.studyFilter = b.dataset.sf; renderImaging(); });
+  const rf = document.getElementById('refreshrep');
+  if (rf) rf.onclick = async () => {
+    rf.disabled = true; rf.textContent = 'Leyendo de nuevo… puede tardar unos minutos';
+    try {
+      const r = await api(`/api/people/${S.subject}/imaging/refresh`, { method: 'POST' });
+      toast(`Informes actualizados: ${r.updated}. Sin cambios: ${r.unchanged}.${r.skipped ? ` No se pudieron actualizar: ${r.skipped}.` : ''}`); renderImaging();
+    } catch (e) { rf.disabled = false; rf.textContent = 'Actualizar lectura de informes'; toast(e.message); }
+  };
   view().querySelectorAll('[data-goto]').forEach(a => a.onclick = e => {
     e.preventDefault();
     if (S.studyFilter !== 'Todos') { S.studyFilter = 'Todos'; renderImaging().then(() => document.getElementById('st-' + a.dataset.goto)?.scrollIntoView({ behavior: 'smooth' })); return; }

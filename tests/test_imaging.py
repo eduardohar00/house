@@ -430,3 +430,73 @@ def test_imaging_gaps_names_what_was_not_found():
     gaps = imaging_gaps(db, 1, reviewed=False)
     assert [(g["study_name"], len(g["missing"])) for g in gaps] == [("Sin fecha", 1), ("Sin nada", 2)]
     assert imaging_gaps(db, 2, reviewed=True) == []
+
+
+ECG_SCAN = """II
+III:
+QRS
+--LUES--
+31 AñOS
+12 derivaciones; colocación estándar
+• Ritmo sinusal
+Veloc: 25 mm/s
+avi
+• Elevacion de ST, probable patrón repolarizacion precoz
+Desviacion del eje electrico a la derecha en el limite
+- ECG SIN OTRAS ALTERAC. -
+Prec.: 10.0 mm/mv
+Confirm por: Dr Inventado 9157921
+Num. Historia: 819926343034
+Fecha nacimiento: 11/07/1992
+Calderon de la Barca 359 3° Piso Polanco
+5552545224
+11560
+"""
+
+
+def test_long_conclusions_are_not_cut_and_personal_lines_are_dropped():
+    long_text = " ".join(f"Biopsia {i}: mucosa con cambios inflamatorios crónicos leves." for i in range(120))
+    (r,) = parse_reports("HALLAZGOS\nMucosa normal.\nDIAGNÓSTICO\n" + long_text, "07-02-2026 Biopsias.pdf")
+    assert len(r.conclusion) > 5000 and r.conclusion.rstrip().endswith("leves.")  # antes se cortaba a 1500
+
+    (e,) = parse_reports(ECG_SCAN, "27-12-2023 Electrocardiograma.pdf")
+    assert e.modality == "Electrocardiograma"
+    assert e.conclusion == (
+        "Ritmo sinusal. Elevacion de ST, probable patrón repolarizacion precoz. "
+        "Desviacion del eje electrico a la derecha en el limite. ECG SIN OTRAS ALTERAC."
+    )
+    for personal in ("819926343034", "11/07/1992", "Calderon", "5552545224", "11560"):
+        assert personal not in e.findings + e.conclusion
+
+
+def test_refresh_updates_only_texts_and_never_what_was_confirmed(client):
+    c = client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    doc = upload(c, me, make_pdf(REPORT.splitlines()), "Rx torax.pdf").json()["document_id"]
+    c.post(
+        f"/api/documents/{doc}/review-imaging",
+        json={"decisions": [
+            {"position": 0, "accept": True, "performed_on": "2024-05-05", "study_name": "Mi nombre", "flag": "normal"},
+            {"position": 1, "accept": True, "performed_on": "2024-05-06", "study_name": "Otro", "flag": "revisar"}]},
+        headers=H,
+    ).raise_for_status()  # fmt: skip
+    before = c.get(f"/api/people/{me}/imaging").json()
+    out = c.post(f"/api/people/{me}/imaging/refresh", headers=H).json()
+    assert out == {"updated": 0, "unchanged": 1, "skipped": 0}
+    after = c.get(f"/api/people/{me}/imaging").json()
+    assert [(s["study_name"], s["performed_on"], s["flag"]) for s in after] == [
+        (s["study_name"], s["performed_on"], s["flag"]) for s in before
+    ]
+
+
+def test_same_day_same_modality_studies_are_related():
+    from house.app.ingest import related_studies
+
+    def st(i, mod, day):
+        return {"id": i, "study_name": f"E{i}", "modality": mod, "performed_on": day, "document_id": i}
+
+    rel = related_studies(
+        [st(1, "Electrocardiograma", "2023-12-27"), st(2, "Electrocardiograma", "2023-12-27"),
+         st(3, "Electrocardiograma", "2024-01-01"), st(4, "Radiografía", "2023-12-27")], set())  # fmt: skip
+    assert [r["id"] for r in rel[1]] == [2] and rel[3] == [] and rel[4] == []
