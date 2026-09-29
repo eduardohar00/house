@@ -220,7 +220,8 @@ def test_ingredient_suggestions_come_from_claude_and_are_not_saved_until_accepte
 def test_provider_says_clearly_when_the_anthropic_balance_ran_out():
     import pytest
 
-    from house.providers import ProviderError
+    from house.providers import LLMRequest, ProviderError
+    from house.providers.anthropic_provider import AnthropicProvider
 
     class Broke:
         class messages:  # noqa: N801 - imita el cliente del SDK
