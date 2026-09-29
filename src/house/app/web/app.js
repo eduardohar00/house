@@ -543,6 +543,7 @@ function notSaved(d) {
   if (!rows.length) return '';
   const head = lost.length ? `<b class="warnline">${lost.length} ${lost.length === 1 ? 'renglón' : 'renglones'} ${d.review_state === 'revisada' ? 'sin guardar' : 'por resolver'}</b>` : `<span class="tip">${dup} repetido${dup === 1 ? '' : 's'} (ya guardado${dup === 1 ? '' : 's'})</span>`;
   return `<details class="hist"><summary>${head}</summary><ul class="nsl">${rows.map(r => `<li><b>${esc(r.printed_name)}</b> ${esc(r.value_printed || '')} ${esc(r.unit_printed || '')}<small>${esc(r.reason)}</small></li>`).join('')}</ul>
+    ${d.review_state === 'pendiente' && lost.length ? `<button class="mini" data-reread="${d.id}" title="Vuelve a leer el original con la versión actual de House">Volver a leer</button>` : ''}
     ${d.review_state === 'revisada' && lost.length ? `<button class="mini" data-complete="${d.id}" title="Vuelve a leer el original con la versión actual de House y te deja resolver solo estos renglones">Completar estos renglones</button>` : ''}</details>`;
 }
 
@@ -572,6 +573,13 @@ async function renderDocs() {
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFiles([...e.dataTransfer.files]); };
   view().querySelectorAll('[data-rev]').forEach(b => b.onclick = () => openReview(Number(b.dataset.rev)));
+  view().querySelectorAll('[data-reread]').forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = 'Leyendo de nuevo…';
+    try {
+      const r = await api(`/api/documents/${b.dataset.reread}/reread`, { method: 'POST' });
+      toast(`Leído de nuevo: ${r.rows} renglones.`); renderDocs();
+    } catch (e) { b.disabled = false; b.textContent = 'Volver a leer'; toast(e.message); }
+  });
   view().querySelectorAll('[data-complete]').forEach(b => b.onclick = async () => {
     b.disabled = true; b.textContent = 'Leyendo de nuevo…';
     try {
