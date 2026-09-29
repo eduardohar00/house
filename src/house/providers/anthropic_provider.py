@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from typing import Any
 
-from .base import LLMRequest, LLMResponse, ProviderError, ProviderRefusal, estimate_cost
+from .base import ChatResult, LLMRequest, LLMResponse, ProviderError, ProviderRefusal, estimate_cost
 
 
 class AnthropicProvider:
@@ -81,3 +82,78 @@ class AnthropicProvider:
             latency_s=latency,
             request_id=getattr(resp, "_request_id", None),
         )
+
+    def chat_with_tools(
+        self,
+        system: str,
+        messages: list[dict],
+        tools: list[dict],
+        run_tool: Callable[[str, dict], Any],
+        *,
+        max_tokens: int = 2000,
+        max_rounds: int = 8,
+    ) -> ChatResult:
+        """Conversación con herramientas: el modelo pide datos, `run_tool` los da y sigue hasta responder."""
+        history = list(messages)
+        t0 = time.monotonic()
+        tin = tout = 0
+        request_id = None
+        for rounds in range(1, max_rounds + 1):
+            kwargs: dict = {
+                "model": self.model,
+                "max_tokens": max_tokens,
+                "system": system,
+                "messages": history,
+                "tools": tools,
+            }
+            if self.effort:
+                kwargs["output_config"] = {"effort": self.effort}
+            try:
+                resp = self._client.messages.create(**kwargs)
+            except Exception as e:  # noqa: BLE001 - se re-lanza tipado, sin el contenido
+                raise ProviderError(f"{self.name}: {type(e).__name__}") from e
+            tin += resp.usage.input_tokens
+            tout += resp.usage.output_tokens
+            request_id = getattr(resp, "_request_id", None) or request_id
+            if getattr(resp, "stop_reason", None) == "refusal":
+                raise ProviderRefusal(f"{self.name}: solicitud rechazada por el proveedor")
+            if getattr(resp, "stop_reason", None) == "tool_use":
+                history.append({"role": "assistant", "content": resp.content})
+                results = []
+                for block in resp.content:
+                    if getattr(block, "type", "") == "tool_use":
+                        try:
+                            out = run_tool(block.name, dict(block.input))
+                            results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": json.dumps(out, ensure_ascii=False),
+                                }
+                            )
+                        except Exception as e:  # noqa: BLE001 - el modelo recibe el motivo y puede intentar otra cosa
+                            results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": str(e),
+                                    "is_error": True,
+                                }
+                            )
+                history.append({"role": "user", "content": results})
+                continue
+            text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+            if getattr(resp, "stop_reason", None) == "max_tokens":
+                raise ProviderError(f"{self.name}: respuesta truncada (max_tokens)")
+            return ChatResult(
+                text=text,
+                provider=self.name,
+                model=self.model,
+                input_tokens=tin,
+                output_tokens=tout,
+                cost_usd=estimate_cost(tin, tout, self.input_per_mtok, self.output_per_mtok),
+                latency_s=time.monotonic() - t0,
+                request_id=request_id,
+                rounds=rounds,
+            )
+        raise ProviderError(f"{self.name}: demasiadas consultas seguidas sin respuesta")

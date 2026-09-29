@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ..config import Config, ProviderConfig
-from .base import LLMRequest, LLMResponse, Provider, ProviderError
+from .base import ChatResult, LLMRequest, LLMResponse, Provider, ProviderError
 from .mock import BaselineRegexProvider
 
 
@@ -98,3 +98,26 @@ class Router:
         resp = self.provider_for(req.task).complete_json(req)
         self.ledger.record(req.task, resp)
         return resp
+
+    def chat_with_tools(
+        self, task: str, system: str, messages: list, tools: list, run_tool, **kw
+    ) -> ChatResult:
+        if self.ledger.month_total() >= self.cfg.monthly_budget_usd:
+            raise BudgetExceeded(f"Tope mensual de {self.cfg.monthly_budget_usd} USD alcanzado.")
+        provider = self.provider_for(task)
+        if not hasattr(provider, "chat_with_tools"):
+            raise ProviderError("Este lector no puede conversar.")
+        res = provider.chat_with_tools(system, messages, tools, run_tool, **kw)
+        self.ledger.record(
+            task,
+            LLMResponse(
+                data={},
+                provider=res.provider,
+                model=res.model,
+                input_tokens=res.input_tokens,
+                output_tokens=res.output_tokens,
+                cost_usd=res.cost_usd,
+                request_id=res.request_id,
+            ),
+        )
+        return res

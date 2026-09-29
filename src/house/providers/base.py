@@ -37,6 +37,19 @@ class LLMResponse:
     extra: dict = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ChatResult:
+    text: str
+    provider: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+    latency_s: float = 0.0
+    request_id: str | None = None
+    rounds: int = 1  # cuántas veces se consultó al modelo (cada uso de herramientas suma una)
+
+
 @runtime_checkable
 class Provider(Protocol):
     name: str

@@ -120,7 +120,7 @@ function brandIcon() {
 
 function renderShell() {
   const admin = S.me.is_admin, subj = S.people.find(p => p.id === S.subject);
-  const tabs = [['res', 'Resumen'], ['exp', 'Expediente'], ['doc', 'Documentos'], ['img', 'Estudios']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
+  const tabs = [['res', 'Resumen'], ['exp', 'Expediente'], ['doc', 'Documentos'], ['img', 'Estudios'], ['ask', 'Asistente']].concat(admin ? [['fam', 'Familia'], ['cfg', 'Configuración']] : [['priv', 'Privacidad']]);
   app.innerHTML = `<div class="wrap">
     <header>
       <div class="brand">${brandIcon()}House</div>
@@ -141,7 +141,7 @@ function renderShell() {
   const ps = document.getElementById('psel');
   if (ps) ps.onchange = () => { S.subject = Number(ps.value); S.sel = null; renderShell(); };
   app.querySelectorAll('.nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.t; renderShell(); });
-  ({ res: renderSummary, exp: renderClinical, img: renderImaging, doc: renderDocs, fam: renderFamily, cfg: renderConfig, priv: renderPrivacy })[S.tab]();
+  ({ res: renderSummary, exp: renderClinical, img: renderImaging, ask: renderAssistant, doc: renderDocs, fam: renderFamily, cfg: renderConfig, priv: renderPrivacy })[S.tab]();
 }
 
 const view = () => document.getElementById('view');
@@ -1071,6 +1071,74 @@ async function openImagingReview(id, d, layout) {
         toast(`Guardé ${res.saved} ${res.saved === 1 ? 'informe' : 'informes'} de imagen.`); S.tab = 'img'; renderShell();
       } catch (err) { document.getElementById('e').textContent = err.message; }
     };
+  };
+  draw();
+}
+
+/* ---------- Asistente: pregunta a tu expediente ---------- */
+
+const ASK_IDEAS = ['¿Qué está fuera de rango en el estudio más reciente?', '¿Cómo ha cambiado el colesterol LDL?', '¿Cuándo fue la última vacuna de influenza?', '¿Qué dicen los últimos informes de imagen?'];
+
+// Texto de la respuesta: párrafos, viñetas y **negritas**, con [n] como enlaces a las fuentes.
+function answerHtml(text, sources) {
+  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\[(\d+)\]/g, (m, n) => sources.some(x => x.n == n) ? `<a class="cite" href="#src-${n}" data-cite="${n}">${n}</a>` : m);
+  const out = []; let list = null;
+  for (const line of text.split('\n')) {
+    const li = line.match(/^\s*[-•]\s+(.*)/);
+    if (li) { (list ||= []).push(`<li>${inline(li[1])}</li>`); continue; }
+    if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; }
+    if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) out.push(`<ul>${list.join('')}</ul>`);
+  return out.join('');
+}
+
+async function renderAssistant() {
+  const st = await api('/api/assistant/status');
+  if (!st.available) {
+    view().innerHTML = `<section class="card empty"><h2>El asistente necesita Claude</h2>
+      <p>Responde tus preguntas con lo que hay en tu expediente y te dice de qué documento salió cada dato. Para usarlo, conecta tu clave de Anthropic en Configuración.</p>
+      ${S.me.is_admin ? '<button class="btn" id="go">Ir a Configuración</button>' : '<p class="tip">Pídele al administrador que lo conecte.</p>'}</section>`;
+    const go = document.getElementById('go'); if (go) go.onclick = () => { S.tab = 'cfg'; renderShell(); };
+    return;
+  }
+  const chat = (S.chat ||= {})[S.subject] ||= { msgs: [], busy: false, error: '' };
+  const srcLink = x => x.document_id
+    ? `<a href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener">${esc(x.title)}${x.date ? ' · ' + fd(x.date) : ''}</a>`
+    : `<button class="link" data-goexp="1">${esc(x.title)}</button>`;
+  const draw = () => {
+    view().innerHTML = `<section class="card cfg ask">
+      <div class="bar"><h2>Pregunta a tu expediente</h2>${chat.msgs.length ? '<button class="mini" id="newchat">Nueva conversación</button>' : ''}</div>
+      <div class="chat" id="chat" aria-live="polite">
+        ${chat.msgs.length ? '' : `<p class="tip">Respondo solo con lo que hay guardado en House y cito el documento de cada dato. No soy médico: no diagnostico ni recomiendo tratamientos.</p>
+          <div class="chips">${ASK_IDEAS.map(q => `<button class="chip" data-idea="${esc(q)}">${esc(q)}</button>`).join('')}</div>`}
+        ${chat.msgs.map(m => m.role === 'user' ? `<div class="msg me"><p>${esc(m.content)}</p></div>`
+          : `<div class="msg bot">${answerHtml(m.content, m.sources || [])}
+              ${m.warning ? '<p class="warnline">Esta respuesta menciona datos sin fuente: verifícalos en tus documentos.</p>' : ''}
+              ${(m.sources || []).length ? `<ol class="srcs">${m.sources.map(x => `<li id="src-${x.n}" value="${x.n}">${srcLink(x)}</li>`).join('')}</ol>` : ''}</div>`).join('')}
+        ${chat.busy ? '<p class="tip"><span class="spin"></span>Buscando en tu expediente… puede tardar hasta un minuto.</p>' : ''}
+        ${chat.error ? `<p class="err">${esc(chat.error)}</p>` : ''}
+      </div>
+      <form id="askf" class="askf"><textarea name="q" rows="2" maxlength="2000" placeholder="Escribe tu pregunta…" ${chat.busy ? 'disabled' : ''} aria-label="Tu pregunta"></textarea>
+        <button class="btn" ${chat.busy ? 'disabled' : ''}>Preguntar</button></form>
+      <p class="tip">Se envía a Claude lo que necesita para responder, sin tu nombre ni fecha de nacimiento. El asistente no reemplaza a tu médico.</p></section>`;
+    const box = document.getElementById('chat'); box.scrollTop = box.scrollHeight;
+    const nc = document.getElementById('newchat'); if (nc) nc.onclick = () => { chat.msgs = []; chat.error = ''; draw(); };
+    view().querySelectorAll('[data-idea]').forEach(b => b.onclick = () => send(b.dataset.idea));
+    view().querySelectorAll('[data-goexp]').forEach(b => b.onclick = () => { S.tab = 'exp'; renderShell(); });
+    view().querySelectorAll('[data-cite]').forEach(a => a.onclick = e => { e.preventDefault(); const t = document.getElementById('src-' + a.dataset.cite); t?.scrollIntoView({ block: 'nearest' }); t?.classList.add('flash'); setTimeout(() => t?.classList.remove('flash'), 1200); });
+    const f = document.getElementById('askf');
+    f.onsubmit = e => { e.preventDefault(); const q = f.elements.q.value.trim(); if (q && !chat.busy) send(q); };
+    f.elements.q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
+    if (!chat.busy) f.elements.q.focus();
+  };
+  const send = async q => {
+    chat.msgs.push({ role: 'user', content: q }); chat.busy = true; chat.error = ''; draw();
+    try {
+      const r = await api(`/api/people/${S.subject}/assistant`, { method: 'POST', body: { messages: chat.msgs.map(m => ({ role: m.role, content: m.content })) } });
+      chat.msgs.push({ role: 'assistant', content: r.answer, sources: r.sources, warning: r.warning });
+    } catch (e) { chat.error = e.message; chat.msgs.pop(); }
+    chat.busy = false; if (S.tab === 'ask') draw();
   };
   draw();
 }

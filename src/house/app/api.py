@@ -21,7 +21,7 @@ from ..normalize import explanations, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import auth, backup, clinical, ingest, store
+from . import assistant, auth, backup, clinical, ingest, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -79,6 +79,15 @@ class ImagingDecision(BaseModel):
 
 class ImagingReview(BaseModel):
     decisions: list[ImagingDecision]
+
+
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
+class AssistantQuestion(BaseModel):
+    messages: list[ChatTurn]
 
 
 class Review(BaseModel):
@@ -352,6 +361,39 @@ def create_app(
     def observations(person_id: int, actor: Me) -> list[dict]:
         subject(person_id, actor, "ver_resultados")
         return load_observations(person_id)
+
+    def assistant_router() -> Router | None:
+        """El asistente conversa con Claude (o el proveedor configurado); el lector básico no puede."""
+        router, fallback, label = current_router()
+        if fallback is not None:
+            return fallback
+        return router if label in ("prueba", "configurado") else None
+
+    @app.get("/api/assistant/status")
+    def assistant_status(_: Me) -> dict:
+        return {"available": assistant_router() is not None}
+
+    @app.post("/api/people/{person_id}/assistant")
+    def ask_assistant(person_id: int, body: AssistantQuestion, actor: Me) -> dict:
+        """Pregunta a tu expediente: responde con lo que hay guardado y cita el documento de origen."""
+        person = subject(person_id, actor, "consultar_asistente")
+        router = assistant_router()
+        if router is None:
+            raise HTTPException(409, "El asistente necesita Claude: conecta tu clave en Configuración.")
+        try:
+            return assistant.ask(
+                router,
+                db,
+                person,
+                ingest.person_names(db, person),
+                [m.model_dump() for m in body.messages],
+            )
+        except assistant.AssistantError as e:
+            raise HTTPException(e.status, e.message) from None
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo consultar a Claude: {e}") from None
 
     @app.get("/api/people/{person_id}/overview")
     def overview(person_id: int, actor: Me) -> dict:
