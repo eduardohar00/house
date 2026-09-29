@@ -97,7 +97,7 @@ def test_missing_reference_borrows_the_previous_one_and_says_so():
     s = summarize(data, TODAY)
     a = s["attention"][0]
     assert a["key"] == "hdl" and a["last"]["status"] == "low" and a["last"]["ref_from"] == "2025-06-01"
-    assert s["last_status"]["hdl"] == {"status": "low", "ref_from": "2025-06-01"}
+    assert s["last_status"]["hdl"] == {"status": "low", "ref_from": "2025-06-01", "ref_source": "borrowed"}
     assert s["history"] == []
 
 

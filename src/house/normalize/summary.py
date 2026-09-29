@@ -21,7 +21,7 @@ import unicodedata
 from datetime import date, timedelta
 from typing import Any
 
-from . import critical
+from . import critical, ranges, reference_ranges
 
 RECENT_DAYS = 365
 STALE_STUDY_DAYS = 365
@@ -101,10 +101,36 @@ def _margin(o: Obs) -> tuple[float, int] | None:
     return min(options, key=lambda x: x[0])
 
 
-def _with_reference(series: list[Obs]) -> list[Obs]:
-    """Completa el rango de los resultados que no lo traen con el del estudio anterior (misma unidad)."""
+def _is_minor(profile: dict | None, on: str) -> bool:
+    age = reference_ranges.age_on((profile or {}).get("birth_date"), on)
+    return age is not None and age < reference_ranges.ADULT_AGE
+
+
+def _general(o: Obs, profile: dict | None) -> Obs | None:
+    """Rango general por sexo y edad (tabla provisional) para un resultado que no tiene ningún rango."""
+    if not profile or o["value_num"] is None or o.get("qualifier"):
+        return None
+    age = reference_ranges.age_on(profile.get("birth_date"), o["collected_on"])
+    found = reference_ranges.general_ref(o["analyte_key"], profile.get("sex"), age)
+    if found is None:
+        return None
+    ref, note = found
+    return {
+        **o,
+        "ref_low": ref.low,
+        "ref_high": ref.high,
+        "status": ranges.classify_ref(o["value_num"], ref),
+        "ref_source": "general",
+        "ref_note": note,
+    }
+
+
+def _with_reference(series: list[Obs], profile: dict | None = None) -> list[Obs]:
+    """Completa el rango de los resultados que no lo traen: primero el del estudio anterior (misma unidad)
+    y, si no hay, el general por sexo y edad. `ref_source` dice de dónde salió cada rango."""
     out: list[Obs] = []
     for o in series:
+        o = {**o, "ref_source": o.get("ref_source") or ("printed" if o["status"] is not None else None)}
         if o["status"] is None and o["value_num"] is not None:
             donor = next(
                 (
@@ -122,9 +148,20 @@ def _with_reference(series: list[Obs]) -> list[Obs]:
                     "ref_high": hi,
                     "status": classify(o["value_num"], lo, hi),
                     "ref_from": donor.get("ref_from") or donor["collected_on"],
+                    "ref_source": "borrowed",
                 }
+            elif (general := _general(o, profile)) is not None:
+                o = general
         out.append(o)
     return out
+
+
+def apply_references(observations: list[Obs], profile: dict | None = None) -> list[Obs]:
+    """Observaciones con el rango completado (estudio anterior o general). No modifica la base de datos."""
+    by_key: dict[str, list[Obs]] = {}
+    for o in sorted(observations, key=lambda o: (o["collected_on"], o["analyte_key"])):
+        by_key.setdefault(o["analyte_key"], []).append(o)
+    return [o for series in by_key.values() for o in _with_reference(series, profile)]
 
 
 def _streak(series: list[Obs]) -> int:
@@ -184,6 +221,8 @@ def _brief(o: Obs) -> Obs:
         "ref_high",
         "ref_printed",
         "ref_from",
+        "ref_source",
+        "ref_note",
     )
     return {k: o.get(k) for k in keys}
 
@@ -192,7 +231,7 @@ def _derived(key: str, series: list[Obs]) -> bool:
     return key in DERIVED_KEYS or any("calcul" in _plain(o.get("method")) for o in series)
 
 
-def summarize(observations: list[Obs], today: date | None = None) -> dict:
+def summarize(observations: list[Obs], today: date | None = None, profile: dict | None = None) -> dict:
     today = today or date.today()
     raw: dict[str, list[Obs]] = {}
     for o in sorted(observations, key=lambda o: (o["collected_on"], o["analyte_key"])):
@@ -203,6 +242,7 @@ def summarize(observations: list[Obs], today: date | None = None) -> dict:
             "study_age_days": None,
             "study_is_old": False,
             "critical": [],
+            "profile": None,
             "attention": [],
             "watch": [],
             "improved": [],
@@ -218,14 +258,20 @@ def summarize(observations: list[Obs], today: date | None = None) -> dict:
     last_status: dict[str, dict] = {}
 
     for key, original in raw.items():
-        s = _with_reference(original)
+        s = _with_reference(original, profile)
         last, prev = s[-1], (s[-2] if len(s) > 1 else None)
         recent = _date(last) >= cutoff
-        last_status[key] = {"status": last["status"], "ref_from": last.get("ref_from")}
+        last_status[key] = {
+            "status": last["status"],
+            "ref_from": last.get("ref_from"),
+            "ref_source": last.get("ref_source"),
+        }
         if recent:
             recent_keys.append(key)
-        if _date(last) >= reference - timedelta(days=CRITICAL_DAYS) and (
-            hit := critical.check(key, last["value_num"], last.get("qualifier"))
+        if (
+            _date(last) >= reference - timedelta(days=CRITICAL_DAYS)
+            and not _is_minor(profile, last["collected_on"])  # los límites críticos son para adultos
+            and (hit := critical.check(key, last["value_num"], last.get("qualifier")))
         ):
             alerts.append({"key": key, "last": _brief(last), **hit})
         entry = {
@@ -275,6 +321,7 @@ def summarize(observations: list[Obs], today: date | None = None) -> dict:
         "study_age_days": (today - reference).days,
         "study_is_old": (today - reference).days > STALE_STUDY_DAYS,
         "critical": alerts,
+        "profile": {"minor": _is_minor(profile, reference.isoformat())} if profile else None,
         "attention": attention,
         "watch": sorted(watch, key=lambda w: w["margin"]),
         "improved": improved,

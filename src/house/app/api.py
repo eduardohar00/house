@@ -395,12 +395,20 @@ def create_app(
         except ProviderError as e:
             raise HTTPException(502, f"No se pudo consultar a Claude: {e}") from None
 
+    def profile_of(person: sqlite3.Row) -> dict:
+        return {"sex": person["sex_at_birth"], "birth_date": person["birth_date"]}
+
     @app.get("/api/people/{person_id}/overview")
     def overview(person_id: int, actor: Me) -> dict:
-        """Resultados y resumen (vigente vs historial) en una sola consulta: un solo registro de acceso."""
-        subject(person_id, actor, "ver_resultados")
-        obs = load_observations(person_id)
-        return {"observations": obs, "summary": summary_mod.summarize(obs)}
+        """Resultados y resumen (vigente vs historial) en una sola consulta: un solo registro de acceso.
+
+        Los resultados sin rango del laboratorio reciben el del estudio anterior o, si no hay, uno general
+        por sexo y edad (`ref_source` dice cuál); nada de eso se guarda en la base.
+        """
+        person = subject(person_id, actor, "ver_resultados")
+        profile = profile_of(person)
+        obs = summary_mod.apply_references(load_observations(person_id), profile)
+        return {"observations": obs, "summary": summary_mod.summarize(obs, profile=profile)}
 
     def document(doc_id: int, actor: sqlite3.Row, action: str) -> sqlite3.Row:
         doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()

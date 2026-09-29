@@ -21,6 +21,7 @@ Documentos clave (léelos antes de proponer cambios grandes):
 - MVP en **una sola máquina** (laptop de Eduardo). Onboarding **solo lo hace Eduardo** (admin): crea perfiles y asigna PIN. Cada persona ve solo su perfil.
 - Fuera de alcance: diagnóstico, resumen o preparación de consulta, compartir con terceros, vender paneles de laboratorio.
 - Los umbrales de "Atención/Vigilar" y las explicaciones de marcadores son provisionales y **deben revisarse con un médico**.
+- Rangos: manda el que imprime el laboratorio; si falta, el del estudio anterior; si tampoco, la tabla general por sexo y edad (`normalize/reference_ranges.py`, provisional, solo adultos: en menores de 18 no se aplica ni tampoco los límites críticos). Siempre se etiqueta como «general, no es del laboratorio».
 
 ## Cómo trabajar
 ```bash

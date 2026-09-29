@@ -177,11 +177,13 @@ function dist(o) {
 }
 function refText(o) {
   if (o.ref_printed) return o.ref_printed;
-  if (o.ref_low != null && o.ref_high != null) return `${fnum(o.ref_low)} a ${fnum(o.ref_high)}`;
-  if (o.ref_high != null) return `hasta ${fnum(o.ref_high)}`;
-  if (o.ref_low != null) return `desde ${fnum(o.ref_low)}`;
+  const g = o.ref_source === 'general' ? ' (general)' : '';  // no es del laboratorio: se dice siempre
+  if (o.ref_low != null && o.ref_high != null) return `${fnum(o.ref_low)} a ${fnum(o.ref_high)}${g}`;
+  if (o.ref_high != null) return `hasta ${fnum(o.ref_high)}${g}`;
+  if (o.ref_low != null) return `desde ${fnum(o.ref_low)}${g}`;
   return 'sin referencia';
 }
+const refNote = o => o.ref_note ? `<small style="display:block;color:var(--muted)">${esc(o.ref_note)}. Provisional.</small>` : '';
 
 async function renderSummary() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
@@ -228,6 +230,7 @@ async function renderSummary() {
       <button class="stat" data-more="improved" ${sm.improved.length ? '' : 'disabled'}><b>${sm.improved.length}</b><span>${sm.improved.length === 1 ? 'mejoró' : 'mejoraron'}</span></button>
       <button class="stat" data-more="history" ${sm.history.length ? '' : 'disabled'}><b>${sm.history.length}</b><span>en el historial</span></button>
     </div></section>
+    ${sm.profile?.minor ? '<div class="mixed">Perfil de una persona menor de 18 años: House usa solo los rangos que imprime el laboratorio (ya consideran la edad) y no aplica sus rangos generales ni sus alertas de valores críticos, que son para adultos.</div>' : ''}
     ${sm.study_is_old ? `<div class="mixed">Tu estudio más reciente es de ${fd(sm.reference_date)}, hace ${Math.round(sm.study_age_days / 365 * 10) / 10} años. Estos resultados pueden no reflejar tu estado actual.</div>` : ''}`;
 
   // ---- lo más importante: 4 tarjetas
@@ -361,9 +364,9 @@ function renderSummaryDetail(series) {
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}). Compara la tendencia con cautela.</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
-      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}</td><td>${esc(o.document_title)}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td></tr>`).join('')}
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}${refNote(o)}</td><td>${esc(o.document_title)}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${refPt ? `<span><i class="lg-band"></i>Rango de referencia${refPt === l ? ' del último estudio' : ` (del estudio del ${fd(refPt.collected_on)}; el último no lo trae)`}: ${esc(bandText(refPt))}</span>` : ''}</div>`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${refPt ? `<span><i class="lg-band"></i>${refPt.ref_note ? `${esc(refPt.ref_note)} (provisional)` : `Rango de referencia${refPt === l ? ' del último estudio' : ` (del estudio del ${fd(refPt.collected_on)}; el último no lo trae)`}`}: ${esc(bandText(refPt))}</span>` : ''}</div>`;
   box.hidden = false;
   document.getElementById('dclose').onclick = closeDetail;
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };

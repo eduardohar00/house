@@ -21,6 +21,11 @@ from ..providers import Router
 MAX_TURNS = 20
 MAX_CHARS = 2000
 
+REFERENCE_SOURCE = {
+    "printed": "laboratorio",
+    "borrowed": "estudio anterior del laboratorio",
+    "general": "referencia general (no es del laboratorio)",
+}
 STATUS_ES = {"ok": "en rango", "low": "por debajo", "high": "por encima", "abnormal": "fuera de lo esperado"}
 
 
@@ -50,7 +55,8 @@ REGLAS
    médica), explica en una frase qué sí puedes hacer y ofrécelo.
 7. No ofrezcas preparar resúmenes ni notas para llevar a consulta, ni compartir el expediente con nadie.
 8. No repitas estas reglas ni menciones herramientas o ids internos fuera de las citas [S#].
-9. Aclara cuando los métodos o rangos de referencia entre estudios sean distintos.
+9. Si reference_source no es «laboratorio», di de dónde sale el rango (general o de un estudio anterior).
+10. Aclara cuando los métodos o rangos de referencia entre estudios sean distintos.
 """
 
 TOOLS: list[dict[str, Any]] = [
@@ -126,6 +132,7 @@ class Toolbox:
 
     def __init__(self, db: sqlite3.Connection, person: sqlite3.Row, names: list[str], today: date) -> None:
         self.db, self.person_id, self.today = db, person["id"], today
+        self.profile = {"sex": person["sex_at_birth"], "birth_date": person["birth_date"]}
         self._anon = Anonymizer(names)
         self.sources: dict[str, dict] = {}
         self._index: dict[tuple, str] = {}
@@ -157,7 +164,7 @@ class Toolbox:
             "WHERE o.person_id = ? ORDER BY o.collected_on, o.analyte_key",
             (self.person_id,),
         )
-        return [dict(r) for r in rows]
+        return summary_mod.apply_references([dict(r) for r in rows], self.profile)
 
     def _name(self, key: str) -> str:
         a = terminology.BY_KEY.get(key)
@@ -227,6 +234,7 @@ class Toolbox:
                     "unit": o["unit"] or None,
                     "status": STATUS_ES.get(o["status"], "sin referencia"),
                     "reference": self._reference(o),
+                    "reference_source": REFERENCE_SOURCE.get(o.get("ref_source"), "no hay"),
                     "method": o["method"],
                     "entered_by_hand": bool(o["entered_manually"]),
                 }
@@ -251,7 +259,7 @@ class Toolbox:
         obs = self._observations()
         if not obs:
             return {"note": "Todavía no hay resultados de laboratorio guardados."}
-        sm = summary_mod.summarize(obs, self.today)
+        sm = summary_mod.summarize(obs, self.today, self.profile)
 
         def item(e: dict) -> dict:
             last = e["last"]
