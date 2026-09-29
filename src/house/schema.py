@@ -23,6 +23,10 @@ class RawRow(BaseModel):
     unit_text: str | None = Field(default=None, description="Unidad impresa, p. ej. 'mg/dL'")
     ref_text: str | None = Field(default=None, description="Rango de referencia impreso, si existe")
     evidence: str = Field(description="La línea completa del documento de donde salió la fila")
+    method: str | None = Field(
+        default=None,
+        description="Método del análisis impreso (línea 'Método:'), p. ej. 'Quimioluminiscencia'",
+    )
     section: str | None = Field(
         default=None, description="Encabezado de la sección donde aparece, p. ej. 'EXAMEN GENERAL DE ORINA'"
     )
@@ -49,8 +53,9 @@ def extraction_json_schema() -> dict:
             "ref_text": nullable_str,
             "evidence": {"type": "string"},
             "section": nullable_str,
+            "method": nullable_str,
         },
-        "required": ["analyte_name", "value_text", "unit_text", "ref_text", "evidence", "section"],
+        "required": ["analyte_name", "value_text", "unit_text", "ref_text", "evidence", "section", "method"],
         "additionalProperties": False,
     }
     return {

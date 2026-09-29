@@ -70,3 +70,13 @@ def test_terminology_matches_aliases():
     assert terminology.match_analyte("TGP (ALT)").key == "alt"
     assert terminology.match_analyte("Vitamina D 25-OH").key == "vitamin_d"
     assert terminology.match_analyte("Tiroglobulina") is None
+
+
+def test_mixed_methods():
+    from house.normalize.series import mixed_methods
+
+    assert mixed_methods(["Electroquimioluminiscencia", "electroquimioluminiscencia", None]) == []
+    assert mixed_methods(["Electroquimioluminiscencia", "Quimioluminiscencia"]) == [
+        "Electroquimioluminiscencia",
+        "Quimioluminiscencia",
+    ]

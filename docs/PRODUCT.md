@@ -34,7 +34,7 @@ Maqueta interactiva con datos ficticios: [`docs/mockup/house-mockup.html`](mocku
 - Los marcadores se agrupan por sistema, en este orden: metabolismo de la glucosa, lípidos y riesgo cardiovascular, hígado, riñón, sangre y hierro, tiroides, vitaminas. Cada grupo muestra cuántos de sus marcadores están en rango.
 - Cada marcador es una tarjeta con valor, estado (con icono y texto, nunca solo color), tendencia y mini-gráfica.
 - Al pasar el cursor sobre una tarjeta aparece una explicación breve de qué mide el marcador y el último resultado de la persona. En celular la explicación está bajo el título de la gráfica.
-- Al elegir un marcador se ve su evolución completa con el rango de referencia, tooltip por punto (fecha, valor, estado, laboratorio) y vista de tabla.
+- Al elegir un marcador se ve su evolución completa con el rango de referencia, tooltip por punto (fecha, valor, estado, laboratorio, método) y vista de tabla. Si la serie mezcla métodos de medición distintos, la gráfica lo avisa: algunos marcadores (p. ej. antígeno carcinoembrionario o prostático) no son comparables entre métodos.
 - **Resumen priorizado del estudio**, con tres niveles: *Atención* (fuera de rango, ordenado por distancia al rango, con tendencia), *Vigilar* (en rango pero acercándose al límite) y *Mejoró* (entró al rango). Cierra con una línea de lo estable.
 - Los rangos dependen de sexo (y, a futuro, de edad). Los umbrales de "Vigilar" y de tendencia son provisionales y **deben revisarse con un médico**.
 

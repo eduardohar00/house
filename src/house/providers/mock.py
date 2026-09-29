@@ -67,6 +67,8 @@ _TEXT_RESULTS = sorted(
     ),
     key=lambda p: -len(p.split()),
 )
+# "Método: Quimioluminiscencia" aplica a los resultados anteriores que aún no tienen método.
+_METHOD = re.compile(r"^\s*m[ée]todo\s*:\s*(?P<m>\S.*?)\s*$", re.I)
 _NUMBER = re.compile(r"^\d+(?:[.,]\d+)?$")
 
 
@@ -150,6 +152,10 @@ class BaselineRegexProvider:
                 if m:
                     year = m.group(3) if len(m.group(3)) == 4 else f"20{m.group(3)}"
                     dated = f"{year}-{m.group(2)}-{m.group(1)}"
+            if mm := _METHOD.match(line):
+                for r in rows:
+                    r["method"] = r["method"] or mm["m"]
+                continue
             section = f"{major} > {sub}" if major and sub else major
             m = _LINE.match(line) if ", " not in line else None  # ", ": texto explicativo
             if m:
@@ -164,7 +170,7 @@ class BaselineRegexProvider:
             if row:
                 if row["unit_text"] is None and i + 1 < len(lines) and _UNIT_LINE.match(lines[i + 1]):
                     row["unit_text"] = lines[i + 1].strip()
-                rows.append({**row, "evidence": line.strip(), "section": section})
+                rows.append({**row, "evidence": line.strip(), "section": section, "method": None})
             elif h := _header(line):
                 if _is_subsection(h):
                     sub = h

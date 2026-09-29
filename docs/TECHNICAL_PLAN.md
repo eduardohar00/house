@@ -56,7 +56,7 @@ Estado: v0.1. Deriva de [PRODUCT.md](PRODUCT.md). Todo lo marcado **(por verific
 2. `Anonymizer.scrub`: CURP, RFC, correo, teléfono, folios, domicilio, encabezados de paciente y médico, nombres conocidos; la fecha de nacimiento se reemplaza por la edad. Devuelve qué se quitó, para la vista "Lo que ve la IA".
 3. `Router.complete_json(task="extract")` con esquema estricto.
 4. **Verificación determinista** por fila: evidencia literal presente en el texto enviado y valor dentro de la evidencia; analito reconocido (LOINC semilla); unidad convertible; valor plausible. Todo problema marca la fila "a revisar".
-5. Normalización a unidad canónica (la conversión se marca siempre para revisión), lectura del rango impreso y estado (`low/ok/high`).
+5. Normalización a unidad canónica (la conversión se marca siempre para revisión), lectura del rango impreso y estado (`low/ok/high`; `abnormal` para resultados de texto). Se guardan también la sección del estudio y el método impreso; `normalize/series.mixed_methods` avisa cuando una serie mezcla métodos.
 6. Revisión humana lado a lado. Solo lo confirmado se escribe en `observation`.
 
 ### 2.4 Asistente (Fase 2)

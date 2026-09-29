@@ -20,9 +20,10 @@ Extrae cada resultado tal como está impreso, sea una cifra ("92") o un texto ("
 "Ausentes", "No reactivo"). No calcules, no conviertas unidades, no corrijas valores y no infieras
 datos que no estén en el texto. Para cada fila copia en "evidence" la línea completa del documento
 de donde salió y en "section" el encabezado de la sección donde aparece (p. ej. "EXAMEN GENERAL DE
-ORINA > EXAMEN MICROSCÓPICO"), porque un mismo nombre cambia de sentido según la sección. Si un
-dato no aparece, usa null. Los marcadores como [NOMBRE] o [FOLIO] son datos personales ya
-eliminados: ignóralos."""
+ORINA > EXAMEN MICROSCÓPICO"), porque un mismo nombre cambia de sentido según la sección. En
+"method" copia el método impreso que aplica a esa fila (línea "Método:"; suele venir después del
+resultado o de su bloque). Si un dato no aparece, usa null. Los marcadores como [NOMBRE] o
+[FOLIO] son datos personales ya eliminados: ignóralos."""
 
 
 class Provenance:
@@ -48,6 +49,7 @@ class Row:
     unit: str | None = None
     ref_text: str | None = None
     section: str | None = None
+    method: str | None = None  # distintos métodos pueden no ser comparables entre sí
     ref_low: float | None = None
     ref_high: float | None = None
     status: str | None = None

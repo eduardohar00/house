@@ -228,3 +228,27 @@ def test_sections_and_text_results():
         ("urine_crystals", "Urato Amorfo", "abnormal"),
         ("urine_squamous", "Escasas", "ok"),
     }
+
+
+def test_method_applies_to_the_rows_before_it():
+    from house.providers import LLMRequest
+    from house.providers.mock import BaselineRegexProvider
+
+    doc = """Glucosa 90 55 - 99 mg/dL
+Urea 30 14 - 50 mg/dL
+Método:Fotometría automatizada
+Antígeno Carcinoembrionario 1.00 < 5.2 ng/mL
+Este resultado se obtuvo utilizando como metodología electroquimioluminiscencia.
+Método: Electroquimioluminiscencia
+Hematócrito 45.0 40.0-54.0 %"""
+    rows = (
+        BaselineRegexProvider()
+        .complete_json(LLMRequest(task="extract", system="", user=doc, schema={}))
+        .data["rows"]
+    )
+    assert [r["method"] for r in rows] == [
+        "Fotometría automatizada",
+        "Fotometría automatizada",
+        "Electroquimioluminiscencia",
+        None,
+    ]

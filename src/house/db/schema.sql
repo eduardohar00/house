@@ -41,6 +41,7 @@ CREATE TABLE observation (
   ref_low       REAL,
   ref_high      REAL,
   ref_printed   TEXT,                                -- "< 1", "Negativo ó < 0.2": define si el límite entra
+  method        TEXT,                                -- método impreso: tendencias solo comparables con el mismo
   status        TEXT CHECK (status IN ('low', 'ok', 'high', 'abnormal')),
   collected_on  TEXT NOT NULL,
   source_page   INTEGER,
