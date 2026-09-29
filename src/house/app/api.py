@@ -199,6 +199,7 @@ def create_app(
     db.executescript(ingest.SCHEMA)
     ingest.migrate_imaging(db)
     ingest.migrate_observation(db)
+    ingest.migrate_document(db)
     ingest.load_custom(db)
     db.executescript(backup.SETTINGS_SCHEMA)
     clinical.migrate(db)
@@ -497,7 +498,7 @@ def create_app(
     def list_documents(person_id: int, actor: Me) -> list[dict]:
         subject(person_id, actor, "ver_estudios")
         rows = db.execute(
-            "SELECT d.id, d.doc_type, d.title, d.collected_on, d.review_state, d.uploaded_at, "
+            "SELECT d.id, d.doc_type, d.title, d.filename, d.collected_on, d.review_state, d.uploaded_at, "
             "(SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id) "
             "+ (SELECT COUNT(*) FROM imaging_study i WHERE i.document_id = d.id) "
             "+ (SELECT COUNT(*) FROM medication m WHERE m.document_id = d.id) AS results "
@@ -678,7 +679,7 @@ def create_app(
         rows = db.execute(
             "SELECT i.id, i.document_id, i.modality, i.study_name, i.performed_on, i.technique, "
             "i.indication, i.findings, i.prior, i.conclusion, i.suggestions, i.radiologist, i.site, i.flag, "
-            "i.tables_json, d.title AS document_title FROM imaging_study i "
+            "i.tables_json, d.title AS document_title, d.filename FROM imaging_study i "
             "LEFT JOIN document d ON d.id = i.document_id WHERE i.person_id = ? "
             "ORDER BY i.performed_on DESC, i.id",
             (person_id,),
@@ -741,6 +742,31 @@ def create_app(
         """Vuelve a leer los informes confirmados con la versión actual: solo textos, no lo confirmado."""
         subject(person_id, actor, "releer_estudio")
         return ingest.refresh_imaging_text(db, vault, person_id)
+
+    class Rename(BaseModel):
+        name: str
+
+    @app.put("/api/documents/{doc_id}/title")
+    def rename_doc(doc_id: int, body: Rename, actor: Me) -> dict:
+        """Nombre corregido del documento; el nombre del archivo original se conserva."""
+        document(doc_id, actor, "revisar_estudio")
+        try:
+            ingest.rename_document(db, doc_id, body.name)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        return {"ok": True}
+
+    @app.put("/api/imaging/{study_id}/name")
+    def rename_imaging(study_id: int, body: Rename, actor: Me) -> dict:
+        owner = db.execute("SELECT person_id FROM imaging_study WHERE id = ?", (study_id,)).fetchone()
+        if owner is None:
+            raise HTTPException(404, "Informe no encontrado")
+        subject(owner["person_id"], actor, "revisar_estudio")
+        try:
+            ingest.rename_study(db, study_id, body.name)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        return {"ok": True}
 
     @app.post("/api/imaging/{study_id}/read-tables")
     def read_tables(study_id: int, actor: Me) -> dict:

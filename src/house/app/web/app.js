@@ -569,11 +569,12 @@ async function renderDocs() {
     </section>
     <section class="card cfg"><h2>Estudios</h2>
       ${docs.length ? `<div class="tblwrap"><table><thead><tr><th>Estudio</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
-        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b><small style="display:block;color:var(--muted)">${{ imagen: 'Informe de estudio', receta: 'Receta' }[d.doc_type] || 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
+        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b>${d.filename && d.filename.replace(/\.(pdf|png|jpe?g)$/i, '') !== d.title ? `<small class="fname" style="display:block" title="Nombre del archivo que subiste">Archivo: ${esc(d.filename)}</small>` : ''}<small style="display:block;color:var(--muted)">${{ imagen: 'Informe de estudio', receta: 'Receta' }[d.doc_type] || 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
           <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : d.doc_type === 'receta' ? `Revisado · ${d.results} ${d.results === 1 ? 'medicamento' : 'medicamentos'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}${notSaved(d)}</td>
           <td><div class="acts" style="display:flex;gap:6px;flex-wrap:wrap">
             ${d.review_state === 'pendiente' ? `<button class="mini" data-rev="${d.id}">Revisar</button>` : ''}
             <a class="mini" href="/api/documents/${d.id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver original</a>
+            <button class="mini" data-rename-doc="${d.id}" data-t="${esc(d.title)}" title="Corregir el nombre (el del archivo original se conserva)">Renombrar</button>
             <button class="mini dn" data-del="${d.id}" data-t="${esc(d.title)}">Borrar</button></div></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="tip">Aún no hay estudios.</p>'}
     </section>`;
@@ -588,6 +589,11 @@ async function renderDocs() {
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); uploadFiles([...e.dataTransfer.files]); };
   view().querySelectorAll('[data-rev]').forEach(b => b.onclick = () => openReview(Number(b.dataset.rev)));
+  view().querySelectorAll('[data-rename-doc]').forEach(b => b.onclick = async () => {
+    const name = prompt('Nombre corregido del documento (el nombre del archivo original se conserva):', b.dataset.t);
+    if (name == null || name.trim() === b.dataset.t) return;
+    try { await api(`/api/documents/${b.dataset.renameDoc}/title`, { method: 'PUT', body: { name } }); toast('Nombre actualizado.'); renderDocs(); } catch (e) { toast(e.message); }
+  });
   view().querySelectorAll('[data-reread]').forEach(b => b.onclick = async () => {
     b.disabled = true; b.textContent = 'Leyendo de nuevo…';
     try {
@@ -1076,8 +1082,9 @@ async function renderImaging() {
   const all = new Map([...list.flatMap(x => x.images), ...loose].map(i => [i.id, i]));
   view().innerHTML = `<div class="bar"><p class="tip" style="margin:0">House guarda lo que dice cada informe y te deja ver las imágenes; no interpreta imágenes ni sustituye al médico que las firma.</p><button class="mini" id="refreshrep" title="Vuelve a leer tus informes con la versión actual de House. No cambia lo que confirmaste (nombre, fecha, tipo).">Actualizar lectura de informes</button></div>
     ${kinds.length > 2 ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${kinds.map(k => `<button class="chip" data-sf="${esc(k)}" aria-pressed="${k === S.studyFilter}">${esc(k)}</button>`).join('')}</div>` : ''}
-    ${shown.map(x => `<section class="card cfg" id="st-${x.id}"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
-        <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Estudio')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
+    ${shown.map(x => `<section class="card cfg" id="st-${x.id}"><div class="bar"><div><div class="ttl"><h2>${esc(x.study_name)}</h2><button class="mini" data-rename-study="${x.id}" title="Corregir el nombre" aria-label="Corregir el nombre de ${esc(x.study_name)}">✎</button></div>
+        <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Estudio')}${x.site ? ' · ' + esc(x.site) : ''}</span>
+        <span class="tip fname" title="Nombre del archivo que subiste">Archivo: ${esc(x.filename || x.document_title || '—')}</span></div>${flagPill(x.flag)}</div>
       ${thumbs(x.images, x.study_name)}
       ${related(x, list)}
       ${(x.problems || []).length ? `<p class="tip" style="margin:0">Ligado a: ${x.problems.map(p => `<span class="tag at">${esc(p.name)}</span>`).join(' ')}</p>` : ''}
@@ -1092,6 +1099,11 @@ async function renderImaging() {
     ${loose.length && S.studyFilter === 'Todos' ? `<section class="card cfg"><div class="bar"><div><h2>Imágenes sin informe</h2>
         <span class="tip">No encontré un informe de la misma fecha y nombre parecido. Sube el informe en PDF y se unirán solas.</span></div></div>${thumbs(loose, 'sin informe')}</section>` : ''}`;
   view().querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.studyFilter = b.dataset.sf; renderImaging(); });
+  view().querySelectorAll('[data-rename-study]').forEach(b => b.onclick = async () => {
+    const x = list.find(s => s.id == b.dataset.renameStudy), name = prompt('Nombre corregido del estudio (el nombre del archivo original se conserva):', x.study_name);
+    if (name == null || name.trim() === x.study_name) return;
+    try { await api(`/api/imaging/${x.id}/name`, { method: 'PUT', body: { name } }); toast('Nombre actualizado.'); renderImaging(); } catch (e) { toast(e.message); }
+  });
   view().querySelectorAll('[data-readtables]').forEach(b => b.onclick = async () => {
     if (!confirm('Se enviarán a Claude las imágenes de este informe para transcribir sus tablas. Ahí se ven datos personales impresos (nombre, fecha de nacimiento…). ¿Continuar?')) return;
     b.disabled = true; b.textContent = 'Claude está leyendo la imagen… (unos 15 segundos)';

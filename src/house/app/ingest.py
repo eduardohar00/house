@@ -155,6 +155,30 @@ def migrate_imaging(db: sqlite3.Connection) -> None:
             db.execute(f"ALTER TABLE imaging_study ADD COLUMN {col} {typ}")
 
 
+def migrate_document(db: sqlite3.Connection) -> None:
+    """Agrega a `document` el nombre original del archivo (el título es el nombre visible y corregible)."""
+    have = {r["name"] for r in db.execute("PRAGMA table_info(document)")}
+    if have and "filename" not in have:
+        db.execute("ALTER TABLE document ADD COLUMN filename TEXT")
+
+
+def rename_document(db: sqlite3.Connection, doc_id: int, title: str) -> None:
+    title = " ".join((title or "").split())
+    if not 2 <= len(title) <= 120:
+        raise IngestError(422, "El nombre debe tener entre 2 y 120 caracteres.")
+    # El nombre del archivo original se conserva la primera vez que se cambia el título.
+    db.execute(
+        "UPDATE document SET filename = COALESCE(filename, title), title = ? WHERE id = ?", (title, doc_id)
+    )
+
+
+def rename_study(db: sqlite3.Connection, study_id: int, name: str) -> None:
+    name = " ".join((name or "").split())
+    if not 2 <= len(name) <= 120:
+        raise IngestError(422, "El nombre debe tener entre 2 y 120 caracteres.")
+    db.execute("UPDATE imaging_study SET study_name = ? WHERE id = ?", (name, study_id))
+
+
 def migrate_observation(db: sqlite3.Connection) -> None:
     """Agrega a `observation` la marca de resultado escrito a mano y el signo < / > (bases anteriores)."""
     have = {r["name"] for r in db.execute("PRAGMA table_info(observation)")}
@@ -377,9 +401,9 @@ def ingest_pdf(
     stored = vault.put(data)
     title = re.sub(r"\.pdf$", "", filename, flags=re.I).strip() or "Estudio"
     cur = db.execute(
-        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256) "
-        "VALUES(?, 'laboratorio', ?, ?, ?, ?)",
-        (person["id"], title, outcome.collected_on, stored, sha),
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256, filename) "
+        "VALUES(?, 'laboratorio', ?, ?, ?, ?, ?)",
+        (person["id"], title, outcome.collected_on, stored, sha, filename),
     )
     _store_extraction(db, cur.lastrowid, person["id"], outcome)
     return Ingested(cur.lastrowid, len(outcome.rows), used_fallback=used_fallback)
@@ -399,9 +423,9 @@ def _ingest_imaging(
     title = re.sub(r"\.pdf$", "", filename, flags=re.I).strip() or "Informe de imagen"
     first_date = next((r.performed_on for r in reports if r.performed_on), None)
     cur = db.execute(
-        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256) "
-        "VALUES(?, 'imagen', ?, ?, ?, ?)",
-        (person["id"], title, first_date, stored, sha),
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256, filename) "
+        "VALUES(?, 'imagen', ?, ?, ?, ?, ?)",
+        (person["id"], title, first_date, stored, sha, filename),
     )
     _store_imaging_drafts(db, cur.lastrowid, reports, first_date)
     return Ingested(cur.lastrowid, len(reports), "imagen")
@@ -778,9 +802,9 @@ def ingest_prescription(
     result["file_kind"] = kind
     title = re.sub(r"\.(pdf|png|jpe?g)$", "", filename, flags=re.I).strip() or "Receta"
     cur = db.execute(
-        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256) "
-        "VALUES(?, 'receta', ?, ?, ?, ?)",
-        (person["id"], title, result["prescription_date"], vault.put(data), sha),
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256, filename) "
+        "VALUES(?, 'receta', ?, ?, ?, ?, ?)",
+        (person["id"], title, result["prescription_date"], vault.put(data), sha, filename),
     )
     db.execute(
         "INSERT INTO prescription_draft(document_id, data) VALUES(?, ?)",

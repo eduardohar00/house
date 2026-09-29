@@ -500,3 +500,47 @@ def test_same_day_same_modality_studies_are_related():
         [st(1, "Electrocardiograma", "2023-12-27"), st(2, "Electrocardiograma", "2023-12-27"),
          st(3, "Electrocardiograma", "2024-01-01"), st(4, "Radiografía", "2023-12-27")], set())  # fmt: skip
     assert [r["id"] for r in rel[1]] == [2] and rel[3] == [] and rel[4] == []
+
+
+def test_original_filename_is_kept_and_names_can_be_corrected(client):
+    c = client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    doc = upload(c, me, make_pdf(REPORT.splitlines()), "2026-02-06 - Rx de Torax (1).pdf").json()[
+        "document_id"
+    ]
+    dec = [
+        {"position": 0, "accept": True, "performed_on": "2026-02-06", "study_name": "Radiografía de tórax"}
+    ]
+    c.post(f"/api/documents/{doc}/review-imaging", json={"decisions": dec}, headers=H).raise_for_status()
+
+    (study,) = c.get(f"/api/people/{me}/imaging").json()
+    assert (
+        study["study_name"] == "Radiografía de tórax"
+        and study["filename"] == "2026-02-06 - Rx de Torax (1).pdf"
+    )
+    (item,) = [d for d in c.get(f"/api/people/{me}/documents").json() if d["id"] == doc]
+    assert (
+        item["filename"] == "2026-02-06 - Rx de Torax (1).pdf"
+        and item["title"] == "2026-02-06 - Rx de Torax (1)"
+    )
+
+    assert (
+        c.put(f"/api/imaging/{study['id']}/name", json={"name": "  Rx de tórax  AP  "}, headers=H).status_code
+        == 200
+    )
+    assert c.put(f"/api/imaging/{study['id']}/name", json={"name": "x"}, headers=H).status_code == 422
+    assert c.put("/api/imaging/9999/name", json={"name": "Nombre"}, headers=H).status_code == 404
+    (study,) = c.get(f"/api/people/{me}/imaging").json()
+    assert study["study_name"] == "Rx de tórax AP" and study["filename"].endswith(
+        "(1).pdf"
+    )  # el archivo no cambia
+
+    assert c.put(f"/api/documents/{doc}/title", json={"name": "Tórax febrero"}, headers=H).status_code == 200
+    (item,) = [d for d in c.get(f"/api/people/{me}/documents").json() if d["id"] == doc]
+    assert item["title"] == "Tórax febrero" and item["filename"] == "2026-02-06 - Rx de Torax (1).pdf"
+    c.put(f"/api/documents/{doc}/title", json={"name": "Otro nombre"}, headers=H).raise_for_status()
+    (item,) = [d for d in c.get(f"/api/people/{me}/documents").json() if d["id"] == doc]
+    assert (
+        item["title"] == "Otro nombre" and item["filename"] == "2026-02-06 - Rx de Torax (1).pdf"
+    )  # el original sigue igual
