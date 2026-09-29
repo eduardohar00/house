@@ -836,6 +836,15 @@ const flagPill = f => { const [c, t] = FLAG[f] || FLAG.revisar; return `<span cl
 
 const thumbs = (imgs, label) => imgs.length ? `<div class="thumbs" aria-label="Imágenes de ${esc(label)}">${imgs.map(i => `<button class="thumb" data-img="${i.id}" title="${esc(i.title)}" aria-label="Ver imagen ${esc(i.title)}"><img src="/api/images/${i.id}/file" alt="${esc(i.title)}" loading="lazy"></button>`).join('')}</div>` : '';
 
+// Estudios que van de la mano (conclusiones, imágenes y biopsias de un mismo procedimiento).
+const related = (x, list) => {
+  const rel = x.related || [], ids = new Set([x.id, ...rel.map(r => r.id)]);
+  const options = list.filter(o => !ids.has(o.id));
+  return `<div class="rel"><span class="tip">Relacionado con:</span>
+    ${rel.map(r => `<span class="relchip"><a href="#st-${r.id}" data-goto="${r.id}">${esc(r.study_name)} · ${fd(r.performed_on)}</a>${r.document_id ? ` <a class="tip" href="/api/documents/${r.document_id}/file" target="_blank" rel="noopener">original</a>` : ''}${r.manual ? `<button class="mini" data-unlink="${x.id}:${r.id}" aria-label="Quitar relación con ${esc(r.study_name)}">✕</button>` : ''}</span>`).join('') || '<span class="tip">ningún estudio</span>'}
+    ${options.length ? `<select data-link="${x.id}" aria-label="Relacionar con otro estudio"><option value="">Relacionar con…</option>${options.map(o => `<option value="${o.id}">${esc(o.study_name)} · ${fd(o.performed_on)}</option>`).join('')}</select>` : ''}</div>`;
+};
+
 async function renderImaging() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
   const [list, loose] = await Promise.all([api(`/api/people/${S.subject}/imaging`), api(`/api/people/${S.subject}/images/loose`)]);
@@ -852,9 +861,10 @@ async function renderImaging() {
   const all = new Map([...list.flatMap(x => x.images), ...loose].map(i => [i.id, i]));
   view().innerHTML = `<p class="tip">House guarda lo que dice cada informe y te deja ver las imágenes; no interpreta imágenes ni sustituye al médico que las firma.</p>
     ${kinds.length > 2 ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${kinds.map(k => `<button class="chip" data-sf="${esc(k)}" aria-pressed="${k === S.studyFilter}">${esc(k)}</button>`).join('')}</div>` : ''}
-    ${shown.map(x => `<section class="card cfg"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
+    ${shown.map(x => `<section class="card cfg" id="st-${x.id}"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
         <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Estudio')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
       ${thumbs(x.images, x.study_name)}
+      ${related(x, list)}
       ${x.conclusion ? `<p style="margin:0"><b>Conclusión:</b> ${esc(x.conclusion)}</p>` : '<p class="tip" style="margin:0">Este informe no trae una conclusión separada; lee el informe completo.</p>'}
       <details class="hist"><summary>Ver el informe completo</summary>
         <div class="kv" style="margin-top:10px">
@@ -865,6 +875,19 @@ async function renderImaging() {
     ${loose.length && S.studyFilter === 'Todos' ? `<section class="card cfg"><div class="bar"><div><h2>Imágenes sin informe</h2>
         <span class="tip">No encontré un informe de la misma fecha y nombre parecido. Sube el informe en PDF y se unirán solas.</span></div></div>${thumbs(loose, 'sin informe')}</section>` : ''}`;
   view().querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.studyFilter = b.dataset.sf; renderImaging(); });
+  view().querySelectorAll('[data-goto]').forEach(a => a.onclick = e => {
+    e.preventDefault();
+    if (S.studyFilter !== 'Todos') { S.studyFilter = 'Todos'; renderImaging().then(() => document.getElementById('st-' + a.dataset.goto)?.scrollIntoView({ behavior: 'smooth' })); return; }
+    document.getElementById('st-' + a.dataset.goto)?.scrollIntoView({ behavior: 'smooth' });
+  });
+  view().querySelectorAll('[data-link]').forEach(sel => sel.onchange = async () => {
+    if (!sel.value) return;
+    await api(`/api/imaging/${sel.dataset.link}/links`, { method: 'POST', body: { other_id: Number(sel.value) } }); toast('Estudios relacionados.'); renderImaging();
+  });
+  view().querySelectorAll('[data-unlink]').forEach(b => b.onclick = async () => {
+    const [a, o] = b.dataset.unlink.split(':');
+    await api(`/api/imaging/${a}/links/${o}`, { method: 'DELETE' }); toast('Relación quitada.'); renderImaging();
+  });
   view().querySelectorAll('.thumbs').forEach(box => {
     const ids = [...box.querySelectorAll('[data-img]')].map(b => Number(b.dataset.img));
     box.querySelectorAll('[data-img]').forEach(b => b.onclick = () => openViewer(ids.map(i => all.get(i)), ids.indexOf(Number(b.dataset.img))));

@@ -230,6 +230,7 @@ def extract_document(
         system=SYSTEM_PROMPT,
         user=build_prompt(scrub.text),
         schema=extraction_json_schema(),
+        max_tokens=16000,  # un estudio largo (80+ resultados con su evidencia) no cabe en 8000
         effort=effort,
     )
     resp = router.complete_json(req)

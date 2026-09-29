@@ -521,7 +521,39 @@ def create_app(
         )
         studies = [dict(r) for r in rows]
         linked, _ = ingest.link_images(person_images(person_id), studies)
-        return [{**s, "images": linked.get(s["id"], [])} for s in studies]
+        manual = {
+            (r["a"], r["b"])
+            for r in db.execute(
+                "SELECT a, b FROM study_link WHERE a IN (SELECT id FROM imaging_study WHERE person_id = ?)",
+                (person_id,),
+            )
+        }
+        related = ingest.related_studies(studies, manual)
+        return [{**s, "images": linked.get(s["id"], []), "related": related[s["id"]]} for s in studies]
+
+    class StudyLink(BaseModel):
+        other_id: int
+
+    def study_pair(study_id: int, other_id: int, actor: sqlite3.Row) -> tuple[int, int]:
+        rows = db.execute(
+            "SELECT id, person_id FROM imaging_study WHERE id IN (?, ?)", (study_id, other_id)
+        ).fetchall()
+        if study_id == other_id or len(rows) != 2 or rows[0]["person_id"] != rows[1]["person_id"]:
+            raise HTTPException(422, "Esos dos estudios no se pueden relacionar.")
+        subject(rows[0]["person_id"], actor, "subir_estudio")
+        return min(study_id, other_id), max(study_id, other_id)
+
+    @app.post("/api/imaging/{study_id}/links")
+    def add_study_link(study_id: int, body: StudyLink, actor: Me) -> dict:
+        a, b = study_pair(study_id, body.other_id, actor)
+        db.execute("INSERT OR IGNORE INTO study_link(a, b) VALUES(?, ?)", (a, b))
+        return {"ok": True}
+
+    @app.delete("/api/imaging/{study_id}/links/{other_id}")
+    def remove_study_link(study_id: int, other_id: int, actor: Me) -> dict:
+        a, b = study_pair(study_id, other_id, actor)
+        db.execute("DELETE FROM study_link WHERE a = ? AND b = ?", (a, b))
+        return {"ok": True}
 
     def person_images(person_id: int) -> list[dict]:
         rows = db.execute(

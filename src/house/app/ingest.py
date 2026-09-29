@@ -77,6 +77,42 @@ CREATE TABLE IF NOT EXISTS study_image (
 );
 """
 
+LINK_SCHEMA = """
+CREATE TABLE IF NOT EXISTS study_link (
+  a INTEGER NOT NULL REFERENCES imaging_study(id) ON DELETE CASCADE,
+  b INTEGER NOT NULL REFERENCES imaging_study(id) ON DELETE CASCADE,
+  PRIMARY KEY (a, b), CHECK (a < b)
+);
+"""
+
+# Procedimientos que se hacen juntos: el mismo día, la conclusión, las imágenes y las biopsias van de la mano.
+_TOGETHER = {"Endoscopia", "Patología"}
+
+
+def related_studies(studies: list[dict], manual: set[tuple[int, int]]) -> dict[int, list[dict]]:
+    """Estudios relacionados: los vinculados a mano y las endoscopias y biopsias del mismo día."""
+    out: dict[int, list[dict]] = {s["id"]: [] for s in studies}
+    by_id = {s["id"]: s for s in studies}
+    for a in studies:
+        for b in studies:
+            if a["id"] >= b["id"]:
+                continue
+            auto = (
+                a["performed_on"] == b["performed_on"]
+                and a["modality"] in _TOGETHER
+                and b["modality"] in _TOGETHER
+            )
+            if auto or (a["id"], b["id"]) in manual:
+                manual_link = (a["id"], b["id"]) in manual
+                out[a["id"]].append({**_brief_study(by_id[b["id"]]), "manual": manual_link})
+                out[b["id"]].append({**_brief_study(by_id[a["id"]]), "manual": manual_link})
+    return out
+
+
+def _brief_study(s: dict) -> dict:
+    return {k: s[k] for k in ("id", "study_name", "modality", "performed_on", "document_id")}
+
+
 # Columnas que se agregaron a imaging_study después de la primera versión del esquema.
 _IMAGING_COLUMNS = {
     "study_name": "TEXT", "technique": "TEXT", "indication": "TEXT", "findings": "TEXT", "prior": "TEXT",
@@ -89,6 +125,7 @@ def migrate_imaging(db: sqlite3.Connection) -> None:
     """Prepara bases creadas antes de los informes de imagen, sin tocar sus datos."""
     db.executescript(IMAGING_SCHEMA)
     db.executescript(IMAGE_SCHEMA)
+    db.executescript(LINK_SCHEMA)
     have = {r["name"] for r in db.execute("PRAGMA table_info(imaging_study)")}
     for col, typ in _IMAGING_COLUMNS.items():
         if col not in have:

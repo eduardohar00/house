@@ -367,3 +367,42 @@ def test_image_dates_and_linking_rules():
     ]
     linked, loose = link_images(imgs, studies)
     assert [i["id"] for i in linked[1]] == [10] and [i["id"] for i in loose] == [11, 12]
+
+
+def test_related_studies_same_day_endoscopy_and_pathology_plus_manual_links():
+    from house.app.ingest import related_studies
+
+    def st(i, mod, day):
+        return {"id": i, "study_name": f"E{i}", "modality": mod, "performed_on": day, "document_id": i}
+
+    studies = [
+        st(1, "Endoscopia", "2026-02-07"), st(2, "Endoscopia", "2026-02-07"), st(3, "Patología", "2026-02-07"),
+        st(4, "Endoscopia", "2024-07-27"), st(5, "Patología", "2024-07-30"), st(6, "Radiografía", "2026-02-07"),
+    ]  # fmt: skip
+    rel = related_studies(studies, {(4, 5)})
+    assert sorted(r["id"] for r in rel[1]) == [2, 3] and rel[6] == []  # una radiografía no se une sola
+    assert [(r["id"], r["manual"]) for r in rel[4]] == [(5, True)] and [
+        (r["id"], r["manual"]) for r in rel[5]
+    ] == [(4, True)]
+    assert all(not r["manual"] for r in rel[2])
+
+
+def test_manual_study_links_through_the_api(client):
+    c = client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    ids = []
+    for name in ("Rx torax.pdf", "Rx otro.pdf"):
+        doc = upload(c, me, make_pdf(REPORT.splitlines() + [name]), name).json()["document_id"]
+        rev = c.get(f"/api/documents/{doc}").json()
+        c.post(f"/api/documents/{doc}/review-imaging", json={"decisions": [
+            {"position": 0, "accept": True, "performed_on": f"2024-01-0{len(ids) + 1}", "study_name": f"Estudio {len(ids)}"},
+            {"position": 1, "accept": False}]}, headers=H).raise_for_status()  # fmt: skip
+        ids.append(rev["document"]["id"])
+    a, b = [s["id"] for s in c.get(f"/api/people/{me}/imaging").json()]
+    assert c.post(f"/api/imaging/{a}/links", json={"other_id": b}, headers=H).status_code == 200
+    assert c.post(f"/api/imaging/{a}/links", json={"other_id": a}, headers=H).status_code == 422
+    linked = {s["id"]: s["related"] for s in c.get(f"/api/people/{me}/imaging").json()}
+    assert [r["id"] for r in linked[a]] == [b] and [r["id"] for r in linked[b]] == [a]
+    assert c.delete(f"/api/imaging/{b}/links/{a}", headers=H).status_code == 200
+    assert all(s["related"] == [] for s in c.get(f"/api/people/{me}/imaging").json())
