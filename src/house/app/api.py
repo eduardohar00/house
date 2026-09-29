@@ -57,6 +57,14 @@ class Decision(BaseModel):
     analyte_key: str | None = None
     value_num: float | None = None
     value_text: str | None = None
+    printed_value: str | None = None  # al indicar el análisis de una fila no reconocida: lo que dice el PDF
+
+
+class ManualResult(BaseModel):
+    analyte_key: str
+    value: str
+    unit: str | None = None
+    ref: str | None = None
 
 
 class ImagingDecision(BaseModel):
@@ -75,6 +83,7 @@ class ImagingReview(BaseModel):
 class Review(BaseModel):
     collected_on: str
     decisions: list[Decision]
+    manual: list[ManualResult] = []
 
 
 # Por decisión de Eduardo, todo lo hace Claude. Un house.toml en la carpeta de datos lo cambia.
@@ -149,6 +158,7 @@ def create_app(
     db = store.connect(data_dir)
     db.executescript(ingest.SCHEMA)
     ingest.migrate_imaging(db)
+    ingest.migrate_observation(db)
     db.executescript(backup.SETTINGS_SCHEMA)
     ingest.repair_references(db)
     fixed_router = router
@@ -306,7 +316,8 @@ def create_app(
     def load_observations(person_id: int) -> list[dict]:
         rows = db.execute(
             "SELECT o.analyte_key, o.printed_name, o.value_num, o.value_text, o.unit, o.ref_low, o.ref_high, "
-            "o.ref_printed, o.status, o.method, o.collected_on, o.document_id, d.title AS document_title "
+            "o.ref_printed, o.status, o.method, o.collected_on, o.document_id, o.entered_manually, "
+            "d.title AS document_title "
             "FROM observation o JOIN document d ON d.id = o.document_id WHERE o.person_id = ? "
             "ORDER BY o.collected_on, o.analyte_key",
             (person_id,),
@@ -414,6 +425,7 @@ def create_app(
                 actor["id"],
                 body.collected_on,
                 [d.model_dump(exclude_unset=True) for d in body.decisions],
+                [m.model_dump() for m in body.manual],
             )
         except ingest.IngestError as e:
             raise HTTPException(e.status, e.message) from None

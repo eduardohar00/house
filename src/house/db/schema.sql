@@ -48,6 +48,7 @@ CREATE TABLE observation (
   source_region TEXT,                                -- coordenadas para resaltar en el original
   confirmed_by  INTEGER REFERENCES person(id),       -- quién confirmó la revisión
   confirmed_at  TEXT,
+  entered_manually INTEGER NOT NULL DEFAULT 0,      -- 1 = lo escribió la persona; no salió del PDF
   CHECK (value_num IS NOT NULL OR value_text IS NOT NULL)
 );
 CREATE INDEX idx_obs_series ON observation (person_id, analyte_key, collected_on);

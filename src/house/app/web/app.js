@@ -309,7 +309,7 @@ function renderSummaryDetail(series) {
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}). Compara la tendencia con cautela.</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
-      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${fnum(o.value_num)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}</td><td>${esc(o.document_title)}</td><td>${esc(o.method || '—')}</td></tr>`).join('')}
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${fnum(o.value_num)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}</td><td>${esc(o.document_title)}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${refPt ? `<span><i class="lg-band"></i>Rango de referencia${refPt === l ? ' del último estudio' : ` (del estudio del ${fd(refPt.collected_on)}; el último no lo trae)`}: ${esc(bandText(refPt))}</span>` : ''}</div>`;
   box.hidden = false;
@@ -391,7 +391,7 @@ function drawQualChart(pts) {
     const q = P[bi], o = pts[bi], sc = r.width / W;
     xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
     tip.hidden = false;
-    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${esc(qlabel(o))}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
+    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${esc(qlabel(o))}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.entered_manually ? '<span>Agregado a mano</span>' : o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
     const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
     tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
   };
@@ -467,7 +467,7 @@ function drawChart(pts, refPt) {
     const q = P[bi], o = pts[bi], sc = r.width / W;
     xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
     tip.hidden = false;
-    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${fnum(o.value_num)} ${esc(o.unit)}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
+    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${fnum(o.value_num)} ${esc(o.unit)}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.entered_manually ? '<span>Agregado a mano</span>' : o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
     const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
     tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
   };
@@ -547,7 +547,10 @@ async function openReview(id) {
   const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
   if (d.document.doc_type === 'imagen') return openImagingReview(id, d, layout);
   const rows = d.rows.map(r => ({ ...r, accept: !!r.analyte_key && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
-  let onlyFlags = false, showAi = false, active = null;
+  let onlyFlags = false, showAi = false, active = null, addOpen = false;
+  const manual = [];  // resultados que faltaban y la persona agregó a mano
+  const byName = new Map(Object.entries(S.catalog).map(([k, a]) => [a.name.toLowerCase(), k]));
+  const keyFromName = t => byName.get(String(t || '').trim().toLowerCase()) || null;
   view().innerHTML = `<div class="rv">
     <div class="pages" id="pages" aria-label="Estudio original">
       ${layout.pages.length ? layout.pages.map(pg => `<div class="pg" data-n="${pg.n}"><img src="/api/documents/${id}/pages/${pg.n}" alt="Página ${pg.n}" loading="lazy" style="aspect-ratio:${pg.width}/${pg.height}"><div class="hl" hidden></div></div>`).join('')
@@ -573,23 +576,31 @@ async function openReview(id) {
     const n = rows.filter(r => r.accept).length;
     document.getElementById('side').innerHTML = `
       <div class="bar"><h2>Revisa «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><button class="mini" id="reread" title="Útil si House mejoró o si conectaste Claude">Volver a leer</button><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir PDF</a><button class="mini" id="back">Volver</button></div></div>
-      <p class="tip">Toca un resultado para ver su renglón resaltado en el original. Corrige lo necesario y desmarca lo que no quieras guardar. Solo lo que confirmes entra a tu expediente.</p>
+      <datalist id="catlist">${[...byName.keys()].sort().map(n => `<option value="${esc(S.catalog[byName.get(n)].name)}">`).join('')}</datalist>
+      <p class="tip">Toca un resultado para ver su renglón resaltado en el original. Corrige lo necesario y desmarca lo que no quieras guardar. Si House no reconoció un análisis, dile cuál es; si falta uno, agrégalo abajo. Solo lo que confirmes entra a tu expediente.</p>
       <div class="bar"><label class="kv"><b>Fecha de toma</b><input type="date" id="date" value="${esc(d.document.collected_on || '')}"></label>
         <label><input type="checkbox" id="only" ${onlyFlags ? 'checked' : ''}> Solo lo que requiere atención</label>
         <button class="mini" id="ai">${showAi ? 'Ocultar' : 'Ver'} lo que vio la IA</button></div>
       ${showAi ? `<div class="anon">${esc(d.ai_saw)}</div><p class="tip">Datos personales quitados antes de enviar: ${Object.entries(d.redactions).map(([k, v]) => `${esc(k.toLowerCase())} (${v})`).join(', ') || 'ninguno'}.</p>` : ''}
       <div class="tblwrap"><table class="rt"><thead><tr><th></th><th>Análisis</th><th>Resultado</th><th>Referencia</th><th>Estado</th></tr></thead><tbody>
         ${shown.map(r => `<tr data-row="${r.id}" class="${r.accept ? (r.needs_attention ? 'fl2' : '') : 'skip'} ${r.id === active ? 'active' : ''}">
-          <td><input type="checkbox" data-acc="${r.id}" ${r.accept ? 'checked' : ''} ${r.analyte_key ? '' : 'disabled'} aria-label="Guardar"></td>
-          <td><b>${esc(r.name || r.printed_name)}</b><small>${esc(r.printed_name)}${r.section ? ' · ' + esc(r.section) : ''}${layout.boxes[r.id] ? ` · pág. ${layout.boxes[r.id].page}` : ''}</small>
-            ${r.analyte_key ? '' : '<span class="flag">No reconocido: no se guardará</span>'}
+          <td><input type="checkbox" data-acc="${r.id}" ${r.accept ? 'checked' : ''} ${(r.assigned || r.analyte_key) ? '' : 'disabled'} aria-label="Guardar"></td>
+          <td><b>${esc(r.assigned ? S.catalog[r.assigned].name : (r.name || r.printed_name))}</b><small>${esc(r.printed_name)}${r.section ? ' · ' + esc(r.section) : ''}${layout.boxes[r.id] ? ` · pág. ${layout.boxes[r.id].page}` : ''}</small>
+            ${r.analyte_key ? '' : `<input list="catlist" data-assign="${r.id}" placeholder="¿Qué análisis es? Escribe para buscar" value="${r.assigned ? esc(S.catalog[r.assigned].name) : ''}" style="width:100%;margin-top:4px">${r.assigned ? '' : '<span class="flag">No reconocido: dime qué análisis es o no se guardará</span>'}`}
             ${r.problems.filter(p => p !== 'analito_desconocido').map(p => `<span class="flag">${esc(PROBLEMS[p] || p)}</span>`).join('')}
             ${r.converted ? `<span class="flag">Convertido de ${esc(r.value_printed)} ${esc(r.unit_printed || '')}</span>` : ''}</td>
-          <td><input type="text" data-val="${r.id}" value="${esc(r.edited ?? (r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed))}"> ${esc(r.unit || '')}</td>
+          <td><input type="text" data-val="${r.id}" value="${esc(r.edited ?? (r.assigned ? r.value_printed : r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed))}"> ${esc(r.assigned ? (r.unit_printed || '') : (r.unit || ''))}</td>
           <td>${esc(r.ref_printed || '—')}</td><td>${pill(r.status)}</td></tr>`).join('')}
       </tbody></table></div>
+      ${manual.length ? `<h3 style="margin:8px 0 0;font-size:15px">Agregados a mano</h3><div class="tblwrap"><table class="rt"><tbody>${manual.map((m, i) => `<tr><td><b>${esc(S.catalog[m.analyte_key].name)}</b><span class="flag">Agregado a mano</span></td><td>${esc(m.value)} ${esc(m.unit || '')}</td><td>${esc(m.ref || '—')}</td><td><button class="mini dn" data-rm="${i}">Quitar</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${addOpen ? `<form class="fg2 card" id="mf" style="padding:14px"><b>Agregar un resultado que falta</b>
+        <label>Análisis<input type="text" name="name" list="catlist" autocomplete="off" placeholder="Empieza a escribir…" required></label>
+        <label>Valor<input type="text" name="value" autocomplete="off" placeholder="Por ejemplo 92 o Negativo" required></label>
+        <label>Unidad<input type="text" name="unit" autocomplete="off" placeholder="(la habitual del análisis)"></label>
+        <label>Rango que imprime el estudio (opcional)<input type="text" name="ref" autocomplete="off" placeholder="Por ejemplo 70 - 99"></label>
+        <p class="err" id="me"></p><div class="bar"><button type="button" class="mini" id="mcancel">Cancelar</button><button class="btn">Agregar a la lista</button></div></form>` : `<div><button class="mini" id="addm">+ Agregar un resultado que falta</button></div>`}
       <p class="err" id="e"></p>
-      <div class="bar"><button class="btn danger" id="discard">Descartar estudio</button><button class="btn" id="ok">Confirmar ${n} ${n === 1 ? 'resultado' : 'resultados'}</button></div>`;
+      <div class="bar"><button class="btn danger" id="discard">Descartar estudio</button><button class="btn" id="ok">Confirmar ${n + manual.length} ${n + manual.length === 1 ? 'resultado' : 'resultados'}</button></div>`;
     document.getElementById('back').onclick = () => renderDocs();
     document.getElementById('reread').onclick = async () => {
       if (!confirm('¿Volver a leer este estudio? Se pierden las correcciones que no hayas confirmado.')) return;
@@ -598,11 +609,28 @@ async function openReview(id) {
       catch (err) { document.getElementById('e').textContent = err.message; b.disabled = false; b.textContent = 'Volver a leer'; }
     };
     document.getElementById('only').onchange = e => { onlyFlags = e.target.checked; draw(); };
-    document.getElementById('ai').onclick = () => { showAi = !showAi; draw(); };
-    view().querySelectorAll('tr[data-row]').forEach(tr => {
-      tr.onclick = e => { if (e.target.type !== 'checkbox') focusRow(Number(tr.dataset.row)); };
-      tr.querySelector('[data-val]').onfocus = () => focusRow(Number(tr.dataset.row));
+    view().querySelectorAll('[data-assign]').forEach(i => i.onchange = () => {
+      const r = rows.find(x => x.id == i.dataset.assign), k = keyFromName(i.value);
+      r.assigned = k; r.accept = !!k; draw();
     });
+    view().querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { manual.splice(Number(b.dataset.rm), 1); draw(); });
+    const addBtn = document.getElementById('addm');
+    if (addBtn) addBtn.onclick = () => { addOpen = true; draw(); document.querySelector('#mf [name=name]').focus(); };
+    const mf = document.getElementById('mf');
+    if (mf) {
+      const f = mf.elements;  // por nombre explícito: un campo "name" no debe confundirse con mf.name
+      document.getElementById('mcancel').onclick = () => { addOpen = false; draw(); };
+      f.name.onchange = () => { const k = keyFromName(f.name.value); if (k) { f.unit.value = S.catalog[k].unit || ''; f.value.placeholder = S.catalog[k].kind === 'num' ? 'Un número, por ejemplo 92' : 'Por ejemplo Negativo'; } };
+      mf.onsubmit = ev => {
+        ev.preventDefault();
+        const k = keyFromName(f.name.value), err = document.getElementById('me');
+        if (!k) return (err.textContent = 'Elige el análisis de la lista: escribe unas letras y selecciónalo.');
+        const v = f.value.value.trim();
+        if (S.catalog[k].kind === 'num' && !isFinite(Number(v.replace(',', '.')))) return (err.textContent = 'Este análisis es un número: escribe solo la cifra.');
+        manual.push({ analyte_key: k, value: v, unit: f.unit.value.trim() || null, ref: f.ref.value.trim() || null });
+        addOpen = false; draw();
+      };
+    }
     view().querySelectorAll('[data-acc]').forEach(c => c.onchange = () => { rows.find(r => r.id == c.dataset.acc).accept = c.checked; draw(); });
     view().querySelectorAll('[data-val]').forEach(i => i.oninput = () => { rows.find(r => r.id == i.dataset.val).edited = i.value; });
     document.getElementById('discard').onclick = async () => {
@@ -615,6 +643,7 @@ async function openReview(id) {
       const decisions = [];
       for (const r of rows) {
         const dd = { row_id: r.id, accept: r.accept };
+        if (r.accept && r.assigned) { dd.analyte_key = r.assigned; dd.printed_value = (r.edited ?? r.value_printed).trim(); decisions.push(dd); continue; }
         if (r.accept && r.edited != null) {
           if (r.value_num != null) {
             const v = Number(String(r.edited).replace(',', '.'));
@@ -625,7 +654,7 @@ async function openReview(id) {
         decisions.push(dd);
       }
       try {
-        const res = await api(`/api/documents/${id}/review`, { method: 'POST', body: { collected_on: date, decisions } });
+        const res = await api(`/api/documents/${id}/review`, { method: 'POST', body: { collected_on: date, decisions, manual } });
         toast(`Guardé ${res.saved} resultados en tu expediente.`); S.tab = 'res'; renderShell();
       } catch (err) { e.textContent = err.message; }
     };

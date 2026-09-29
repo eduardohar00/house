@@ -379,3 +379,107 @@ def test_result_without_printed_reference_has_no_status_and_old_rows_are_repaire
 
     assert ingest.repair_references(db) == 1
     assert db.execute("SELECT status FROM observation").fetchone()["status"] is None
+
+
+# --- "Falta este resultado": indicar el análisis de una fila no reconocida y agregar a mano ---
+
+UNKNOWN_LINES = [
+    "Informe de Resultados de Laboratorio",
+    "Fecha de Toma : 01/03/2026",
+    "Glucosa 105 70 - 99 mg/dL",
+    "Análisis Inventado XYZ 12.5 mg/dL 10 - 20",
+]
+
+
+def test_assign_unrecognized_row_and_add_missing_results_by_hand(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    doc_id = upload(c, me, make_pdf(UNKNOWN_LINES)).json()["document_id"]
+    rows = c.get(f"/api/documents/{doc_id}").json()["rows"]
+    unknown = next(r for r in rows if r["analyte_key"] is None)
+    glucose = next(r for r in rows if r["analyte_key"] == "glucose")
+
+    # sin decir qué análisis es, no se puede guardar
+    body = {"collected_on": "2026-03-01", "decisions": [{"row_id": unknown["id"], "accept": True}]}
+    assert c.post(f"/api/documents/{doc_id}/review", headers=H, json=body).status_code == 422
+
+    body = {
+        "collected_on": "2026-03-01",
+        "decisions": [
+            {"row_id": glucose["id"], "accept": True},
+            # la persona dice que era ácido úrico: se interpreta de nuevo desde lo impreso (12.5 mg/dL, 10 - 20)
+            {"row_id": unknown["id"], "accept": True, "analyte_key": "uric_acid"},
+        ],
+        "manual": [
+            {
+                "analyte_key": "crp_hs",
+                "value": "0,114",
+                "unit": "mg/dL",
+                "ref": "< 0.5",
+            },  # se convierte a mg/L
+            {"analyte_key": "urine_nitrite", "value": "Negativo", "ref": "Negativo"},
+            {"analyte_key": "ferritin", "value": "132"},  # sin unidad ni rango: unidad habitual, sin estado
+        ],
+    }
+    assert c.post(f"/api/documents/{doc_id}/review", headers=H, json=body).json() == {"saved": 5}
+    obs = {o["analyte_key"]: o for o in c.get(f"/api/people/{me}/observations").json()}
+    assert (
+        obs["uric_acid"]["value_num"],
+        obs["uric_acid"]["status"],
+        obs["uric_acid"]["entered_manually"],
+    ) == (
+        12.5,
+        "ok",  # 12.5 está dentro de "10 - 20"
+        0,
+    )
+    crp = obs["crp_hs"]
+    assert (crp["value_num"], crp["unit"], crp["ref_high"], crp["status"], crp["entered_manually"]) == (
+        1.14, "mg/L", 5.0, "ok", 1,
+    )  # fmt: skip
+    assert (obs["urine_nitrite"]["value_text"], obs["urine_nitrite"]["status"]) == ("Negativo", "ok")
+    assert (obs["ferritin"]["value_num"], obs["ferritin"]["unit"], obs["ferritin"]["status"]) == (
+        132,
+        "ng/mL",
+        None,
+    )
+    assert obs["glucose"]["entered_manually"] == 0
+
+
+def test_manual_result_validation(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+
+    def review(manual):
+        doc_id = upload(c, me, make_pdf(LAB_LINES + [f"{len(manual)} {manual[0]['value']}"])).json()[
+            "document_id"
+        ]
+        return c.post(
+            f"/api/documents/{doc_id}/review",
+            headers=H,
+            json={"collected_on": "2026-03-01", "decisions": [], "manual": manual},
+        )
+
+    assert review([{"analyte_key": "no_existe", "value": "1"}]).status_code == 422
+    assert review([{"analyte_key": "glucose", "value": "mucho"}]).status_code == 422  # numérico: exige cifra
+    assert review([{"analyte_key": "glucose", "value": ""}]).status_code == 422
+    r = review([{"analyte_key": "glucose", "value": "5", "unit": "furlongs"}])
+    assert r.status_code == 422 and "No sé convertir" in r.json()["detail"]
+    ok = review([{"analyte_key": "glucose", "value": "5.0", "unit": "mmol/L"}])
+    assert ok.status_code == 200
+    assert c.get(f"/api/people/{me}/observations").json()[0]["value_num"] == pytest.approx(90.08, abs=0.01)
+
+
+def test_migration_adds_manual_flag_to_existing_observation_table(tmp_path):
+    import sqlite3
+
+    from house.app import ingest
+
+    db = sqlite3.connect(tmp_path / "old.db")
+    db.row_factory = sqlite3.Row
+    db.executescript("CREATE TABLE observation(id INTEGER PRIMARY KEY, value_num REAL);")
+    db.execute("INSERT INTO observation(value_num) VALUES (1)")
+    ingest.migrate_observation(db)
+    ingest.migrate_observation(db)  # idempotente
+    assert db.execute("SELECT entered_manually FROM observation").fetchone()[0] == 0

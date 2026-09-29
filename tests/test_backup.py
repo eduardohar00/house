@@ -36,7 +36,8 @@ def test_recovery_key_format_and_typos():
     key, pub = backup.new_recovery_key()
     assert len(key.replace("-", "")) == 55 and pub
     backup.parse_recovery_key(key.lower().replace("-", " "))  # tolera minúsculas y espacios
-    typo = key[:-1] + ("A" if key[-1] != "A" else "B")
+    i = 12  # un carácter del medio (el último tiene bits sobrantes: cambiarlo puede no alterar la llave)
+    typo = key[:i] + ("A" if key[i] != "A" else "B") + key[i + 1 :]
     with pytest.raises(backup.BackupError, match="error de captura"):
         backup.parse_recovery_key(typo)
     with pytest.raises(backup.BackupError):

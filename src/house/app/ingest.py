@@ -17,7 +17,7 @@ from datetime import date, datetime
 
 from ..extract import Row, convert_ref, extract_document
 from ..imaging import ImagingReport, looks_like_imaging_report, parse_reports
-from ..normalize import ranges, terminology
+from ..normalize import ranges, terminology, units
 from ..privacy import Anonymizer
 from ..providers import Router
 from .vault import Vault
@@ -75,6 +75,13 @@ def migrate_imaging(db: sqlite3.Connection) -> None:
     for col, typ in _IMAGING_COLUMNS.items():
         if col not in have:
             db.execute(f"ALTER TABLE imaging_study ADD COLUMN {col} {typ}")
+
+
+def migrate_observation(db: sqlite3.Connection) -> None:
+    """Agrega a `observation` la marca de resultado escrito a mano (bases anteriores)."""
+    have = {r["name"] for r in db.execute("PRAGMA table_info(observation)")}
+    if have and "entered_manually" not in have:
+        db.execute("ALTER TABLE observation ADD COLUMN entered_manually INTEGER NOT NULL DEFAULT 0")
 
 
 class IngestError(Exception):
@@ -312,16 +319,90 @@ def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
     }
 
 
+def _typed_value(analyte: terminology.Analyte, text: str) -> tuple[float | None, str | None]:
+    """Interpreta lo que la persona escribió según el tipo del análisis (número, texto o ambos)."""
+    t = (text or "").strip()
+    if not t:
+        raise IngestError(422, f"Falta el valor de «{analyte.name}».")
+    try:
+        num: float | None = float(t.replace(",", "."))
+    except ValueError:
+        num = None
+    if analyte.kind == "num":
+        if num is None:
+            raise IngestError(422, f"«{analyte.name}» es un número: escribe solo la cifra.")
+        return num, None
+    return (num, None) if num is not None else (None, t)
+
+
+def _resolved(
+    analyte: terminology.Analyte, text: str, unit_text: str | None, ref_text: str | None
+) -> tuple[float | None, str | None, str, ranges.Ref, str | None]:
+    """Valor en unidad canónica, su rango convertido y su estado, a partir de lo impreso o escrito."""
+    num, txt = _typed_value(analyte, text)
+    if num is None:
+        return None, txt, analyte.unit, ranges.Ref(), ranges.classify_text(txt or "", ref_text)
+    unit_text = unit_text or analyte.unit
+    if analyte.kind == "qual":  # un conteo en un análisis de texto: sin conversión
+        value, unit = num, ""
+    else:
+        try:
+            value, unit = units.to_canonical(analyte.key, num, unit_text, analyte.unit)
+        except units.UnknownUnit:
+            raise IngestError(
+                422, f"No sé convertir «{unit_text}» a {analyte.unit} para {analyte.name}."
+            ) from None
+    ref = convert_ref(analyte.key, ranges.parse_ref_full(ref_text), unit_text, analyte.unit)
+    return value, None, unit, ref, ranges.classify_ref(value, ref)
+
+
+def _insert_observation(db: sqlite3.Connection, doc: sqlite3.Row, **f) -> None:
+    db.execute(
+        "INSERT INTO observation(person_id, document_id, analyte_key, loinc, printed_name, value_num, "
+        "value_text, unit, value_printed, unit_printed, ref_low, ref_high, ref_printed, method, status, "
+        "collected_on, confirmed_by, confirmed_at, entered_manually) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            doc["person_id"],
+            doc["id"],
+            f["key"],
+            f["analyte"].loinc or None,
+            f["printed_name"],
+            f["value_num"],
+            f["value_text"],
+            f["unit"],
+            f["value_printed"],
+            f["unit_printed"],
+            f["ref"].low,
+            f["ref"].high,
+            f["ref_printed"],
+            f["method"],
+            f["status"],
+            f["collected_on"],
+            f["reviewer_id"],
+            f["now"],
+            f["manual"],
+        ),
+    )
+
+
 def confirm_review(
-    db: sqlite3.Connection, doc_id: int, reviewer_id: int, collected_on: str, decisions: list[dict]
+    db: sqlite3.Connection,
+    doc_id: int,
+    reviewer_id: int,
+    collected_on: str,
+    decisions: list[dict],
+    manual: list[dict] | None = None,
 ) -> int:
-    """Guarda en `observation` solo las filas aceptadas (con las correcciones del revisor)."""
+    """Guarda en `observation` solo lo aceptado: filas del PDF (con correcciones o con el análisis que la
+    persona indicó) y resultados que faltaban, escritos a mano y marcados como tales."""
     date.fromisoformat(collected_on)
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
     if doc["review_state"] != "pendiente":
         raise IngestError(409, "Este estudio ya fue revisado.")
     rows = {r["id"]: r for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ?", (doc_id,))}
     now = datetime.now().isoformat(timespec="seconds")
+    common = {"collected_on": collected_on, "reviewer_id": reviewer_id, "now": now}
     saved = 0
     for d in decisions:
         r = rows.get(d.get("row_id"))
@@ -333,40 +414,67 @@ def confirm_review(
         analyte = terminology.BY_KEY.get(key or "")
         if analyte is None:
             raise IngestError(422, f"Falta indicar qué análisis es «{r['printed_name']}».")
-        value_num = d.get("value_num", r["value_num"])
-        value_text = d.get("value_text", r["value_text"])
-        if value_num is None and not value_text:
-            raise IngestError(422, f"«{r['printed_name']}» no tiene valor.")
-        ref = ranges.parse_ref_full(r["ref_printed"])
-        if value_num is not None:
-            ref = convert_ref(key, ref, r["unit_printed"], analyte.unit)  # mismo criterio que el valor
-            status = ranges.classify_ref(value_num, ref)
+        if key != r["analyte_key"]:
+            # La persona indicó (o cambió) el análisis: el valor se interpreta de nuevo desde lo impreso.
+            text = d.get("printed_value") or r["value_printed"]
+            value_num, value_text, unit, ref, status = _resolved(
+                analyte, text, r["unit_printed"], r["ref_printed"]
+            )
         else:
-            status = ranges.classify_text(value_text, r["ref_printed"])
-        db.execute(
-            "INSERT INTO observation(person_id, document_id, analyte_key, loinc, printed_name, value_num, "
-            "value_text, unit, value_printed, unit_printed, ref_low, ref_high, ref_printed, method, status, "
-            "collected_on, confirmed_by, confirmed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                doc["person_id"],
-                doc_id,
-                key,
-                analyte.loinc or None,
-                r["printed_name"],
-                value_num,
-                value_text,
-                d.get("unit", r["unit"]) or analyte.unit,
-                r["value_printed"],
-                r["unit_printed"],
-                ref.low,
-                ref.high,
-                r["ref_printed"],
-                r["method"],
-                status,
-                collected_on,
-                reviewer_id,
-                now,
-            ),
+            value_num = d.get("value_num", r["value_num"])
+            value_text = d.get("value_text", r["value_text"])
+            if value_num is None and not value_text:
+                raise IngestError(422, f"«{r['printed_name']}» no tiene valor.")
+            ref = ranges.parse_ref_full(r["ref_printed"])
+            if value_num is not None:
+                ref = convert_ref(key, ref, r["unit_printed"], analyte.unit)  # mismo criterio que el valor
+                status = ranges.classify_ref(value_num, ref)
+            else:
+                status = ranges.classify_text(value_text, r["ref_printed"])
+            unit = d.get("unit", r["unit"]) or analyte.unit
+        _insert_observation(
+            db,
+            doc,
+            key=key,
+            analyte=analyte,
+            printed_name=r["printed_name"],
+            value_num=value_num,
+            value_text=value_text,
+            unit=unit,
+            value_printed=r["value_printed"],
+            unit_printed=r["unit_printed"],
+            ref=ref,
+            ref_printed=r["ref_printed"],
+            method=r["method"],
+            status=status,
+            manual=0,
+            **common,
+        )
+        saved += 1
+    for m in manual or []:
+        analyte = terminology.BY_KEY.get(m.get("analyte_key") or "")
+        if analyte is None:
+            raise IngestError(422, "Elige el análisis que quieres agregar.")
+        value_num, value_text, unit, ref, status = _resolved(
+            analyte, m.get("value") or "", m.get("unit"), m.get("ref")
+        )
+        _insert_observation(
+            db,
+            doc,
+            key=analyte.key,
+            analyte=analyte,
+            printed_name=analyte.name,
+            value_num=value_num,
+            value_text=value_text,
+            unit=unit,
+            value_printed=(m.get("value") or "").strip(),
+            unit_printed=(m.get("unit") or None),
+            ref=ref,
+            ref_printed=(m.get("ref") or None),
+            method=None,
+            status=status,
+            manual=1,
+            **common,
         )
         saved += 1
     db.execute(
