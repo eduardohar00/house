@@ -22,7 +22,7 @@ from ..normalize import explanations, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import assistant, auth, backup, clinical, drugs, ingest, naming, store
+from . import assistant, auth, backup, clinical, drugs, health, ingest, naming, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -202,6 +202,7 @@ def create_app(
     ingest.migrate_imaging(db)
     ingest.migrate_observation(db)
     ingest.migrate_document(db)
+    db.executescript(health.SCHEMA)
     ingest.load_custom(db)
     db.executescript(backup.SETTINGS_SCHEMA)
     clinical.migrate(db)
@@ -649,6 +650,34 @@ def create_app(
     def clinical_overview(person_id: int, actor: Me) -> dict:
         subject(person_id, actor, "ver_expediente")
         return clinical.overview(db, person_id)
+
+    def health_call(fn, *args):
+        try:
+            return fn(*args)
+        except health.HealthError as e:
+            raise HTTPException(e.status, e.message) from None
+
+    @app.get("/api/people/{person_id}/health")
+    def health_overview(person_id: int, actor: Me) -> dict:
+        subject(person_id, actor, "ver_expediente")
+        return health.overview(db, person_id)
+
+    @app.put("/api/people/{person_id}/health/profile")
+    def health_save(person_id: int, actor: Me, data: Annotated[dict, Body()]) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        health_call(health.save_profile, db, person_id, data)
+        return health.overview(db, person_id)
+
+    @app.post("/api/people/{person_id}/health/measurements")
+    def health_add(person_id: int, actor: Me, data: Annotated[dict, Body()]) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        return {"id": health_call(health.add_measurement, db, person_id, data)}
+
+    @app.delete("/api/people/{person_id}/health/measurements/{measurement_id}")
+    def health_remove(person_id: int, measurement_id: int, actor: Me) -> dict:
+        subject(person_id, actor, "editar_expediente")
+        health_call(health.remove_measurement, db, person_id, measurement_id)
+        return {"ok": True}
 
     class LinkBody(BaseModel):
         kind: str

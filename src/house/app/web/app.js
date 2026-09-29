@@ -870,7 +870,7 @@ function groupMeds(list) {
 
 async function renderClinical() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
-  const [c, sug, cand] = await Promise.all([api(`/api/people/${S.subject}/clinical`), S.sug ? Promise.resolve(S.sug) : api('/api/clinical/suggestions'), api(`/api/people/${S.subject}/link-candidates`)]);
+  const [c, sug, cand, hl] = await Promise.all([api(`/api/people/${S.subject}/clinical`), S.sug ? Promise.resolve(S.sug) : api('/api/clinical/suggestions'), api(`/api/people/${S.subject}/link-candidates`), api(`/api/people/${S.subject}/health`)]);
   S.sug = sug;
   const reload = () => renderClinical();
   const itemsOf = kind => c[CLIN[kind].key];
@@ -953,13 +953,14 @@ async function renderClinical() {
   const editing = S.clinEdit;
 
   // ---- Secciones: un resumen al inicio y una sección a la vez, para no ver todo junto.
-  const SECTIONS = [['res', 'Resumen'], ['prob', 'Padecimientos', 'problem'], ['med', 'Medicamentos', 'medication'], ['sup', 'Suplementos', 'supplement'], ['alg', 'Alergias', 'allergy'],
+  const SECTIONS = [['res', 'Resumen'], ['per', 'Perfil y medidas'], ['prob', 'Padecimientos', 'problem'], ['med', 'Medicamentos', 'medication'], ['sup', 'Suplementos', 'supplement'], ['alg', 'Alergias', 'allergy'],
     ['fam', 'Antecedentes', 'family'], ['vac', 'Vacunas', 'vaccine'], ['cir', 'Cirugías', 'procedure'], ['con', 'Consultas', 'consultation'], ['his', 'Historial']];
   const secOfKind = Object.fromEntries(SECTIONS.filter(x => x[2]).map(x => [x[2], x[0]]));
   const sec = SECTIONS.some(x => x[0] === S.expSec) ? S.expSec : 'res';
   const count = { problem: c.problems.filter(p => p.status !== 'Resuelta').length, medication: c.medications.filter(m => m.active).length, supplement: c.supplements.filter(m => m.active).length, allergy: c.allergies.length,
     family: c.family.length, vaccine: c.vaccines.length, procedure: c.procedures.length, consultation: c.consultations.length };
   const pending = HAS_NONE.filter(k => !count[k] && !c.none.includes(k));  // sin datos y sin confirmar que «no hay»
+  const profileEmpty = !hl.profile.height_cm && !hl.profile.smoking && !hl.profile.alcohol && !hl.profile.exercise;
   const timelineHtml = (list, title) => `<section class="card xc"><h3>${title}</h3>
       ${title === 'Historial cronológico' ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${chips.map(k => `<button class="chip" data-f="${k}" aria-pressed="${k === S.clinFilter}">${k === 'todo' ? 'Todo' : EV_KIND[k]}</button>`).join('')}</div>` : ''}
       <div class="tl">${list.length ? list.map(e => `<div class="ev"><div class="dt">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</div><div>
@@ -972,9 +973,11 @@ async function renderClinical() {
     const mini = (arr, fn, target, empty) => arr.length ? `<ul class="xmini">${arr.slice(0, 4).map(fn).join('')}</ul>${arr.length > 4 ? `<button class="link" data-xs="${target}">Ver los ${arr.length}</button>` : ''}` : `<p class="tip" style="margin:0">${empty}</p>`;
     const head = (t, target) => `<h3>${t}<button class="mini" data-xs="${target}">Ver todo</button></h3>`;
     const recent = c.timeline.slice(0, 5).map(e => `<li class="xev"><span class="s">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</span><span class="ty">${e.modality && e.kind !== 'imagen' ? esc(e.modality) : EV_KIND[e.kind]}</span><span class="xet">${esc(e.title)}</span></li>`).join('');
-    return `${pending.length ? `<section class="card xc xpend"><h3>Por completar</h3><p class="tip" style="margin:0">Estas secciones están vacías. Agrega lo que aplique o confirma que no hay nada.</p>
+    return `${pending.length || profileEmpty ? `<section class="card xc xpend"><h3>Por completar</h3><p class="tip" style="margin:0">Estas secciones están vacías. Agrega lo que aplique o confirma que no hay nada.</p>
+        ${profileEmpty ? '<div class="xprow"><span><b>Perfil de salud</b> <span class="s">talla, tabaquismo, alcohol, ejercicio… ayudan a orientarte mejor</span></span><span><button class="mini" data-xs="per">Completar</button></span></div>' : ''}
         ${pending.map(k => `<div class="xprow"><span><b>${esc(CLIN[k].title)}</b> <span class="s">sin registrar</span></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini" data-add="${k}">Agregar</button><button class="mini" data-none="${k}">${esc(CLIN[k].none)}</button></span></div>`).join('')}</section>` : ''}
       <div class="xdash">
+        <section class="card xc">${head('Perfil de salud', 'per')}${basicsHtml()}</section>
         <section class="card xc">${head('Padecimientos activos', 'prob')}${mini(act, p => `<li><b>${esc(p.name)}</b> <span class="s">${esc(p.status)}${p.links.length ? ` · ${p.links.length} ${p.links.length === 1 ? 'estudio o tratamiento ligado' : 'estudios o tratamientos ligados'}` : ''}</span></li>`, 'prob', 'Sin padecimientos activos.')}</section>
         <section class="card xc">${head('Medicamentos actuales', 'med')}${mini(groupMeds(meds).map(g => g[0]), m => `<li><b>${esc(m.brand || m.name)}</b>${m.active_ingredient && m.brand ? ` <span class="s">· ${esc(m.active_ingredient)}</span>` : ''}${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'med', 'Sin medicamentos actuales.')}</section>
         <section class="card xc">${head('Suplementos actuales', 'sup')}${mini(c.supplements.filter(m => m.active), m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'sup', 'Sin suplementos registrados.')}</section>
@@ -982,18 +985,73 @@ async function renderClinical() {
         <section class="card xc">${head('Últimos eventos', 'his')}${recent ? `<ul class="xmini">${recent}</ul>` : '<p class="tip" style="margin:0">Todavía no hay eventos.</p>'}</section>
       </div>`;
   };
-  const nav = `<nav class="xnav" role="tablist" aria-label="Secciones del expediente">${SECTIONS.map(([k, label, kind]) => `<button class="xpill" role="tab" data-xs="${k}" aria-selected="${k === sec}" aria-pressed="${k === sec}">${label}${kind ? `<span class="xn">${count[kind]}</span>` : ''}${kind && pending.includes(kind) ? '<i class="xdot" title="Sin registrar"></i>' : ''}</button>`).join('')}</nav>`;
+  const nav = `<nav class="xnav" role="tablist" aria-label="Secciones del expediente">${SECTIONS.map(([k, label, kind]) => `<button class="xpill" role="tab" data-xs="${k}" aria-selected="${k === sec}" aria-pressed="${k === sec}">${label}${kind ? `<span class="xn">${count[kind]}</span>` : ''}${(kind && pending.includes(kind)) || (k === 'per' && profileEmpty) ? '<i class="xdot" title="Sin registrar"></i>' : ''}</button>`).join('')}</nav>`;
   // Medicamentos sin sustancia activa: Claude la sugiere a partir del nombre y la persona confirma cada una.
   const missingIng = c.medications.filter(m => !m.active_ingredient).length;
   const medTools = () => !missingIng ? '' : `<div class="newan" style="margin-bottom:12px"><b>${missingIng} ${missingIng === 1 ? 'medicamento no tiene' : 'medicamentos no tienen'} sustancia activa</b>
     <span class="tip">Claude puede sugerirla a partir del nombre (solo se envían los nombres). Tú confirmas cada una; verifícala en la caja o en la receta.</span>
     ${S.sugIng ? (S.sugIng.length ? S.sugIng.map(x => `<div class="xprow"><span><b>${esc(x.name)}</b> → ${esc(x.active_ingredient)}</span><span style="display:flex;gap:6px"><button class="mini" data-acc-ing="${x.id}" data-ing="${esc(x.active_ingredient)}">Aceptar</button><button class="mini" data-skip-ing="${x.id}">Ignorar</button></span></div>`).join('') : '<span class="tip">Claude no está seguro de ninguna; puedes escribirlas al editar cada medicamento.</span>') : '<span><button class="mini" id="sugIng">Sugerir con Claude</button></span>'}</div>`;
-  const body = sec === 'res' ? dash() : sec === 'his' ? timelineHtml(evs, 'Historial cronológico') : `<div class="xpanel">${sec === 'med' ? medTools() : ''}${card(SECTIONS.find(x => x[0] === sec)[2])}</div>`;
+  // ---- Perfil de salud y medidas
+  const subj = S.people.find(p => p.id === S.subject) || S.me;
+  const ageOf = b => { if (!b) return null; const d = new Date(b), t = new Date(); let a = t.getFullYear() - d.getFullYear(); if (t < new Date(t.getFullYear(), d.getMonth(), d.getDate())) a--; return a; };
+  const MEAS = { weight_kg: ['Peso', 'kg'], blood_pressure: ['Presión arterial', 'mmHg'], heart_rate: ['Frecuencia cardiaca', 'lpm'], waist_cm: ['Cintura', 'cm'], body_fat_pct: ['Grasa corporal', '%'] };
+  const mval = m => m.kind === 'blood_pressure' ? `${m.value}/${m.value2}` : m.value;
+  const basicsHtml = () => {
+    const p = hl.profile, l = hl.latest, age = ageOf(subj.birth_date);
+    const bits = [`${subj.sex_at_birth === 'F' ? 'Mujer' : 'Hombre'}${age != null ? ', ' + age + ' años' : ''}`, p.height_cm && `talla ${p.height_cm} cm`, l.weight_kg && `peso ${l.weight_kg.value} kg`, hl.bmi && `IMC ${hl.bmi}`, l.blood_pressure && `presión ${mval(l.blood_pressure)}`].filter(Boolean);
+    const habits = [p.smoking && 'tabaco: ' + p.smoking.toLowerCase(), p.alcohol && 'alcohol: ' + p.alcohol.toLowerCase(), p.exercise && 'ejercicio: ' + p.exercise.toLowerCase()].filter(Boolean);
+    return `<p style="margin:0">${esc(bits.join(' · '))}</p>${habits.length ? `<p class="s" style="margin:4px 0 0">${esc(habits.join(' · '))}</p>` : '<p class="tip" style="margin:4px 0 0">Aún sin hábitos registrados.</p>'}`;
+  };
+  const perPanel = () => {
+    const p = hl.profile, ch = hl.choices, sel = (name, list) => `<select name="${name}"><option value="">Sin especificar</option>${list.map(o => `<option ${p[name] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    const txt = (name, ph = '') => `<input type="text" name="${name}" value="${esc(p[name] || '')}" maxlength="500" placeholder="${esc(ph)}" spellcheck="true" lang="es" style="width:100%">`;
+    const grouped = Object.keys(MEAS).map(k => [k, hl.measurements.filter(m => m.kind === k)]).filter(([, a]) => a.length);
+    return `<div class="xpanel"><section class="card xc"><h3>Datos básicos y hábitos</h3>
+      <p class="tip" style="margin:0">${esc(basicsHtml().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())}</p>
+      <p class="tip" style="margin:0">Estos datos ayudan al asistente a orientarte (qué estudios o cuidados tienen sentido para tu edad y hábitos). Solo se envía a Claude lo que necesita, sin tu nombre.</p>
+      <form id="hf" class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
+        <label>Talla (cm)<input type="text" name="height_cm" inputmode="decimal" value="${esc(p.height_cm ?? '')}" placeholder="178"></label>
+        <label>Tipo de sangre${sel('blood_type', ch.blood_type)}</label>
+        <label>Tabaquismo${sel('smoking', ch.smoking)}</label><label>Detalle del tabaquismo${txt('smoking_detail', 'cigarros al día, años, cuándo lo dejaste')}</label>
+        <label>Alcohol${sel('alcohol', ch.alcohol)}</label><label>Detalle del alcohol${txt('alcohol_detail', 'bebidas por semana')}</label>
+        <label>Ejercicio${sel('exercise', ch.exercise)}</label><label>Qué haces${txt('exercise_detail', 'pesas, correr, deporte…')}</label>
+        <label>Horas de sueño<input type="text" name="sleep_hours" inputmode="decimal" value="${esc(p.sleep_hours ?? '')}" placeholder="7"></label>
+        <label>Alimentación${txt('diet', 'por ejemplo alta en proteína, vegetariana')}</label>
+        <label>Ocupación${txt('occupation', 'trabajo de escritorio, turnos, exposición a químicos…')}</label>
+        <label>Otras notas${txt('notes')}</label>
+        <p class="err" id="hfe"></p><div class="bar"><span></span><button class="btn">Guardar</button></div></form></section>
+      <section class="card xc" style="margin-top:12px"><h3>Medidas con fecha</h3>
+        <form id="mf2" class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+          <label>Medida<select name="kind">${Object.entries(MEAS).map(([k, [n]]) => `<option value="${k}">${n}</option>`).join('')}</select></label>
+          <label>Valor<input type="text" name="value" inputmode="decimal" required placeholder="82"></label>
+          <label id="v2l" hidden>Diastólica<input type="text" name="value2" inputmode="decimal" placeholder="80"></label>
+          <label>Fecha<input type="date" name="measured_on" value="${new Date().toISOString().slice(0, 10)}"></label>
+          <div style="display:flex;align-items:end"><button class="btn">Agregar</button></div></form><p class="err" id="mfe"></p>
+        ${grouped.length ? grouped.map(([k, arr]) => `<div class="famrow"><span class="famrel">${MEAS[k][0]}</span><div class="plw" style="margin:0">${arr.slice(0, 8).map(m => `<span class="lchip"><span class="lt">${mval(m)} ${MEAS[k][1]} · ${fd(m.measured_on)}</span><button data-rm-meas="${m.id}" title="Quitar" aria-label="Quitar esta medida">✕</button></span>`).join('')}</div></div>`).join('') : '<p class="tip" style="margin:0">Todavía no hay medidas. Agrega tu peso o tu presión para ver cómo cambian.</p>'}</section></div>`;
+  };
+  const body = sec === 'per' ? perPanel() : sec === 'res' ? dash() : sec === 'his' ? timelineHtml(evs, 'Historial cronológico') : `<div class="xpanel">${sec === 'med' ? medTools() : ''}${card(SECTIONS.find(x => x[0] === sec)[2])}</div>`;
   view().innerHTML = `
     <div id="clinform"></div>
     ${nav}
     ${body}`;
 
+  const hf = document.getElementById('hf');
+  if (hf) hf.onsubmit = async e => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(hf).entries());
+    try { await api(`/api/people/${S.subject}/health/profile`, { method: 'PUT', body }); toast('Perfil guardado.'); reload(); } catch (err) { document.getElementById('hfe').textContent = err.message; }
+  };
+  const mf2 = document.getElementById('mf2');
+  if (mf2) {
+    const kindSel = mf2.elements.kind, v2 = document.getElementById('v2l');
+    kindSel.onchange = () => { v2.hidden = kindSel.value !== 'blood_pressure'; mf2.elements.value.placeholder = kindSel.value === 'blood_pressure' ? '120' : '82'; };
+    mf2.onsubmit = async e => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(mf2).entries());
+      try { await api(`/api/people/${S.subject}/health/measurements`, { method: 'POST', body }); toast('Medida agregada.'); reload(); } catch (err) { document.getElementById('mfe').textContent = err.message; }
+    };
+  }
+  view().querySelectorAll('[data-rm-meas]').forEach(b => b.onclick = async () => { await api(`/api/people/${S.subject}/health/measurements/${b.dataset.rmMeas}`, { method: 'DELETE' }); reload(); });
   const sg = document.getElementById('sugIng');
   if (sg) sg.onclick = async () => {
     sg.disabled = true; sg.textContent = 'Claude está pensando…';
