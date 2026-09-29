@@ -918,17 +918,44 @@ async function renderClinical() {
   const chips = ['todo', ...Object.keys(EV_KIND)];
   const evs = c.timeline.filter(e => S.clinFilter === 'todo' || e.kind === S.clinFilter);
   const editing = S.clinEdit;
-  view().innerHTML = `
-    <div id="clinform"></div>
-    <div class="xg">${['allergy', 'problem', 'medication', 'family', 'procedure', 'vaccine', 'consultation'].map(card).join('')}</div>
-    <section class="card xc"><h3>Historial cronológico</h3>
-      <div class="chips" role="group" aria-label="Filtrar por tipo">${chips.map(k => `<button class="chip" data-f="${k}" aria-pressed="${k === S.clinFilter}">${k === 'todo' ? 'Todo' : EV_KIND[k]}</button>`).join('')}</div>
-      <div class="tl">${evs.length ? evs.map(e => `<div class="ev"><div class="dt">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</div><div>
+
+  // ---- Secciones: un resumen al inicio y una sección a la vez, para no ver todo junto.
+  const SECTIONS = [['res', 'Resumen'], ['prob', 'Padecimientos', 'problem'], ['med', 'Medicamentos', 'medication'], ['alg', 'Alergias', 'allergy'],
+    ['fam', 'Antecedentes', 'family'], ['vac', 'Vacunas', 'vaccine'], ['cir', 'Cirugías', 'procedure'], ['con', 'Consultas', 'consultation'], ['his', 'Historial']];
+  const secOfKind = Object.fromEntries(SECTIONS.filter(x => x[2]).map(x => [x[2], x[0]]));
+  const sec = SECTIONS.some(x => x[0] === S.expSec) ? S.expSec : 'res';
+  const count = { problem: c.problems.filter(p => p.status !== 'Resuelta').length, medication: c.medications.filter(m => m.active).length, allergy: c.allergies.length,
+    family: c.family.length, vaccine: c.vaccines.length, procedure: c.procedures.length, consultation: c.consultations.length };
+  const pending = HAS_NONE.filter(k => !count[k] && !c.none.includes(k));  // sin datos y sin confirmar que «no hay»
+  const timelineHtml = (list, title) => `<section class="card xc"><h3>${title}</h3>
+      ${title === 'Historial cronológico' ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${chips.map(k => `<button class="chip" data-f="${k}" aria-pressed="${k === S.clinFilter}">${k === 'todo' ? 'Todo' : EV_KIND[k]}</button>`).join('')}</div>` : ''}
+      <div class="tl">${list.length ? list.map(e => `<div class="ev"><div class="dt">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</div><div>
           <div class="tt"><span class="ty">${e.modality && e.kind !== 'imagen' ? esc(e.modality) : EV_KIND[e.kind]}</span>${esc(e.title)}${e.flag ? ' ' + flagPill(e.flag) : ''}</div>
           ${e.subtitle ? `<div class="sb">${esc(e.subtitle)}</div>` : ''}
           ${e.ref ? `<a class="mini" href="/api/documents/${e.ref.id}/file" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;margin-top:4px">Ver original</a>` : ''}</div></div>`).join('')
         : '<p class="tip">Todavía no hay eventos. Sube estudios o agrega consultas, vacunas y cirugías.</p>'}</div></section>`;
+  const dash = () => {
+    const act = c.problems.filter(p => p.status !== 'Resuelta'), meds = c.medications.filter(m => m.active);
+    const mini = (arr, fn, target, empty) => arr.length ? `<ul class="xmini">${arr.slice(0, 4).map(fn).join('')}</ul>${arr.length > 4 ? `<button class="link" data-xs="${target}">Ver los ${arr.length}</button>` : ''}` : `<p class="tip" style="margin:0">${empty}</p>`;
+    const head = (t, target) => `<h3>${t}<button class="mini" data-xs="${target}">Ver todo</button></h3>`;
+    const recent = c.timeline.slice(0, 5).map(e => `<li class="xev"><span class="s">${e.approx ? esc(e.date.slice(0, 4)) : fd(e.date)}</span><span class="ty">${e.modality && e.kind !== 'imagen' ? esc(e.modality) : EV_KIND[e.kind]}</span><span class="xet">${esc(e.title)}</span></li>`).join('');
+    return `${pending.length ? `<section class="card xc xpend"><h3>Por completar</h3><p class="tip" style="margin:0">Estas secciones están vacías. Agrega lo que aplique o confirma que no hay nada.</p>
+        ${pending.map(k => `<div class="xprow"><span><b>${esc(CLIN[k].title)}</b> <span class="s">sin registrar</span></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="mini" data-add="${k}">Agregar</button><button class="mini" data-none="${k}">${esc(CLIN[k].none)}</button></span></div>`).join('')}</section>` : ''}
+      <div class="xdash">
+        <section class="card xc">${head('Padecimientos activos', 'prob')}${mini(act, p => `<li><b>${esc(p.name)}</b> <span class="s">${esc(p.status)}${p.links.length ? ` · ${p.links.length} ${p.links.length === 1 ? 'estudio o tratamiento ligado' : 'estudios o tratamientos ligados'}` : ''}</span></li>`, 'prob', 'Sin padecimientos activos.')}</section>
+        <section class="card xc">${head('Medicamentos actuales', 'med')}${mini(meds, m => `<li><b>${esc(m.name)}</b>${m.dose ? ` <span class="s">· ${esc(m.dose)}</span>` : ''}</li>`, 'med', 'Sin medicamentos actuales.')}</section>
+        <section class="card xc">${head('Alergias', 'alg')}${mini(c.allergies, a => `<li><b>${esc(a.substance)}</b>${a.reaction ? ` <span class="s">· ${esc(a.reaction)}</span>` : ''}</li>`, 'alg', c.none.includes('allergy') ? 'Sin alergias conocidas.' : 'Sin registrar.')}</section>
+        <section class="card xc">${head('Últimos eventos', 'his')}${recent ? `<ul class="xmini">${recent}</ul>` : '<p class="tip" style="margin:0">Todavía no hay eventos.</p>'}</section>
+      </div>`;
+  };
+  const nav = `<nav class="xnav" role="tablist" aria-label="Secciones del expediente">${SECTIONS.map(([k, label, kind]) => `<button class="xpill" role="tab" data-xs="${k}" aria-selected="${k === sec}" aria-pressed="${k === sec}">${label}${kind ? `<span class="xn">${count[kind]}</span>` : ''}${kind && pending.includes(kind) ? '<i class="xdot" title="Sin registrar"></i>' : ''}</button>`).join('')}</nav>`;
+  const body = sec === 'res' ? dash() : sec === 'his' ? timelineHtml(evs, 'Historial cronológico') : `<div class="xpanel">${card(SECTIONS.find(x => x[0] === sec)[2])}</div>`;
+  view().innerHTML = `
+    <div id="clinform"></div>
+    ${nav}
+    ${body}`;
 
+  view().querySelectorAll('[data-xs]').forEach(b => b.onclick = () => { S.expSec = b.dataset.xs; window.scrollTo({ top: 0 }); reload(); });
   view().querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.clinFilter = b.dataset.f; reload(); });
   view().querySelectorAll('[data-plink]').forEach(sel => sel.onchange = async () => {
     if (!sel.value) return;
@@ -944,7 +971,7 @@ async function renderClinical() {
     const [pid, lid] = b.dataset.punlink.split(':');
     await api(`/api/people/${S.subject}/clinical/problem/${pid}/links/${lid}`, { method: 'DELETE' }); toast('Relación quitada.'); reload();
   });
-  view().querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.clinEdit = { kind: b.dataset.add, item: null }; reload(); });
+  view().querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.clinEdit = { kind: b.dataset.add, item: null }; S.expSec = secOfKind[b.dataset.add] || sec; reload(); });
   view().querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
     const [kind, id] = b.dataset.edit.split(':'); S.clinEdit = { kind, item: itemsOf(kind).find(x => x.id == id) }; reload();
   });
