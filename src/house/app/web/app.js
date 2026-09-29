@@ -536,6 +536,14 @@ function drawChart(pts, refPt) {
 
 const STATE = { pendiente: 'Pendiente de revisar', revisada: 'Revisado', descartada: 'Descartado' };
 
+// Renglones que House leyó pero que no quedaron entre los resultados: nada se pierde en silencio.
+function notSaved(d) {
+  const rows = d.not_saved || [], lost = rows.filter(r => r.lost), dup = rows.length - lost.length;
+  if (!rows.length) return '';
+  const head = lost.length ? `<b class="warnline">${lost.length} ${lost.length === 1 ? 'renglón' : 'renglones'} ${d.review_state === 'revisada' ? 'sin guardar' : 'por resolver'}</b>` : `<span class="tip">${dup} repetido${dup === 1 ? '' : 's'} (ya guardado${dup === 1 ? '' : 's'})</span>`;
+  return `<details class="hist"><summary>${head}</summary><ul class="nsl">${rows.map(r => `<li><b>${esc(r.printed_name)}</b> ${esc(r.value_printed || '')} ${esc(r.unit_printed || '')}<small>${esc(r.reason)}</small></li>`).join('')}</ul></details>`;
+}
+
 async function renderDocs() {
   const docs = await api(`/api/people/${S.subject}/documents`);
   view().innerHTML = `
@@ -549,7 +557,7 @@ async function renderDocs() {
     <section class="card cfg"><h2>Estudios</h2>
       ${docs.length ? `<div class="tblwrap"><table><thead><tr><th>Estudio</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
         ${docs.map(d => `<tr><td><b>${esc(d.title)}</b><small style="display:block;color:var(--muted)">${d.doc_type === 'imagen' ? 'Informe de estudio' : 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
-          <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}</td>
+          <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}${notSaved(d)}</td>
           <td><div class="acts" style="display:flex;gap:6px;flex-wrap:wrap">
             ${d.review_state === 'pendiente' ? `<button class="mini" data-rev="${d.id}">Revisar</button>` : ''}
             <a class="mini" href="/api/documents/${d.id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver original</a>

@@ -403,7 +403,11 @@ def create_app(
             "FROM document d WHERE person_id = ? ORDER BY COALESCE(collected_on, uploaded_at) DESC",
             (person_id,),
         )
-        return [dict(r) for r in rows]
+        docs = [dict(r) for r in rows]
+        for d in docs:
+            if d["doc_type"] == "laboratorio" and d["review_state"] != "descartada":
+                d["not_saved"] = ingest.not_saved_rows(db, d["id"], d["review_state"] == "revisada")
+        return docs
 
     @app.get("/api/documents/{doc_id}")
     def get_document(doc_id: int, actor: Me) -> dict:

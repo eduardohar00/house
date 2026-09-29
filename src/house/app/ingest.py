@@ -13,6 +13,7 @@ import re
 import sqlite3
 import threading
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -457,6 +458,60 @@ def _save_row(db: sqlite3.Connection, doc_id: int, r: Row) -> None:
             r.qualifier,
         ),
     )
+
+
+_NOT_SAVED_REASON = {
+    "analito_desconocido": ("No reconocí este análisis", True),
+    "no_respaldada_por_el_documento": ("No aparece tal cual en el documento", True),
+    "unidad_no_reconocida": ("No reconocí la unidad", True),
+    "valor_no_numerico": ("El valor no es un número", True),
+    "mismo_valor_en_otra_unidad": ("Es el mismo resultado en otra unidad, ya está guardado", False),
+    "aparece_mas_de_una_vez": ("Aparece más de una vez en el estudio", False),
+}
+
+
+def not_saved_rows(db: sqlite3.Connection, doc_id: int, reviewed: bool) -> list[dict]:
+    """Renglones que House leyó del PDF pero que no están (o no estarán) entre los resultados guardados.
+
+    `lost` = True cuando de verdad falta un resultado (no se reconoció o la persona lo descartó);
+    False cuando es un repetido que ya está guardado.
+    """
+    saved: Counter[tuple[str, str]] = Counter()
+    if reviewed:
+        saved.update(
+            (o["printed_name"], o["value_printed"])
+            for o in db.execute(
+                "SELECT printed_name, value_printed FROM observation "
+                "WHERE document_id = ? AND entered_manually = 0",
+                (doc_id,),
+            )
+        )
+    out = []
+    for r in db.execute("SELECT * FROM extraction_row WHERE document_id = ? ORDER BY id", (doc_id,)):
+        problems = json.loads(r["problems"])
+        reason, lost = None, True
+        for p in problems:
+            if p in _NOT_SAVED_REASON:
+                reason, lost = _NOT_SAVED_REASON[p]
+                break
+        key = (r["printed_name"], r["value_printed"])
+        if reviewed:
+            if saved.get(key, 0) > 0:
+                saved[key] -= 1
+                continue
+            reason = reason or "Decidiste no guardarlo"
+        elif r["analyte_key"] and reason is None:
+            continue  # sin problemas: se guardará al confirmar
+        out.append(
+            {
+                "printed_name": r["printed_name"],
+                "value_printed": r["value_printed"],
+                "unit_printed": r["unit_printed"],
+                "reason": reason or "No reconocí este análisis",
+                "lost": lost,
+            }
+        )
+    return out
 
 
 def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:

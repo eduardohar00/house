@@ -574,3 +574,29 @@ def test_basic_reader_goes_first_and_claude_only_steps_in_when_the_format_is_not
     assert (
         read(lambda: outcome(["a", "b"], date=None), better)[1] is True
     )  # sin fecha también cuenta como mal leído
+
+
+def test_documents_list_says_what_was_read_but_not_saved(client):
+    c = client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    lines = ["Informe de Resultados de Laboratorio", "Fecha de Toma : 01/03/2026", "Glucosa 105 70 - 99 mg/dL",
+             "Análisis Inventado XYZ 12.5 mg/dL 10 - 20", "Sodio 140 135 - 145 mmol/L"]  # fmt: skip
+    doc = upload(c, me, make_pdf(lines)).json()["document_id"]
+    (item,) = c.get(f"/api/people/{me}/documents").json()
+    assert [(r["printed_name"], r["lost"]) for r in item["not_saved"]] == [
+        ("Análisis Inventado XYZ", True)
+    ]  # pendiente
+
+    rev = c.get(f"/api/documents/{doc}").json()
+    decisions = [{"row_id": r["id"], "accept": r["analyte_key"] == "glucose"} for r in rev["rows"]]
+    c.post(
+        f"/api/documents/{doc}/review", json={"collected_on": "2026-03-01", "decisions": decisions}, headers=H
+    ).raise_for_status()
+    (item,) = c.get(f"/api/people/{me}/documents").json()
+    reasons = {r["printed_name"]: r["reason"] for r in item["not_saved"]}
+    assert reasons == {
+        "Análisis Inventado XYZ": "No reconocí este análisis",
+        "Sodio": "Decidiste no guardarlo",
+    }
+    assert item["results"] == 1
