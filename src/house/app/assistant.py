@@ -420,8 +420,9 @@ class Toolbox:
         out = []
         for link in problem.get("links", []):
             item: dict[str, Any] = {"title": link["title"], "date": link["date"]}
-            if link["kind"] in ("medication", "procedure"):
-                item.update({"type": "tratamiento" if link["kind"] == "medication" else "cirugía",
+            if link["kind"] in ("medication", "procedure", "consultation"):
+                kinds = {"medication": "tratamiento", "procedure": "cirugía", "consultation": "consulta"}
+                item.update({"type": kinds[link["kind"]],
                              "dose": link.get("value"), "detail": link.get("extra"),
                              "active": link.get("active")})  # fmt: skip
                 item["src"] = self._src("expediente", None, "Expediente clínico", None)

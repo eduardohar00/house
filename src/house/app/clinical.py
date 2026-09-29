@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS supplement (
 CREATE TABLE IF NOT EXISTS problem_link (
   id INTEGER PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problem(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('document', 'imaging', 'analyte', 'medication', 'procedure')),
+  kind TEXT NOT NULL CHECK (
+    kind IN ('document', 'imaging', 'analyte', 'medication', 'procedure', 'consultation')),
   ref TEXT NOT NULL,                              -- id del documento, informe, tratamiento o cirugía; o clave
   UNIQUE (problem_id, kind, ref)
 );
@@ -92,7 +93,7 @@ def _upgrade_problem_link(db) -> None:
     row = db.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'problem_link'"
     ).fetchone()
-    if row is None or "'medication'" in row["sql"]:
+    if row is None or "'consultation'" in row["sql"]:
         return
     db.execute("ALTER TABLE problem_link RENAME TO problem_link_old")
     db.executescript(SCHEMA)
@@ -298,7 +299,7 @@ def set_none(db, person_id: int, section: str, confirmed: bool) -> None:
 
 # ---------- Padecimientos ligados a estudios ----------
 
-LINK_KINDS = ("document", "imaging", "analyte", "medication", "procedure")
+LINK_KINDS = ("document", "imaging", "analyte", "medication", "procedure", "consultation")
 
 
 def link_candidates(db, person_id: int) -> dict:
@@ -344,8 +345,16 @@ def link_candidates(db, person_id: int) -> dict:
             (person_id,),
         )
     ]
+    consultations = [
+        {"ref": str(r["id"]), "title": r["reason"], "date": r["occurred_on"]}
+        for r in db.execute(
+            "SELECT id, reason, occurred_on FROM consultation WHERE person_id = ? ORDER BY occurred_on DESC",
+            (person_id,),
+        )
+    ]
     return {
         "documents": documents,
+        "consultations": consultations,
         "imaging": imaging,
         "analytes": analytes,
         "medications": medications,
@@ -394,6 +403,12 @@ def _link_target(db, person_id: int, kind: str, ref: str) -> dict | None:
             years += f" hasta {r['until_year']}"
         return {"title": r["name"], "date": None, "value": r["dose"], "extra": years.strip() or None,
                 "active": bool(r["active"])}  # fmt: skip
+    if kind == "consultation":
+        r = db.execute(
+            "SELECT reason, occurred_on, doctor FROM consultation WHERE id = ? AND person_id = ?",
+            (ref, person_id),
+        ).fetchone()
+        return {"title": r["reason"], "date": r["occurred_on"], "extra": r["doctor"]} if r else None
     if kind == "procedure":
         r = db.execute(
             "SELECT name, year FROM procedure_history WHERE id = ? AND person_id = ?", (ref, person_id)

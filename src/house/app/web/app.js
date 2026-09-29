@@ -906,11 +906,11 @@ async function renderClinical() {
   const reload = () => renderClinical();
   const itemsOf = kind => c[CLIN[kind].key];
   // Estudios ligados a un padecimiento: fichas compactas, siempre visibles, con un menú para ligar más.
-  const KL = { document: 'Laboratorio', imaging: 'Informe', analyte: 'Análisis', medication: 'Tratamiento', procedure: 'Cirugía' };
+  const KL = { document: 'Laboratorio', imaging: 'Informe', analyte: 'Análisis', medication: 'Tratamiento', procedure: 'Cirugía', consultation: 'Consulta' };
   const plinks = p => {
     const have = new Set(p.links.map(l => l.kind + ':' + l.ref));
     const opts = (kind, arr) => arr.filter(x => !have.has(kind + ':' + x.ref)).map(x => `<option value="${kind}:${esc(x.ref)}">${esc(x.title)}${x.active === false ? ' (suspendido)' : ''}${x.date ? ' · ' + (x.date.length > 4 ? fd(x.date) : x.date) : ''}</option>`).join('');
-    const groups = [['Tratamientos', 'medication', cand.medications], ['Informes de estudios', 'imaging', cand.imaging], ['Laboratorios', 'document', cand.documents], ['Análisis', 'analyte', cand.analytes], ['Cirugías', 'procedure', cand.procedures]]
+    const groups = [['Tratamientos', 'medication', cand.medications], ['Consultas', 'consultation', cand.consultations || []], ['Informes de estudios', 'imaging', cand.imaging], ['Laboratorios', 'document', cand.documents], ['Análisis', 'analyte', cand.analytes], ['Cirugías', 'procedure', cand.procedures]]
       .map(([label, kind, arr]) => { const o = opts(kind, arr); return o ? `<optgroup label="${label}">${o}</optgroup>` : ''; }).join('');
     const chip = l => `<span class="lchip"><span class="lk ${l.kind}">${KL[l.kind]}</span><span class="lt">${esc(l.title)}${l.value ? ' · ' + esc(l.value) : ''}${l.extra ? ' · ' + esc(l.extra) : ''}${l.active === false ? ' · suspendido' : ''}${l.date ? ' · ' + fd(l.date) : ''}</span>
       ${l.document_id ? `<a href="/api/documents/${l.document_id}/file" target="_blank" rel="noopener" title="Ver original" aria-label="Ver el original de ${esc(l.title)}">↗</a>` : ''}

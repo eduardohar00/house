@@ -561,3 +561,20 @@ def test_consulta_con_nota_larga(world):
     texto = "Resumen\n" + "y" * 5000
     add(c, me, "consultation", occurred_on="2026-02-07", reason="Explicación", notes=texto).raise_for_status()
     assert c.get(f"/api/people/{me}/clinical").json()["consultations"][0]["notes"] == texto
+
+
+def test_ligar_consulta_a_padecimiento(world):
+    c, me, _ = world
+    pid = add(c, me, "problem", name="Reflujo", status="En control").json()["id"]
+    cid = add(c, me, "consultation", occurred_on="2025-02-12", reason="Recaída de reflujo").json()["id"]
+    r = c.post(
+        f"/api/people/{me}/clinical/problem/{pid}/links",
+        json={"kind": "consultation", "ref": str(cid)},
+        headers=H,
+    )
+    r.raise_for_status()
+    link = c.get(f"/api/people/{me}/clinical").json()["problems"][0]["links"][0]
+    assert link["kind"] == "consultation" and link["title"] == "Recaída de reflujo"
+    assert c.get(f"/api/people/{me}/link-candidates").json()["consultations"][0]["ref"] == str(cid)
+    c.delete(f"/api/people/{me}/clinical/consultation/{cid}", headers=H).raise_for_status()
+    assert c.get(f"/api/people/{me}/clinical").json()["problems"][0]["links"] == []  # se limpia solo
