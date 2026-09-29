@@ -1068,6 +1068,19 @@ def create_app(
 
         threading.Thread(target=_auto_backup, daemon=True, name="house-backup").start()
 
+        def _name_backlog() -> None:
+            """Al arrancar: pone nombre claro a lo que quedó sin nombrar (solo si Claude está conectado)."""
+            try:
+                router = assistant_router()
+                if router is None:
+                    return
+                for person in db.execute("SELECT id FROM person").fetchall():
+                    naming.auto_name(db, router, person["id"])
+            except Exception:  # noqa: BLE001 - un extra: nunca debe afectar a House
+                pass
+
+        threading.Thread(target=_name_backlog, daemon=True, name="house-names").start()
+
     if WEB.exists():
         app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
     return app
