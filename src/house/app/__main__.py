@@ -18,7 +18,7 @@ def main() -> None:
     if not args.no_browser:
         webbrowser.open(f"http://127.0.0.1:{args.port}")
     # Solo 127.0.0.1: nadie más en la red puede conectarse.
-    uvicorn.run(create_app(), host="127.0.0.1", port=args.port, log_level="warning")
+    uvicorn.run(create_app(backup_scheduler=True), host="127.0.0.1", port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

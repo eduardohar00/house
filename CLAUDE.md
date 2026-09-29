@@ -30,6 +30,7 @@ ruff check . && ruff format --check .
 python -m house.bench                       # banco offline
 python -m house.bench.new_case <pdf> --id <id> --names "Nombre"   # crea un caso en bench/private/
 python -m house.bench.names bench/private/<id>                    # solo nombres y unidades sin reconocer
+python -m house.app.restore <archivo.housebak> --to <carpeta vacía>   # recupera un respaldo (pide la llave)
 python -m house.app                         # la app en http://127.0.0.1:8765 (datos en ~/Library/Application Support/House)
 ```
 - Python 3.11+, tipado con pydantic, `ruff` (línea 110). Pruebas con `pytest` para todo cambio de comportamiento.

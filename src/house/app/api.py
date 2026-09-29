@@ -5,6 +5,8 @@ en access_log. Solo el admin crea perfiles, asigna o restablece PIN y borra perf
 """
 
 import sqlite3
+import threading
+import time
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
@@ -19,7 +21,7 @@ from ..normalize import summary as summary_mod
 from ..normalize import terminology
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
-from . import auth, ingest, store
+from . import auth, backup, ingest, store
 from .vault import KeyProvider, Vault, keychain_key
 
 COOKIE = "house_session"
@@ -141,11 +143,13 @@ def create_app(
     data_dir: Path | None = None,
     key_provider: KeyProvider = keychain_key,
     router: Router | None = None,
+    backup_scheduler: bool = False,
 ) -> FastAPI:
     data_dir = data_dir or store.default_data_dir()
     db = store.connect(data_dir)
     db.executescript(ingest.SCHEMA)
     ingest.migrate_imaging(db)
+    db.executescript(backup.SETTINGS_SCHEMA)
     ingest.repair_references(db)
     fixed_router = router
     vault = Vault(data_dir / "originals", key_provider)
@@ -470,6 +474,71 @@ def create_app(
             "data_dir": str(data_dir),
         }
 
+    class BackupDestination(BaseModel):
+        destination: str
+
+    class BackupVerify(BaseModel):
+        recovery_key: str
+
+    def backup_call(fn, *args):
+        try:
+            return fn(*args)
+        except backup.BackupError as e:
+            raise HTTPException(422, str(e)) from None
+
+    @app.get("/api/backup")
+    def backup_status(_: Admin) -> dict:
+        return {**backup.status(db), "suggestions": backup.suggested_destinations()}
+
+    @app.post("/api/backup/setup")
+    def backup_setup(body: BackupDestination, _: Admin, resp: Response) -> dict:
+        """Activa el respaldo. La llave de recuperación se entrega UNA vez y House no la guarda."""
+        if backup.status(db)["configured"]:
+            raise HTTPException(
+                409, "El respaldo ya está activado. Desactívalo primero para crear otra llave."
+            )
+        dest = backup_call(backup.check_destination, body.destination, data_dir)
+        key, pub = backup.new_recovery_key()
+        backup.put_settings(
+            db,
+            backup_dest=str(dest),
+            backup_pub=pub,
+            backup_last_at="",
+            backup_last_file="",
+            backup_last_size="",
+            backup_last_error="",
+        )
+        resp.headers["Cache-Control"] = "no-store"
+        return {"recovery_key": key, "destination": str(dest)}
+
+    @app.put("/api/backup/destination")
+    def backup_destination(body: BackupDestination, _: Admin) -> dict:
+        if not backup.status(db)["configured"]:
+            raise HTTPException(409, "Activa primero el respaldo.")
+        dest = backup_call(backup.check_destination, body.destination, data_dir)
+        backup.put_settings(db, backup_dest=str(dest))
+        return backup.status(db)
+
+    @app.post("/api/backup/run")
+    def backup_run(_: Admin) -> dict:
+        return backup_call(backup.run, db, data_dir, vault.master_key())
+
+    @app.post("/api/backup/verify")
+    def backup_verify(body: BackupVerify, _: Admin) -> dict:
+        st = backup.status(db)
+        if not st["last_file"]:
+            raise HTTPException(409, "Todavía no hay ningún respaldo que verificar.")
+        path = Path(st["destination"]) / st["last_file"]
+        if not path.exists():
+            raise HTTPException(404, "No encuentro el último respaldo en la carpeta de destino.")
+        return backup_call(backup.verify_backup, path, body.recovery_key)
+
+    @app.delete("/api/backup")
+    def backup_off(_: Admin) -> dict:
+        """Desactiva el respaldo automático. Los archivos ya creados se conservan."""
+        backup.put_settings(db, backup_dest="", backup_pub="")
+        return backup.status(db)
+
     class ApiKey(BaseModel):
         key: str
 
@@ -497,6 +566,17 @@ def create_app(
             args,
         )
         return [dict(r) for r in rows]
+
+    if backup_scheduler:
+
+        def _auto_backup() -> None:
+            time.sleep(30)  # deja que House termine de abrir
+            while True:
+                if backup.status(db)["due"]:
+                    backup.maybe_run(db, data_dir, vault.master_key())
+                time.sleep(1800)
+
+        threading.Thread(target=_auto_backup, daemon=True, name="house-backup").start()
 
     if WEB.exists():
         app.mount("/", StaticFiles(directory=WEB, html=True), name="web")

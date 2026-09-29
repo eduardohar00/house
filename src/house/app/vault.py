@@ -48,15 +48,49 @@ def keychain_key() -> bytes:
     return key
 
 
+def install_keychain_key(key: bytes) -> None:
+    """Instala una llave maestra existente en el llavero (al recuperar un respaldo en otra Mac)."""
+    subprocess.run(
+        [
+            "security",
+            "add-generic-password",
+            "-U",
+            "-s",
+            _SERVICE,
+            "-a",
+            _ACCOUNT,
+            "-w",
+            base64.b64encode(key).decode(),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def open_blob(key: bytes, blob: bytes) -> bytes:
+    """Descifra un archivo del vault con la llave dada (lanza si la llave no corresponde o está dañado)."""
+    if not blob.startswith(_MAGIC):
+        raise ValueError("Archivo no reconocido")
+    nonce, body = blob[len(_MAGIC) : len(_MAGIC) + 12], blob[len(_MAGIC) + 12 :]
+    return AESGCM(key).decrypt(nonce, body, _MAGIC)
+
+
 class Vault:
     def __init__(self, root: Path, key_provider: KeyProvider = keychain_key) -> None:
         self.root = root
         self._key_provider = key_provider
+        self._key: bytes | None = None
         self._aes: AESGCM | None = None
+
+    def master_key(self) -> bytes:
+        """Llave maestra (para el respaldo cifrado; nunca se imprime ni se guarda en claro en disco)."""
+        if self._key is None:
+            self._key = self._key_provider()
+        return self._key
 
     def _cipher(self) -> AESGCM:
         if self._aes is None:
-            self._aes = AESGCM(self._key_provider())
+            self._aes = AESGCM(self.master_key())
         return self._aes
 
     def put(self, data: bytes) -> str:
@@ -70,11 +104,7 @@ class Vault:
         return name
 
     def get(self, name: str) -> bytes:
-        blob = (self.root / Path(name).name).read_bytes()
-        if not blob.startswith(_MAGIC):
-            raise ValueError("Archivo no reconocido")
-        nonce, body = blob[len(_MAGIC) : len(_MAGIC) + 12], blob[len(_MAGIC) + 12 :]
-        return self._cipher().decrypt(nonce, body, _MAGIC)
+        return open_blob(self.master_key(), (self.root / Path(name).name).read_bytes())
 
     def delete(self, name: str) -> None:
         (self.root / Path(name).name).unlink(missing_ok=True)

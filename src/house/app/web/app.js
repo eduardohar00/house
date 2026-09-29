@@ -130,10 +130,12 @@ function renderShell() {
     </header>
     <div class="who"><h1>Perfil de ${esc(subj.display_name)}</h1>
       <p>${admin ? (subj.id === S.me.id ? 'Administrador: puedes ver todos los perfiles de la familia.' : 'Estás viendo el perfil de otra persona; este acceso queda registrado y ella puede verlo.') : 'Solo ves tu propio perfil.'}</p></div>
+    <div id="bkbanner"></div>
     <nav class="nav" role="tablist">${tabs.map(([k, n]) => `<button role="tab" data-t="${k}" aria-selected="${S.tab === k}">${n}</button>`).join('')}</nav>
     <div class="col" id="view"></div>
   </div>`;
   document.getElementById('out').onclick = logout;
+  if (admin) backupBanner();
   const ps = document.getElementById('psel');
   if (ps) ps.onchange = () => { S.subject = Number(ps.value); S.sel = null; renderShell(); };
   app.querySelectorAll('.nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.t; renderShell(); });
@@ -764,8 +766,10 @@ async function renderConfig() {
       : s.reader === 'claude' ? `<p class="tip">Antes de enviar un estudio, House le quita tu nombre, fecha de nacimiento y números de registro. Puedes ver exactamente lo que se envió al revisar cada estudio.</p>
         <div><button class="btn danger" id="rm">Quitar la clave (volver al lector básico)</button></div>` : ''}
       <p class="err" id="e"></p></section>
+    <section class="card cfg" id="bkcard"></section>
     <section class="card cfg"><h2>Quién ha visto qué</h2>${await accessLogHtml()}</section>
     <section class="card cfg"><h2>Dónde están tus datos</h2><p class="tip">En esta Mac: <b>${esc(s.data_dir)}</b>. El disco está cifrado con FileVault y los PDF, además, con una llave guardada en el llavero de macOS.</p></section>`;
+  renderBackupCard(await api('/api/backup'));
   const kf = document.getElementById('kf');
   if (kf) kf.onsubmit = async ev => {
     ev.preventDefault();
@@ -774,6 +778,100 @@ async function renderConfig() {
   };
   const rm = document.getElementById('rm');
   if (rm) rm.onclick = async () => { if (!confirm('¿Quitar la clave de Claude?')) return; await api('/api/settings/anthropic-key', { method: 'DELETE' }); renderConfig(); };
+}
+
+/* ---------- Respaldo ---------- */
+
+const fdt = iso => new Date(iso).toLocaleString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const ago = d => d == null ? '' : d < 1 ? 'hoy' : d < 2 ? 'ayer' : `hace ${Math.floor(d)} días`;
+
+async function backupBanner() {
+  const el = document.getElementById('bkbanner');
+  if (!el) return;
+  try {
+    const b = await api('/api/backup');
+    const msg = !b.configured ? 'Todavía no tienes respaldo de tus datos. Si esta Mac se daña o se pierde, se pierde todo lo que has subido.'
+      : b.overdue ? `Tu último respaldo es ${b.last_at ? ago(b.age_days) : 'inexistente: nunca se ha completado uno'}. Revisa que la carpeta de destino esté disponible.` : '';
+    if (!msg) return;
+    el.innerHTML = `<div class="warnb bar"><span>${esc(msg)}</span><button class="mini" id="bkgo2">${b.configured ? 'Ver respaldo' : 'Activar respaldo'}</button></div>`;
+    document.getElementById('bkgo2').onclick = () => { S.tab = 'cfg'; renderShell(); };
+  } catch { /* el aviso es opcional */ }
+}
+
+function renderBackupCard(b, freshKey) {
+  const card = document.getElementById('bkcard');
+  const short = p => p.replace(/^\/Users\/[^/]+\/Library\/CloudStorage\//, '…/').replace(/^\/Users\/[^/]+\//, '~/');
+  if (freshKey) {
+    card.innerHTML = `<h2>Guarda tu llave de recuperación</h2>
+      <div class="okb">Respaldo activado en «${esc(short(freshKey.destination))}».</div>
+      <div class="anon" style="font-size:17px;letter-spacing:.06em;user-select:all;text-align:center">${esc(freshKey.recovery_key)}</div>
+      <p class="tip"><b>Esta llave se muestra una sola vez y House no la guarda.</b> Sin ella nadie, ni siquiera House, puede abrir un respaldo. Anótala en papel o guárdala en tu gestor de contraseñas, en un lugar que no dependa de esta Mac.</p>
+      <div class="bar"><button class="mini" id="copyk">Copiar la llave</button><label><input type="checkbox" id="saved"> Ya guardé mi llave en un lugar seguro</label></div>
+      <p class="err" id="bke"></p>
+      <button class="btn" id="bkgo" disabled>Continuar y hacer el primer respaldo</button>`;
+    document.getElementById('copyk').onclick = async () => { try { await navigator.clipboard.writeText(freshKey.recovery_key); toast('Llave copiada.'); } catch { toast('No pude copiarla; selecciónala y cópiala a mano.'); } };
+    document.getElementById('saved').onchange = e => { document.getElementById('bkgo').disabled = !e.target.checked; };
+    document.getElementById('bkgo').onclick = async () => {
+      const btn = document.getElementById('bkgo'); btn.disabled = true; btn.textContent = 'Respaldando…';
+      try { renderBackupCard(await api('/api/backup/run', { method: 'POST' })); toast('Primer respaldo listo.'); backupBanner(); }
+      catch (e) { document.getElementById('bke').textContent = e.message; btn.disabled = false; btn.textContent = 'Reintentar el primer respaldo'; }
+    };
+    return;
+  }
+  if (!b.configured) {
+    card.innerHTML = `<h2>Respaldo de tus datos</h2>
+      <div class="warnb">Hoy no tienes ningún respaldo. Si esta Mac se daña o se pierde, se pierde todo lo que has subido.</div>
+      <p class="tip">House guarda una copia cifrada de tus resultados y de tus PDF en la carpeta que elijas. Conviene que sea en la nube o en un disco externo: una carpeta solo en esta Mac no te protege si falla. Solo se abre con una llave de recuperación que House te muestra una vez y no guarda.</p>
+      <form class="fg2" id="bkf"><label>Carpeta de destino<input type="text" name="dest" placeholder="/Users/…/House respaldo" autocomplete="off" style="width:100%"></label>
+        ${b.suggestions.length ? `<div class="sugs" style="display:flex;flex-wrap:wrap;gap:6px"><span class="tip">Sugerencias:</span>${b.suggestions.map(x => `<button type="button" class="mini" data-sug="${esc(x)}">${esc(short(x))}</button>`).join('')}</div>` : ''}
+        <p class="err" id="bke"></p><button class="btn">Activar respaldo</button></form>`;
+    card.querySelectorAll('[data-sug]').forEach(x => x.onclick = () => { card.querySelector('[name=dest]').value = x.dataset.sug; });
+    document.getElementById('bkf').onsubmit = async ev => {
+      ev.preventDefault();
+      try { renderBackupCard(null, await api('/api/backup/setup', { method: 'POST', body: { destination: ev.target.dest.value } })); }
+      catch (e) { document.getElementById('bke').textContent = e.message; }
+    };
+    return;
+  }
+  card.innerHTML = `<h2>Respaldo de tus datos</h2>
+    <div class="kv"><b>Carpeta</b><span>${esc(short(b.destination))}</span>
+      <b>Último respaldo</b><span>${b.last_at ? `${fdt(b.last_at)} (${ago(b.age_days)}) · ${(b.last_size / 1048576).toFixed(1)} MB` : 'todavía ninguno'}</span>
+      <b>Cuándo se respalda</b><span>Solo, una vez al día mientras House esté abierto. Se conservan los últimos ${b.keep}.</span></div>
+    ${b.overdue ? '<div class="warnb">El respaldo está atrasado. Revisa que la carpeta de destino esté disponible y respalda ahora.</div>' : ''}
+    ${b.last_error ? `<p class="err">Último intento: ${esc(b.last_error)}</p>` : ''}
+    <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn" id="bkrun">Respaldar ahora</button><button class="btn ghost" id="bkver">Verificar el último respaldo</button>
+      <button class="btn ghost" id="bkdest">Cambiar carpeta</button><button class="btn danger" id="bkoff">Desactivar</button></div>
+    <div id="bkextra"></div>`;
+  const extra = document.getElementById('bkextra');
+  document.getElementById('bkrun').onclick = async () => {
+    const btn = document.getElementById('bkrun'); btn.disabled = true; btn.textContent = 'Respaldando…';
+    try { renderBackupCard(await api('/api/backup/run', { method: 'POST' })); toast('Respaldo listo.'); backupBanner(); }
+    catch (e) { extra.innerHTML = `<p class="err">${esc(e.message)}</p>`; btn.disabled = false; btn.textContent = 'Respaldar ahora'; }
+  };
+  document.getElementById('bkver').onclick = () => {
+    extra.innerHTML = `<form class="fg2" id="vf"><p class="tip">Un respaldo que nunca se probó no es una garantía. Pega tu llave de recuperación para comprobar que el último respaldo se abre y sus datos están completos. La llave no se guarda.</p>
+      <input type="password" name="key" placeholder="Tu llave de recuperación" autocomplete="off" style="width:100%"><p class="err" id="vfe"></p><button class="btn">Verificar</button></form>`;
+    document.getElementById('vf').onsubmit = async ev => {
+      ev.preventDefault();
+      const btn = ev.target.querySelector('button'); btn.disabled = true; btn.textContent = 'Verificando…';
+      try {
+        const r = await api('/api/backup/verify', { method: 'POST', body: { recovery_key: ev.target.key.value } });
+        extra.innerHTML = `<div class="okb">Respaldo sano. Creado el ${esc(fdt(r.created_at))}: ${r.counts.person} ${r.counts.person === 1 ? 'persona' : 'personas'}, ${r.counts.observation} resultados, ${r.counts.imaging_study} informes de imagen y ${r.originals} PDF originales. Se pueden recuperar.</div>`;
+      } catch (e) { document.getElementById('vfe').textContent = e.message; btn.disabled = false; btn.textContent = 'Verificar'; }
+    };
+  };
+  document.getElementById('bkdest').onclick = () => {
+    extra.innerHTML = `<form class="fg2" id="df"><label>Nueva carpeta de destino<input type="text" name="dest" value="${esc(b.destination)}" style="width:100%"></label><p class="err" id="dfe"></p><button class="btn">Guardar</button></form>`;
+    document.getElementById('df').onsubmit = async ev => {
+      ev.preventDefault();
+      try { renderBackupCard(await api('/api/backup/destination', { method: 'PUT', body: { destination: ev.target.dest.value } })); toast('Carpeta actualizada.'); }
+      catch (e) { document.getElementById('dfe').textContent = e.message; }
+    };
+  };
+  document.getElementById('bkoff').onclick = async () => {
+    if (!confirm('¿Desactivar el respaldo? Los archivos ya creados se conservan, pero ya no se harán nuevos. Al volver a activarlo se genera otra llave de recuperación.')) return;
+    renderBackupCard(await api('/api/backup', { method: 'DELETE' })); backupBanner();
+  };
 }
 
 async function renderPrivacy() {
