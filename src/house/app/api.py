@@ -179,6 +179,15 @@ def create_app(
             return Response("Petición no permitida", status_code=403)
         return await call_next(request)
 
+    @app.middleware("http")
+    async def _always_fresh_pages(request: Request, call_next):
+        # La pantalla (HTML, JS, CSS) se revalida siempre: tras una actualización, el navegador no debe
+        # seguir mostrando la versión anterior guardada.
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     def me(request: Request) -> sqlite3.Row:
         person = auth.current_person(db, request.cookies.get(COOKIE))
         if person is None:

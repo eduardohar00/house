@@ -483,3 +483,8 @@ def test_migration_adds_manual_flag_to_existing_observation_table(tmp_path):
     ingest.migrate_observation(db)
     ingest.migrate_observation(db)  # idempotente
     assert db.execute("SELECT entered_manually FROM observation").fetchone()[0] == 0
+
+
+def test_screen_files_are_always_revalidated_by_the_browser(client):
+    for path in ("/", "/app.js", "/styles.css"):
+        assert client.get(path).headers["cache-control"] == "no-cache"

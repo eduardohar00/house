@@ -582,7 +582,7 @@ async function openReview(id) {
         <label><input type="checkbox" id="only" ${onlyFlags ? 'checked' : ''}> Solo lo que requiere atención</label>
         <button class="mini" id="ai">${showAi ? 'Ocultar' : 'Ver'} lo que vio la IA</button></div>
       ${showAi ? `<div class="anon">${esc(d.ai_saw)}</div><p class="tip">Datos personales quitados antes de enviar: ${Object.entries(d.redactions).map(([k, v]) => `${esc(k.toLowerCase())} (${v})`).join(', ') || 'ninguno'}.</p>` : ''}
-      <div class="tblwrap"><table class="rt"><thead><tr><th></th><th>Análisis</th><th>Resultado</th><th>Referencia</th><th>Estado</th></tr></thead><tbody>
+      <div class="tblwrap"><table class="rt"><thead><tr><th></th><th>Análisis</th><th>Resultado</th><th>Referencia y estado</th></tr></thead><tbody>
         ${shown.map(r => `<tr data-row="${r.id}" class="${r.accept ? (r.needs_attention ? 'fl2' : '') : 'skip'} ${r.id === active ? 'active' : ''}">
           <td><input type="checkbox" data-acc="${r.id}" ${r.accept ? 'checked' : ''} ${(r.assigned || r.analyte_key) ? '' : 'disabled'} aria-label="Guardar"></td>
           <td><b>${esc(r.assigned ? S.catalog[r.assigned].name : (r.name || r.printed_name))}</b><small>${esc(r.printed_name)}${r.section ? ' · ' + esc(r.section) : ''}${layout.boxes[r.id] ? ` · pág. ${layout.boxes[r.id].page}` : ''}</small>
@@ -590,7 +590,7 @@ async function openReview(id) {
             ${r.problems.filter(p => p !== 'analito_desconocido').map(p => `<span class="flag">${esc(PROBLEMS[p] || p)}</span>`).join('')}
             ${r.converted ? `<span class="flag">Convertido de ${esc(r.value_printed)} ${esc(r.unit_printed || '')}</span>` : ''}</td>
           <td><input type="text" data-val="${r.id}" value="${esc(r.edited ?? (r.assigned ? r.value_printed : r.value_num != null ? fnum(r.value_num) : r.value_text ?? r.value_printed))}"> ${esc(r.assigned ? (r.unit_printed || '') : (r.unit || ''))}</td>
-          <td>${esc(r.ref_printed || '—')}</td><td>${pill(r.status)}</td></tr>`).join('')}
+          <td>${esc(r.ref_printed || '—')}<div style="margin-top:4px">${pill(r.status)}</div></td></tr>`).join('')}
       </tbody></table></div>
       ${manual.length ? `<h3 style="margin:8px 0 0;font-size:15px">Agregados a mano</h3><div class="tblwrap"><table class="rt"><tbody>${manual.map((m, i) => `<tr><td><b>${esc(S.catalog[m.analyte_key].name)}</b><span class="flag">Agregado a mano</span></td><td>${esc(m.value)} ${esc(m.unit || '')}</td><td>${esc(m.ref || '—')}</td><td><button class="mini dn" data-rm="${i}">Quitar</button></td></tr>`).join('')}</tbody></table></div>` : ''}
       ${addOpen ? `<form class="fg2 card" id="mf" style="padding:14px"><b>Agregar un resultado que falta</b>
