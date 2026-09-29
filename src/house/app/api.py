@@ -11,9 +11,11 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from ..config import Config, ProviderConfig
+from ..normalize import terminology
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
 from . import auth, ingest, store
@@ -76,10 +78,38 @@ DEFAULT_CONFIG = Config(
 )
 
 
-def default_router(data_dir: Path) -> Router:
+# Sin clave de Anthropic: lector básico local (reglas), que no envía nada fuera de la Mac.
+BASIC_CONFIG = Config(
+    monthly_budget_usd=1e9,  # sin costo: no hay tope que aplicar
+    tasks={"extract": "basico"},
+    providers={"basico": ProviderConfig(name="basico", kind="mock")},
+)
+WEB = Path(__file__).parent / "web"
+
+
+def reader_router(data_dir: Path, vault: Vault) -> tuple[Router, str]:
+    """Router para leer estudios y cómo se llama el lector ('claude' o 'basico')."""
+    ledger = UsageLedger(data_dir / "ai_usage.jsonl")
     toml = data_dir / "house.toml"
-    cfg = Config.load(toml) if toml.exists() else DEFAULT_CONFIG
-    return Router(cfg, ledger=UsageLedger(data_dir / "ai_usage.jsonl"))
+    if toml.exists():
+        return Router(Config.load(toml), ledger=ledger), "configurado"
+    key = vault.get_secret("anthropic")
+    if not key:
+        return Router(BASIC_CONFIG), "basico"
+    import anthropic
+
+    from ..providers.anthropic_provider import AnthropicProvider
+
+    c = DEFAULT_CONFIG.providers["claude"]
+    provider = AnthropicProvider(
+        c.name,
+        c.model,
+        effort=c.effort,
+        input_per_mtok=c.input_per_mtok,
+        output_per_mtok=c.output_per_mtok,
+        client=anthropic.Anthropic(api_key=key),
+    )
+    return Router(DEFAULT_CONFIG, ledger=ledger, overrides={"claude": provider}), "claude"
 
 
 def _public(p: sqlite3.Row) -> dict:
@@ -101,12 +131,15 @@ def create_app(
     data_dir = data_dir or store.default_data_dir()
     db = store.connect(data_dir)
     db.executescript(ingest.SCHEMA)
-    router = router or default_router(data_dir)
+    fixed_router = router
     vault = Vault(data_dir / "originals", key_provider)
     app = FastAPI(title="House", docs_url=None, redoc_url=None, openapi_url=None)
     # Rechaza peticiones con otro Host (defensa contra DNS rebinding desde páginas externas).
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
     app.state.db, app.state.vault = db, vault
+
+    def current_router() -> tuple[Router, str]:
+        return (fixed_router, "prueba") if fixed_router else reader_router(data_dir, vault)
 
     @app.middleware("http")
     async def _no_cross_site_writes(request: Request, call_next):
@@ -147,6 +180,11 @@ def create_app(
     def set_cookie(resp: Response, token: str) -> None:
         resp.set_cookie(COOKIE, token, httponly=True, samesite="strict", secure=False, path="/")
 
+    def save_aliases(person_id: int, names: list[str]) -> None:
+        for n in names:
+            if n.strip():
+                db.execute("INSERT INTO person_alias(person_id, name) VALUES(?,?)", (person_id, n.strip()))
+
     @app.get("/api/status")
     def status() -> dict:
         has_admin = db.execute("SELECT 1 FROM person WHERE is_admin = 1").fetchone() is not None
@@ -166,6 +204,7 @@ def create_app(
             "VALUES(?,?,?,1,1,?)",
             (body.display_name, body.birth_date, body.sex_at_birth, pin_hash),
         )
+        save_aliases(cur.lastrowid, body.other_names)
         set_cookie(resp, auth.login(db, cur.lastrowid, body.pin or ""))
         return {"id": cur.lastrowid}
 
@@ -214,11 +253,7 @@ def create_app(
             "VALUES(?,?,?,0,?,?)",
             (body.display_name, body.birth_date, body.sex_at_birth, int(body.has_login), pin_hash),
         )
-        for name in body.other_names:
-            if name.strip():
-                db.execute(
-                    "INSERT INTO person_alias(person_id, name) VALUES(?,?)", (cur.lastrowid, name.strip())
-                )
+        save_aliases(cur.lastrowid, body.other_names)
         return {"id": cur.lastrowid}
 
     @app.put("/api/people/{person_id}/pin")
@@ -252,9 +287,10 @@ def create_app(
     def observations(person_id: int, actor: Me) -> list[dict]:
         subject(person_id, actor, "ver_resultados")
         rows = db.execute(
-            "SELECT analyte_key, value_num, value_text, unit, ref_low, ref_high, ref_printed, status, "
-            "method, collected_on, document_id FROM observation WHERE person_id = ? "
-            "ORDER BY collected_on, analyte_key",
+            "SELECT o.analyte_key, o.printed_name, o.value_num, o.value_text, o.unit, o.ref_low, o.ref_high, "
+            "o.ref_printed, o.status, o.method, o.collected_on, o.document_id, d.title AS document_title "
+            "FROM observation o JOIN document d ON d.id = o.document_id WHERE o.person_id = ? "
+            "ORDER BY o.collected_on, o.analyte_key",
             (person_id,),
         )
         return [dict(r) for r in rows]
@@ -270,6 +306,7 @@ def create_app(
     async def upload(person_id: int, actor: Me, file: Annotated[UploadFile, File()]) -> dict:
         person = subject(person_id, actor, "subir_estudio")
         data = await file.read(ingest.MAX_BYTES + 1)
+        router, reader = current_router()
         try:
             done = ingest.ingest_pdf(db, vault, router, person, file.filename or "Estudio.pdf", data)
         except ingest.IngestError as e:
@@ -279,7 +316,7 @@ def create_app(
         except ProviderError as e:
             # El mensaje del proveedor no incluye contenido del documento (ver providers/base.py).
             raise HTTPException(502, f"No se pudo leer con la IA: {e}") from None
-        return {"document_id": done.document_id, "rows": done.rows}
+        return {"document_id": done.document_id, "rows": done.rows, "reader": reader}
 
     @app.get("/api/people/{person_id}/documents")
     def list_documents(person_id: int, actor: Me) -> list[dict]:
@@ -330,6 +367,44 @@ def create_app(
         vault.delete(doc["file_path"])
         return {"ok": True}
 
+    @app.get("/api/catalog")
+    def catalog() -> dict:
+        return {
+            a.key: {"name": a.name, "unit": a.unit, "group": a.group, "kind": a.kind}
+            for a in terminology.CATALOG
+        }
+
+    @app.get("/api/settings")
+    def settings(_: Admin) -> dict:
+        _, reader = current_router()
+        month = db.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(*) AS n FROM ai_call "
+            "WHERE strftime('%Y-%m', at) = strftime('%Y-%m', 'now')"
+        ).fetchone()
+        return {
+            "reader": reader,
+            "budget_usd": DEFAULT_CONFIG.monthly_budget_usd,
+            "month_usd": round(month["usd"], 4),
+            "month_calls": month["n"],
+            "data_dir": str(data_dir),
+        }
+
+    class ApiKey(BaseModel):
+        key: str
+
+    @app.put("/api/settings/anthropic-key")
+    def set_key(body: ApiKey, _: Admin) -> dict:
+        key = body.key.strip()
+        if not key.startswith("sk-ant-") or len(key) < 30:
+            raise HTTPException(422, "Esa no parece una clave de Anthropic (empieza con «sk-ant-»).")
+        vault.put_secret("anthropic", key)
+        return {"reader": "claude"}
+
+    @app.delete("/api/settings/anthropic-key")
+    def delete_key(_: Admin) -> dict:
+        vault.delete_secret("anthropic")
+        return {"reader": "basico"}
+
     @app.get("/api/access-log")
     def access_log(actor: Me) -> list[dict]:
         """Cada persona puede ver quién entró a su perfil; el admin ve todo."""
@@ -342,4 +417,6 @@ def create_app(
         )
         return [dict(r) for r in rows]
 
+    if WEB.exists():
+        app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
     return app

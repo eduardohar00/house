@@ -113,7 +113,13 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
     rows: list[Row] = []
     for r in raw.rows:
         row = Row(
-            r.analyte_name, r.value_text, r.unit_text, r.evidence, ref_text=r.ref_text, section=r.section
+            r.analyte_name,
+            r.value_text,
+            r.unit_text,
+            r.evidence,
+            ref_text=r.ref_text,
+            section=r.section,
+            method=r.method,
         )
         if not _grounded(r.evidence, r.value_text, sent_text):
             row.problems.append(Provenance.NOT_GROUNDED)

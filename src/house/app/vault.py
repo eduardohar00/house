@@ -78,3 +78,18 @@ class Vault:
 
     def delete(self, name: str) -> None:
         (self.root / Path(name).name).unlink(missing_ok=True)
+
+    # Secretos de la app (p. ej. la clave de Anthropic): cifrados con la misma llave maestra.
+    def put_secret(self, name: str, value: str) -> None:
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        nonce = secrets.token_bytes(12)
+        path = self.root / f"secret-{name}.bin"
+        path.write_bytes(_MAGIC + nonce + self._cipher().encrypt(nonce, value.encode(), _MAGIC))
+        path.chmod(0o600)
+
+    def get_secret(self, name: str) -> str | None:
+        path = self.root / f"secret-{name}.bin"
+        return self.get(path.name).decode() if path.exists() else None
+
+    def delete_secret(self, name: str) -> None:
+        (self.root / f"secret-{name}.bin").unlink(missing_ok=True)

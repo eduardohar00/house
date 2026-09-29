@@ -21,7 +21,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-house = ["db/*.sql"]
+house = ["db/*.sql", "app/web/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

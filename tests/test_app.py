@@ -135,6 +135,7 @@ LAB_LINES = [
     "QUIMICA",
     "Glucosa 105 70 - 99 mg/dL",
     "Colesterol HDL 45 40 - 60 mg/dL",
+    "Metodo: Fotometria automatizada",
     "EXAMEN GENERAL DE ORINA",
     "Nitritos Positivo Negativo",
     "pH 6.0 5.0 - 7.0",
@@ -221,6 +222,7 @@ def test_upload_review_and_confirm(lab_client):
     obs = {o["analyte_key"]: o for o in c.get(f"/api/people/{pid}/observations").json()}
     assert set(obs) == {"glucose", "urine_nitrite"}
     assert obs["glucose"]["value_num"] == 98 and obs["glucose"]["status"] == "ok"
+    assert obs["glucose"]["method"] == "Fotometria automatizada"
     assert obs["urine_nitrite"]["status"] == "abnormal"
     again = c.post(
         f"/api/documents/{doc_id}/review", json={"collected_on": "2026-03-01", "decisions": []}, headers=H
@@ -249,3 +251,24 @@ def test_member_cannot_open_others_documents(lab_client):
     assert c.get(f"/api/documents/{doc_id}").status_code == 403
     assert c.get(f"/api/documents/{doc_id}/file").status_code == 403
     assert upload(c, admin_id, make_pdf(["Glucosa 90 70 - 99 mg/dL"])).status_code == 403
+
+
+def test_settings_key_switches_reader_and_is_stored_encrypted(tmp_path):
+    c = TestClient(create_app(tmp_path, key_provider=lambda: KEY))
+    c.post("/api/setup", json={**ADMIN, "other_names": ["PEREZ FICTICIO"]}, headers=H).raise_for_status()
+    assert c.get("/api/settings").json()["reader"] == "basico"
+    assert c.put("/api/settings/anthropic-key", json={"key": "hola"}, headers=H).status_code == 422
+    fake = "sk-ant-" + "x" * 40
+    assert c.put("/api/settings/anthropic-key", json={"key": fake}, headers=H).json() == {"reader": "claude"}
+    assert c.get("/api/settings").json()["reader"] == "claude"
+    stored = list((tmp_path / "originals").glob("secret-*"))
+    assert stored and fake.encode() not in stored[0].read_bytes()
+    c.delete("/api/settings/anthropic-key", headers=H).raise_for_status()
+    assert c.get("/api/settings").json()["reader"] == "basico"
+
+
+def test_serves_web_app_and_catalog(client):
+    assert "<title>House</title>" in client.get("/").text
+    assert client.get("/app.js").status_code == 200
+    cat = client.get("/api/catalog").json()
+    assert cat["glucose"]["group"] == "glucosa" and cat["urine_nitrite"]["kind"] == "qual"
