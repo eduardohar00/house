@@ -12,6 +12,7 @@ import json
 import re
 import sqlite3
 import threading
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -62,6 +63,20 @@ CREATE TABLE IF NOT EXISTS imaging_draft (
 );
 """
 
+IMAGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS study_image (
+  id           INTEGER PRIMARY KEY,
+  person_id    INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+  title        TEXT NOT NULL,
+  performed_on TEXT,
+  media_type   TEXT NOT NULL,
+  file_path    TEXT NOT NULL,                      -- imagen cifrada, fuera de la base
+  file_sha256  TEXT NOT NULL,
+  uploaded_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (person_id, file_sha256)
+);
+"""
+
 # Columnas que se agregaron a imaging_study después de la primera versión del esquema.
 _IMAGING_COLUMNS = {
     "study_name": "TEXT", "technique": "TEXT", "indication": "TEXT", "findings": "TEXT", "prior": "TEXT",
@@ -73,6 +88,7 @@ _IMAGING_COLUMNS = {
 def migrate_imaging(db: sqlite3.Connection) -> None:
     """Prepara bases creadas antes de los informes de imagen, sin tocar sus datos."""
     db.executescript(IMAGING_SCHEMA)
+    db.executescript(IMAGE_SCHEMA)
     have = {r["name"] for r in db.execute("PRAGMA table_info(imaging_study)")}
     for col, typ in _IMAGING_COLUMNS.items():
         if col not in have:
@@ -89,6 +105,78 @@ def migrate_observation(db: sqlite3.Connection) -> None:
     have_rows = {r["name"] for r in db.execute("PRAGMA table_info(extraction_row)")}
     if have_rows and "qualifier" not in have_rows:
         db.execute("ALTER TABLE extraction_row ADD COLUMN qualifier TEXT")
+
+
+_IMAGE_TYPES = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"))
+
+
+def image_type(data: bytes) -> str | None:
+    return next((t for magic, t in _IMAGE_TYPES if data.startswith(magic)), None)
+
+
+def _filename_date(name: str) -> str | None:
+    """Fecha al inicio del nombre: 28-12-2022 o 2026-02-06."""
+    if m := re.match(r"\s*(\d{4})-(\d{2})-(\d{2})", name):
+        y, mo, d = m.groups()
+    elif m := re.match(r"\s*(\d{2})-(\d{2})-(\d{4})", name):
+        d, mo, y = m.groups()
+    else:
+        return None
+    try:
+        return date(int(y), int(mo), int(d)).isoformat()
+    except ValueError:
+        return None
+
+
+def _words(text: str) -> set[str]:
+    plain = "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
+    return {w[:5] for w in re.findall(r"[a-z]{4,}", plain)} - {"image", "imagen", "radio", "estud"}
+
+
+def link_images(images: list[dict], studies: list[dict]) -> tuple[dict[int, list[dict]], list[dict]]:
+    """Asocia cada imagen a su informe: misma fecha y nombre parecido (o el único estudio de ese día)."""
+    linked: dict[int, list[dict]] = {}
+    loose: list[dict] = []
+    for img in images:
+        same_day = [s for s in studies if img["performed_on"] and s["performed_on"] == img["performed_on"]]
+        words = _words(img["title"])
+        scored = sorted(
+            ((len(words & _words(f"{s['study_name'] or ''} {s['modality'] or ''}")), s) for s in same_day),
+            key=lambda t: -t[0],
+        )
+        pick = None
+        if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+            pick = scored[0][1]
+        elif len(same_day) == 1:
+            pick = same_day[0]
+        if pick:
+            linked.setdefault(pick["id"], []).append(img)
+        else:
+            loose.append(img)
+    return linked, loose
+
+
+def ingest_image(
+    db: sqlite3.Connection, vault: Vault, person: sqlite3.Row, filename: str, data: bytes
+) -> int:
+    """Imagen de un estudio (radiografía, ultrasonido...): se guarda cifrada y se ve en Estudios."""
+    if len(data) > MAX_BYTES:
+        raise IngestError(413, "El archivo pesa más de 25 MB.")
+    media = image_type(data)
+    if media is None:
+        raise IngestError(415, "Solo se aceptan imágenes PNG o JPG y PDF.")
+    sha = hashlib.sha256(data).hexdigest()
+    if db.execute(
+        "SELECT 1 FROM study_image WHERE person_id = ? AND file_sha256 = ?", (person["id"], sha)
+    ).fetchone():
+        raise IngestError(409, "Esta imagen ya estaba cargada.")
+    title = re.sub(r"\.(png|jpe?g)$", "", filename, flags=re.I).strip() or "Imagen"
+    cur = db.execute(
+        "INSERT INTO study_image(person_id, title, performed_on, media_type, file_path, file_sha256) "
+        "VALUES(?,?,?,?,?,?)",
+        (person["id"], title, _filename_date(filename), media, vault.put(data), sha),
+    )
+    return cur.lastrowid
 
 
 class IngestError(Exception):

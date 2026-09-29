@@ -315,7 +315,8 @@ def create_app(
         subject(person_id, actor, "borrar_perfil")
         files = [
             r["file_path"]
-            for r in db.execute("SELECT file_path FROM document WHERE person_id = ?", (person_id,))
+            for table in ("document", "study_image")
+            for r in db.execute(f"SELECT file_path FROM {table} WHERE person_id = ?", (person_id,))
         ]
         db.execute("DELETE FROM access_log WHERE subject_id = ? OR actor_id = ?", (person_id, person_id))
         db.execute("DELETE FROM person WHERE id = ?", (person_id,))
@@ -358,6 +359,12 @@ def create_app(
     async def upload(person_id: int, actor: Me, file: Annotated[UploadFile, File()]) -> dict:
         person = subject(person_id, actor, "subir_estudio")
         data = await file.read(ingest.MAX_BYTES + 1)
+        if ingest.image_type(data):
+            try:
+                image_id = ingest.ingest_image(db, vault, person, file.filename or "Imagen", data)
+            except ingest.IngestError as e:
+                raise HTTPException(e.status, {"message": e.message, "document_id": None}) from None
+            return {"image_id": image_id, "rows": 0, "kind": "foto"}
         router, reader = current_router()
         try:
             done = ingest.ingest_pdf(db, vault, router, person, file.filename or "Estudio.pdf", data)
@@ -512,7 +519,49 @@ def create_app(
             "WHERE i.person_id = ? ORDER BY i.performed_on DESC, i.id",
             (person_id,),
         )
+        studies = [dict(r) for r in rows]
+        linked, _ = ingest.link_images(person_images(person_id), studies)
+        return [{**s, "images": linked.get(s["id"], [])} for s in studies]
+
+    def person_images(person_id: int) -> list[dict]:
+        rows = db.execute(
+            "SELECT id, title, performed_on FROM study_image WHERE person_id = ? ORDER BY title", (person_id,)
+        )
         return [dict(r) for r in rows]
+
+    @app.get("/api/people/{person_id}/images/loose")
+    def loose_images(person_id: int, actor: Me) -> list[dict]:
+        """Imágenes que no coinciden con ningún informe (para que no queden escondidas)."""
+        subject(person_id, actor, "ver_imagen")
+        studies = [
+            dict(r)
+            for r in db.execute(
+                "SELECT id, study_name, modality, performed_on FROM imaging_study WHERE person_id = ?",
+                (person_id,),
+            )
+        ]
+        return ingest.link_images(person_images(person_id), studies)[1]
+
+    def image_row(image_id: int, actor: sqlite3.Row, action: str) -> sqlite3.Row:
+        img = db.execute("SELECT * FROM study_image WHERE id = ?", (image_id,)).fetchone()
+        if img is None:
+            raise HTTPException(404, "Imagen no encontrada")
+        subject(img["person_id"], actor, action)
+        return img
+
+    @app.get("/api/images/{image_id}/file")
+    def image_file(image_id: int, actor: Me) -> Response:
+        img = image_row(image_id, actor, "ver_imagen")
+        return Response(
+            vault.get(img["file_path"]), media_type=img["media_type"], headers={"Cache-Control": "no-store"}
+        )
+
+    @app.delete("/api/images/{image_id}")
+    def delete_image(image_id: int, actor: Me) -> dict:
+        img = image_row(image_id, actor, "borrar_estudio")
+        db.execute("DELETE FROM study_image WHERE id = ?", (image_id,))
+        vault.delete(img["file_path"])
+        return {"ok": True}
 
     @app.delete("/api/documents/{doc_id}")
     def delete_document(doc_id: int, actor: Me) -> dict:

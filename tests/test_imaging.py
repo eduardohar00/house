@@ -284,3 +284,86 @@ def test_real_ocr_reads_text_from_an_image_only_pdf(tmp_path, monkeypatch):
     img.save(buf, "PDF")
     text = ocr.ocr_bytes(buf.getvalue(), ".pdf", tmp_path)
     assert "glucosa" in text.lower() and "92" in text
+
+
+def _png(color="gray"):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_images_are_stored_encrypted_linked_to_their_report_and_deletable(client, tmp_path):
+    c = client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    me = c.get("/api/me").json()["id"]
+    doc = upload(c, me, make_pdf(REPORT.splitlines()), "Rx torax.pdf").json()["document_id"]
+    rev = c.get(f"/api/documents/{doc}").json()
+    day = rev["imaging"][0]["performed_on"]
+    c.post(
+        f"/api/documents/{doc}/review-imaging",
+        json={
+            "decisions": [{"position": 0, "accept": True, "performed_on": day, "study_name": "Rx de tórax"}]
+        },
+        headers=H,
+    ).raise_for_status()
+
+    def send(data, name):
+        return c.post(f"/api/people/{me}/documents", files={"file": (name, data, "image/png")}, headers=H)
+
+    mine = send(_png("red"), f"{day} - Rx de Torax - Imagen 1.png")
+    assert mine.status_code == 200 and mine.json()["kind"] == "foto"
+    other = send(_png("blue"), "12-03-1999 Rx de pie.png")
+    assert send(_png("red"), "otra.png").status_code == 409  # mismo contenido
+    assert c.post(
+        f"/api/people/{me}/documents", files={"file": ("x.png", b"no soy imagen", "image/png")}, headers=H
+    ).status_code in (415, 422)
+
+    studies = c.get(f"/api/people/{me}/imaging").json()
+    assert [i["title"] for i in studies[0]["images"]] == [f"{day} - Rx de Torax - Imagen 1"]
+    loose = c.get(f"/api/people/{me}/images/loose").json()
+    assert [i["title"] for i in loose] == ["12-03-1999 Rx de pie"]
+
+    img = c.get(f"/api/images/{mine.json()['image_id']}/file")
+    assert (
+        img.status_code == 200 and img.headers["content-type"] == "image/png" and img.content == _png("red")
+    )
+    assert all(_png("red") not in p.read_bytes() for p in (tmp_path / "originals").glob("*.bin"))  # cifrado
+    assert c.delete(f"/api/images/{other.json()['image_id']}", headers=H).status_code == 200
+    assert c.get(f"/api/people/{me}/images/loose").json() == []
+
+
+def test_image_dates_and_linking_rules():
+    from house.app.ingest import _filename_date, link_images
+
+    assert _filename_date("28-12-2022 Radiometria.jpg") == "2022-12-28"
+    assert _filename_date("2026-02-06 - Rx de Abdomen - Imagen 1.png") == "2026-02-06"
+    assert _filename_date("sin fecha.png") is None and _filename_date("31-02-2022 x.png") is None
+    studies = [
+        {
+            "id": 1,
+            "study_name": "Radiografia de abdomen",
+            "modality": "Radiografía",
+            "performed_on": "2026-02-06",
+        },
+        {
+            "id": 2,
+            "study_name": "Radiografia de torax",
+            "modality": "Radiografía",
+            "performed_on": "2026-02-06",
+        },
+    ]
+    imgs = [
+        {"id": 10, "title": "2026-02-06 - Rx de Abdomen - Imagen 2", "performed_on": "2026-02-06"},
+        {
+            "id": 11,
+            "title": "2026-02-06 - Foto",
+            "performed_on": "2026-02-06",
+        },  # dos estudios ese día: ambigua
+        {"id": 12, "title": "Sin fecha", "performed_on": None},
+    ]
+    linked, loose = link_images(imgs, studies)
+    assert [i["id"] for i in linked[1]] == [10] and [i["id"] for i in loose] == [11, 12]

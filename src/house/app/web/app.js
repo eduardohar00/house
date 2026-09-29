@@ -533,9 +533,9 @@ async function renderDocs() {
   view().innerHTML = `
     <section class="card cfg">
       <h2>Subir un estudio</h2>
-      <label class="drop" id="drop"><b>Arrastra aquí un PDF o haz clic para elegirlo</b>
-        <span class="tip">Por ahora, estudios de laboratorio en PDF digital (no escaneos). Se guardan cifrados en esta Mac.</span>
-        <input type="file" id="file" accept="application/pdf,.pdf" hidden multiple></label>
+      <label class="drop" id="drop"><b>Arrastra aquí un PDF o una imagen, o haz clic para elegirlos</b>
+        <span class="tip">Laboratorio e informes en PDF (digitales o escaneados) e imágenes de radiografías o ultrasonidos en PNG o JPG. Se guardan cifrados en esta Mac.</span>
+        <input type="file" id="file" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" hidden multiple></label>
       <div id="up"></div>
     </section>
     <section class="card cfg"><h2>Estudios</h2>
@@ -562,21 +562,23 @@ async function renderDocs() {
 
 async function uploadFiles(files) {
   const up = document.getElementById('up');
-  let last = null;
+  let last = null, imgs = 0;
   for (const f of files) {
     up.innerHTML = `<p class="tip"><span class="spin"></span>Leyendo «${esc(f.name)}»… Con Claude puede tardar hasta un minuto.</p>`;
     const form = new FormData(); form.append('file', f);
     try {
       const r = await api(`/api/people/${S.subject}/documents`, { method: 'POST', form });
+      if (r.kind === 'foto') { toast('Imagen guardada. La verás en Estudios, junto a su informe.'); imgs++; continue; }
       last = r.document_id;
       toast(r.kind === 'imagen' ? `Leí ${r.rows} ${r.rows === 1 ? 'informe' : 'informes'} de imagen en esta Mac.` : r.reader === 'basico' ? `Leído con el lector básico: ${r.rows} renglones.` : `Leído: ${r.rows} renglones.`);
     } catch (e) {
-      if (e.status === 409 && e.detail?.document_id) { toast('Ese estudio ya estaba cargado.'); continue; }
+      if (e.status === 409) { toast('Ese archivo ya estaba cargado.'); continue; }
       up.innerHTML = `<p class="err">«${esc(f.name)}»: ${esc(e.message)}</p>`;
       return;
     }
   }
   up.innerHTML = '';
+  if (imgs && !last && imgs === files.length) { S.tab = 'img'; renderShell(); return; }
   if (last && files.length === 1) openReview(last); else renderDocs();
 }
 
@@ -823,12 +825,14 @@ async function renderClinical() {
 const FLAG = { normal: ['ok', 'Normal según el informe'], revisar: ['out', 'Leer la conclusión'] };
 const flagPill = f => { const [c, t] = FLAG[f] || FLAG.revisar; return `<span class="pill ${c}">${t}</span>`; };
 
+const thumbs = (imgs, label) => imgs.length ? `<div class="thumbs" aria-label="Imágenes de ${esc(label)}">${imgs.map(i => `<button class="thumb" data-img="${i.id}" title="${esc(i.title)}" aria-label="Ver imagen ${esc(i.title)}"><img src="/api/images/${i.id}/file" alt="${esc(i.title)}" loading="lazy"></button>`).join('')}</div>` : '';
+
 async function renderImaging() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
-  const list = await api(`/api/people/${S.subject}/imaging`);
-  if (!list.length) {
+  const [list, loose] = await Promise.all([api(`/api/people/${S.subject}/imaging`), api(`/api/people/${S.subject}/images/loose`)]);
+  if (!list.length && !loose.length) {
     view().innerHTML = `<section class="card empty"><h2>Todavía no hay informes de estudios</h2>
-      <p>Sube el informe en PDF, digital o escaneado (radiografía, ultrasonido, tomografía, endoscopia, biopsia, electrocardiograma…) desde Documentos. House lo lee en esta Mac, sin enviarlo a ninguna IA, y lo revisas junto al original.</p>
+      <p>Sube el informe en PDF, digital o escaneado (radiografía, ultrasonido, tomografía, endoscopia, biopsia, electrocardiograma…) desde Documentos. House lo lee en esta Mac, sin enviarlo a ninguna IA, y lo revisas junto al original. Si tienes las imágenes en PNG o JPG, súbelas también y aparecerán junto a su informe.</p>
       <button class="btn" id="go">Subir un informe</button></section>`;
     document.getElementById('go').onclick = () => { S.tab = 'doc'; renderShell(); };
     return;
@@ -836,18 +840,84 @@ async function renderImaging() {
   const kinds = ['Todos', ...new Set(list.map(x => x.modality || 'Otro'))];
   if (!kinds.includes(S.studyFilter)) S.studyFilter = 'Todos';
   const shown = list.filter(x => S.studyFilter === 'Todos' || (x.modality || 'Otro') === S.studyFilter);
-  view().innerHTML = `<p class="tip">House guarda lo que dice cada informe; no interpreta imágenes ni sustituye al médico que lo firma. Las imágenes mismas (DICOM) llegan más adelante.</p>
+  const all = new Map([...list.flatMap(x => x.images), ...loose].map(i => [i.id, i]));
+  view().innerHTML = `<p class="tip">House guarda lo que dice cada informe y te deja ver las imágenes; no interpreta imágenes ni sustituye al médico que las firma.</p>
     ${kinds.length > 2 ? `<div class="chips" role="group" aria-label="Filtrar por tipo">${kinds.map(k => `<button class="chip" data-sf="${esc(k)}" aria-pressed="${k === S.studyFilter}">${esc(k)}</button>`).join('')}</div>` : ''}
     ${shown.map(x => `<section class="card cfg"><div class="bar"><div><h2>${esc(x.study_name)}</h2>
         <span class="tip">${fd(x.performed_on)} · ${esc(x.modality || 'Estudio')}${x.site ? ' · ' + esc(x.site) : ''}</span></div>${flagPill(x.flag)}</div>
+      ${thumbs(x.images, x.study_name)}
       ${x.conclusion ? `<p style="margin:0"><b>Conclusión:</b> ${esc(x.conclusion)}</p>` : '<p class="tip" style="margin:0">Este informe no trae una conclusión separada; lee el informe completo.</p>'}
       <details class="hist"><summary>Ver el informe completo</summary>
         <div class="kv" style="margin-top:10px">
           ${x.technique ? `<b>Técnica</b><span>${esc(x.technique)}</span>` : ''}${x.indication ? `<b>Indicación</b><span>${esc(x.indication)}</span>` : ''}
           <b>Hallazgos</b><span>${esc(x.findings || '—')}</span>${x.prior ? `<b>Estudio previo</b><span>${esc(x.prior)}</span>` : ''}
           ${x.suggestions ? `<b>Sugerencias</b><span>${esc(x.suggestions)}</span>` : ''}${x.radiologist ? `<b>Firmado por</b><span>${esc(x.radiologist)}</span>` : ''}</div>
-        ${x.document_id ? `<p style="margin:10px 0 0"><a class="mini" href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver informe original</a></p>` : ''}</details></section>`).join('')}`;
+        ${x.document_id ? `<p style="margin:10px 0 0"><a class="mini" href="/api/documents/${x.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver informe original</a></p>` : ''}</details></section>`).join('')}
+    ${loose.length && S.studyFilter === 'Todos' ? `<section class="card cfg"><div class="bar"><div><h2>Imágenes sin informe</h2>
+        <span class="tip">No encontré un informe de la misma fecha y nombre parecido. Sube el informe en PDF y se unirán solas.</span></div></div>${thumbs(loose, 'sin informe')}</section>` : ''}`;
   view().querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.studyFilter = b.dataset.sf; renderImaging(); });
+  view().querySelectorAll('.thumbs').forEach(box => {
+    const ids = [...box.querySelectorAll('[data-img]')].map(b => Number(b.dataset.img));
+    box.querySelectorAll('[data-img]').forEach(b => b.onclick = () => openViewer(ids.map(i => all.get(i)), ids.indexOf(Number(b.dataset.img))));
+  });
+}
+
+/* Visor: zoom, arrastrar, brillo, contraste e invertir (útil en radiografías). No modifica el archivo. */
+function openViewer(images, start) {
+  let k = start, zoom = 1, x = 0, y = 0, bright = 100, contrast = 100, inv = false;
+  const back = document.createElement('div');
+  back.className = 'viewer'; back.setAttribute('role', 'dialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-label', 'Visor de imagen');
+  document.body.appendChild(back);
+  const close = () => { back.remove(); document.removeEventListener('keydown', key); };
+  const key = e => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowRight' && k < images.length - 1) { k++; reset(); draw(); }
+    else if (e.key === 'ArrowLeft' && k > 0) { k--; reset(); draw(); }
+    else if (e.key === '+' || e.key === '=') { zoom = Math.min(8, zoom * 1.25); apply(); }
+    else if (e.key === '-') { zoom = Math.max(0.5, zoom / 1.25); apply(); }
+  };
+  const reset = () => { zoom = 1; x = y = 0; bright = contrast = 100; inv = false; };
+  const apply = () => {
+    const im = back.querySelector('#vimg'); if (!im) return;
+    im.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    im.style.filter = `brightness(${bright}%) contrast(${contrast}%)${inv ? ' invert(1)' : ''}`;
+    const z = back.querySelector('#vz'); if (z) z.textContent = Math.round(zoom * 100) + '%';
+  };
+  const draw = () => {
+    const im = images[k];
+    back.innerHTML = `<div class="vbar"><b>${esc(im.title)}</b><span class="tip" style="color:#bbb">${images.length > 1 ? `${k + 1} de ${images.length} · ` : ''}<span id="vz">100%</span></span>
+        <div class="vtools">
+          ${images.length > 1 ? `<button class="mini" id="vp" ${k === 0 ? 'disabled' : ''} aria-label="Anterior">‹</button><button class="mini" id="vn" ${k === images.length - 1 ? 'disabled' : ''} aria-label="Siguiente">›</button>` : ''}
+          <button class="mini" id="vzo" aria-label="Alejar">−</button><button class="mini" id="vzi" aria-label="Acercar">+</button>
+          <label>Brillo <input type="range" id="vb" min="40" max="220" value="${bright}"></label>
+          <label>Contraste <input type="range" id="vc" min="40" max="260" value="${contrast}"></label>
+          <button class="mini" id="vinv" aria-pressed="${inv}">Invertir</button><button class="mini" id="vr">Restablecer</button>
+          <button class="mini dn" id="vd">Borrar</button><button class="mini" id="vx">Cerrar</button></div></div>
+      <div class="vstage" id="vs"><img id="vimg" src="/api/images/${im.id}/file" alt="${esc(im.title)}" draggable="false"></div>`;
+    const $ = id => back.querySelector('#' + id);
+    $('vx').onclick = close;
+    if ($('vp')) { $('vp').onclick = () => { k--; reset(); draw(); }; $('vn').onclick = () => { k++; reset(); draw(); }; }
+    $('vzi').onclick = () => { zoom = Math.min(8, zoom * 1.25); apply(); };
+    $('vzo').onclick = () => { zoom = Math.max(0.5, zoom / 1.25); apply(); };
+    $('vb').oninput = e => { bright = Number(e.target.value); apply(); };
+    $('vc').oninput = e => { contrast = Number(e.target.value); apply(); };
+    $('vinv').onclick = () => { inv = !inv; $('vinv').setAttribute('aria-pressed', inv); apply(); };
+    $('vr').onclick = () => { reset(); draw(); };
+    $('vd').onclick = async () => {
+      if (!confirm(`¿Borrar la imagen «${im.title}»? No se puede deshacer.`)) return;
+      await api(`/api/images/${im.id}`, { method: 'DELETE' }); close(); toast('Imagen borrada.'); renderImaging();
+    };
+    const st = $('vs');
+    st.onwheel = e => { e.preventDefault(); zoom = Math.min(8, Math.max(0.5, zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); apply(); };
+    st.ondblclick = () => { zoom = zoom > 1 ? 1 : 2.5; if (zoom === 1) x = y = 0; apply(); };
+    let drag = null;
+    st.onpointerdown = e => { drag = { px: e.clientX - x, py: e.clientY - y }; st.setPointerCapture(e.pointerId); st.classList.add('grab'); };
+    st.onpointermove = e => { if (drag) { x = e.clientX - drag.px; y = e.clientY - drag.py; apply(); } };
+    st.onpointerup = () => { drag = null; st.classList.remove('grab'); };
+    apply();
+  };
+  document.addEventListener('keydown', key);
+  draw();
 }
 
 async function openImagingReview(id, d, layout) {
