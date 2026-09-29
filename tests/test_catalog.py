@@ -98,3 +98,21 @@ def test_keys_are_unique_and_aliases_do_not_collide():
         for alias in (*a.aliases, a.name):
             n = terminology._norm(alias)
             assert seen.setdefault(n, a.key) == a.key, f"alias repetido entre analitos: {alias}"
+
+
+def test_every_analyte_has_a_plain_explanation_and_none_is_orphaned():
+    from house.normalize import explanations, terminology
+
+    assert explanations.missing() == []
+    assert set(explanations.ABOUT) <= {a.key for a in terminology.CATALOG}
+    assert all(3 <= len(t) <= 260 and t.endswith(".") for t in explanations.ABOUT.values())
+
+
+def test_catalog_endpoint_carries_the_explanation(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from house.app.api import create_app
+
+    c = TestClient(create_app(tmp_path, key_provider=lambda: b"k" * 32))
+    cat = c.get("/api/catalog").json()
+    assert "azúcar" in cat["glucose"]["about"] and cat["gi_norovirus"]["about"]

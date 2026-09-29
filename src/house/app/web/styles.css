@@ -267,3 +267,6 @@ details.quiet .sys{border-top:1px solid var(--line);background:var(--bg)}
 .vstage{flex:1;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none}
 .vstage.grab{cursor:grabbing}
 .vstage img{max-width:100%;max-height:100%;user-select:none;transform-origin:center}
+.about{background:var(--accent-soft);border-radius:10px;padding:10px 14px}
+.about b{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.about p{margin:2px 0 0;font-size:15px}

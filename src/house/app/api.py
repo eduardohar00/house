@@ -17,8 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from ..config import Config, ProviderConfig
+from ..normalize import explanations, terminology
 from ..normalize import summary as summary_mod
-from ..normalize import terminology
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
 from . import auth, backup, clinical, ingest, store
@@ -574,7 +574,13 @@ def create_app(
     @app.get("/api/catalog")
     def catalog() -> dict:
         return {
-            a.key: {"name": a.name, "unit": a.unit, "group": a.group, "kind": a.kind}
+            a.key: {
+                "name": a.name,
+                "unit": a.unit,
+                "group": a.group,
+                "kind": a.kind,
+                "about": explanations.about(a.key),
+            }
             for a in terminology.CATALOG
         }
 

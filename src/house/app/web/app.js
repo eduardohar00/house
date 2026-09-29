@@ -339,6 +339,9 @@ const qlabel = o => (o.value_text != null && o.value_text !== '') ? o.value_text
 // "Ausentes" = "ausente", "Positiva" = "positivo": una misma categoría aunque cambie la forma de escribirla.
 const qkey = t => normMethod(String(t)).split(' ').map(w => w.length > 3 ? w.replace(/s$/, '').replace(/[ao]$/, '') : w).join(' ');
 
+// Qué mide el análisis, en palabras simples (información general; no interpreta el resultado de la persona).
+const aboutBox = k => S.catalog[k]?.about ? `<div class="about"><b>Qué mide</b><p>${esc(S.catalog[k].about)}</p></div>` : '';
+
 function renderSummaryDetail(series) {
   const box = document.getElementById('detail');
   if (!S.sel) { box.hidden = true; return; }
@@ -351,6 +354,7 @@ function renderSummaryDetail(series) {
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>${esc(l.unit)} · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
       <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
+    ${aboutBox(S.sel)}
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}). Compara la tendencia con cautela.</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
@@ -376,6 +380,7 @@ function renderQualDetail(series) {
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>Resultado de texto · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
       <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
+    ${aboutBox(S.sel)}
     <p class="lead" style="font-size:16px;margin:0">${esc(summary)}</p>
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}).</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
