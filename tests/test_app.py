@@ -287,3 +287,19 @@ def test_review_pages_and_row_locations(lab_client):
     png = c.get(f"/api/documents/{doc_id}/pages/1")
     assert png.headers["content-type"] == "image/png" and png.content.startswith(b"\x89PNG")
     assert c.get(f"/api/documents/{doc_id}/pages/2").status_code == 404
+
+
+def test_parallel_requests_do_not_break_the_database(tmp_path):
+    """Varias peticiones a la vez (como las páginas del PDF) no deben tumbar la app."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    app = create_app(tmp_path, key_provider=lambda: KEY)
+    db = app.state.db
+    db.execute(
+        "INSERT INTO person(display_name,birth_date,sex_at_birth,is_admin,pin_hash) VALUES('A','1990-01-01','M',1,?)",
+        (auth.hash_pin("1234"),),
+    )
+    token = auth.login(db, 1, "1234")
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda _: auth.current_person(db, token)["id"], range(400)))
+    assert results == [1] * 400

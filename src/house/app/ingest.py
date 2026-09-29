@@ -11,6 +11,7 @@ import io
 import json
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -299,10 +300,15 @@ def page_layout(data: bytes, rows: list[sqlite3.Row]) -> dict:
     return {"pages": pages, "boxes": boxes}
 
 
+# PDFium (lo que dibuja las páginas) no admite varios hilos a la vez: sin este candado, pedir
+# varias páginas en paralelo tumba el proceso completo (segmentation fault).
+_PDFIUM = threading.Lock()
+
+
 def render_page(data: bytes, n: int, resolution: int = 110) -> bytes:
     import pdfplumber
 
-    with pdfplumber.open(io.BytesIO(data)) as pdf:
+    with _PDFIUM, pdfplumber.open(io.BytesIO(data)) as pdf:
         if not 1 <= n <= len(pdf.pages):
             raise IngestError(404, "Página no encontrada.")
         buf = io.BytesIO()

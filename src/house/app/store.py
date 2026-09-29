@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from importlib.resources import files
 from pathlib import Path
 
@@ -27,18 +28,43 @@ CREATE TABLE IF NOT EXISTS login_failure (
 """
 
 
+class Database:
+    """Una conexión de SQLite por hilo.
+
+    La API atiende peticiones en paralelo (p. ej. varias páginas del PDF a la vez). Compartir una
+    sola conexión entre hilos corrompe su estado ("bad parameter or other API misuse") y tumba la app.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._local = threading.local()
+
+    def _conn(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(self.path, isolation_level=None, timeout=30)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            self._local.conn = conn
+        return conn
+
+    def execute(self, sql: str, params: tuple | list = ()) -> sqlite3.Cursor:
+        return self._conn().execute(sql, params)
+
+    def executescript(self, sql: str) -> sqlite3.Cursor:
+        return self._conn().executescript(sql)
+
+
 def default_data_dir() -> Path:
     env = os.environ.get("HOUSE_DATA_DIR")
     return Path(env) if env else Path.home() / "Library" / "Application Support" / "House"
 
 
-def connect(data_dir: Path) -> sqlite3.Connection:
+def connect(data_dir: Path) -> Database:
     data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     db_path = data_dir / "house.db"
     new = not db_path.exists()
-    db = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys = ON")
+    db = Database(db_path)
     db.execute("PRAGMA journal_mode = WAL")
     if new:
         db.executescript(files("house.db").joinpath("schema.sql").read_text(encoding="utf-8"))
