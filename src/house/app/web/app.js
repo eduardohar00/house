@@ -709,6 +709,12 @@ async function openReview(id, opts = {}) {
         addOpen = false; draw();
       };
     }
+    view().querySelectorAll('tr[data-row]').forEach(tr => {
+      tr.onclick = e => { if (!['checkbox', 'text'].includes(e.target.type) && e.target.tagName !== 'A') focusRow(Number(tr.dataset.row)); };
+      const val = tr.querySelector('[data-val]');
+      if (val) val.onfocus = () => focusRow(Number(tr.dataset.row));
+    });
+    if (active) focusRow(active);  // al redibujar (marcar, corregir) se conserva el renglón resaltado
     view().querySelectorAll('[data-acc]').forEach(c => c.onchange = () => { rows.find(r => r.id == c.dataset.acc).accept = c.checked; draw(); });
     view().querySelectorAll('[data-val]').forEach(i => i.oninput = () => { rows.find(r => r.id == i.dataset.val).edited = i.value; });
     if (!complete) document.getElementById('discard').onclick = async () => {
