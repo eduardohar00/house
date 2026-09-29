@@ -720,6 +720,18 @@ _INDEX = {_norm(a): an for an in CATALOG for a in (*an.aliases, an.name)}
 BY_KEY = {a.key: a for a in CATALOG}
 
 
+# Pruebas de presencia de un microorganismo: lo esperado es «no detectado / negativo», aunque el laboratorio
+# no imprima un intervalo de referencia (p. ej. «Ver Anexo» en el panel molecular gastrointestinal).
+_EXPECT_NEGATIVE = {a.key for a in CATALOG if a.group == "infecciosas" and a.kind == "qual"} | {
+    "giardia_antigen",
+    "cryptosporidium_antigen",
+}
+
+
+def expects_negative(key: str | None) -> bool:
+    return key in _EXPECT_NEGATIVE
+
+
 CUSTOM_PREFIX = "custom_"
 
 

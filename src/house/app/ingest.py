@@ -710,7 +710,8 @@ def _resolved(
     """Valor en unidad canónica, su rango convertido, su estado y su signo (< o >), desde lo impreso."""
     num, txt, qualifier = _typed_value(analyte, text)
     if num is None:
-        return None, txt, analyte.unit, ranges.Ref(), ranges.classify_text(txt or "", ref_text), None
+        status = ranges.classify_text(txt or "", ref_text, terminology.expects_negative(analyte.key))
+        return None, txt, analyte.unit, ranges.Ref(), status, None
     unit_text = unit_text or analyte.unit
     if analyte.kind == "qual":  # un conteo en un análisis de texto: sin conversión
         value, unit = num, ""
@@ -817,7 +818,7 @@ def confirm_review(
                     else ranges.classify_ref(value_num, ref)
                 )
             else:
-                status = ranges.classify_text(value_text, r["ref_printed"])
+                status = ranges.classify_text(value_text, r["ref_printed"], terminology.expects_negative(key))
             unit = d.get("unit", r["unit"]) or analyte.unit
         _insert_observation(
             db,
@@ -959,6 +960,16 @@ def repair_references(db: sqlite3.Connection) -> int:
                 "UPDATE observation SET ref_low = ?, ref_high = ?, status = ? WHERE id = ?",
                 (ref.low, ref.high, status, r["id"]),
             )
+            changed += 1
+    for r in db.execute(
+        "SELECT id, analyte_key, value_text, ref_printed, status FROM observation "
+        "WHERE value_num IS NULL AND value_text IS NOT NULL"
+    ).fetchall():
+        status = ranges.classify_text(
+            r["value_text"], r["ref_printed"], terminology.expects_negative(r["analyte_key"])
+        )
+        if status != r["status"]:
+            db.execute("UPDATE observation SET status = ? WHERE id = ?", (status, r["id"]))
             changed += 1
     return changed
 

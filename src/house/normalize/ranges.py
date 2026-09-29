@@ -98,22 +98,39 @@ def norm_text_result(s: str) -> str:
     return " ".join(re.sub(r"[ao]$", "", re.sub(r"s$", "", w)) if len(w) > 3 else w for w in words)
 
 
-def classify_text(value: str, ref_text: str | None) -> Status | None:
+_NEGATIVE = {
+    norm_text_result(t) for t in ("no detectado", "negativo", "no reactivo", "ausente", "no se detecta")
+}
+_POSITIVE = {norm_text_result(t) for t in ("detectado", "positivo", "reactivo", "presente")}
+
+
+def _is_pointer(ref_text: str) -> bool:
+    """«Ver Anexo», «Ver nota»…: el laboratorio remite a otro lado; no dice cuál es el resultado esperado."""
+    return norm_text_result(ref_text).startswith("ver ")
+
+
+def classify_text(value: str, ref_text: str | None, expect_negative: bool = False) -> Status | None:
     """'ok' si el resultado es una de las opciones normales de la referencia; si no, 'abnormal'.
-    Sin referencia de texto no hay estado."""
-    if not ref_text:
-        return None
-    # Quita unidades: "Leu/µL NEGATIVO" -> "NEGATIVO"; "/ Campo NEGATIVO" -> "NEGATIVO".
-    without_units = re.sub(r"\S*/\S+|/\s*\S+", " ", ref_text)
-    options = {
-        norm_text_result(p)
-        for p in re.split(r"\s+(?:ó|o)\s+|\s+[-–]\s+|,", without_units)
-        if p.strip() and not re.search(r"\d", p)
-    }
-    options.discard("")
-    if not options:
-        return None
-    return "ok" if norm_text_result(value) in options else "abnormal"
+
+    Sin referencia utilizable (vacía o «Ver Anexo») no hay estado, salvo en pruebas de presencia de un
+    microorganismo (`expect_negative`): ahí lo esperado es que no se detecte, se imprima o no.
+    """
+    options: set[str] = set()
+    if ref_text and not _is_pointer(ref_text):
+        # Quita unidades: "Leu/µL NEGATIVO" -> "NEGATIVO"; "/ Campo NEGATIVO" -> "NEGATIVO".
+        without_units = re.sub(r"\S*/\S+|/\s*\S+", " ", ref_text)
+        options = {
+            norm_text_result(p)
+            for p in re.split(r"\s+(?:ó|o)\s+|\s+[-–]\s+|,", without_units)
+            if p.strip() and not re.search(r"\d", p)
+        }
+        options.discard("")
+    if options:
+        return "ok" if norm_text_result(value) in options else "abnormal"
+    if expect_negative:
+        v = norm_text_result(value)
+        return "ok" if v in _NEGATIVE else "abnormal" if v in _POSITIVE else None
+    return None
 
 
 def deviation(value: float, low: float | None, high: float | None) -> float:

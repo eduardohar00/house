@@ -147,7 +147,9 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
         if value is None:
             if analyte and analyte.kind in ("qual", "mixed"):
                 row.value_label, row.unit = r.value_text.strip(), ""
-                row.status = ranges.classify_text(r.value_text, r.ref_text)
+                row.status = ranges.classify_text(
+                    r.value_text, r.ref_text, terminology.expects_negative(analyte.key)
+                )
             else:
                 row.problems.append(Provenance.NOT_NUMERIC)
         elif analyte and analyte.kind == "qual":

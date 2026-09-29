@@ -80,3 +80,45 @@ def test_mixed_methods():
         "Electroquimioluminiscencia",
         "Quimioluminiscencia",
     ]
+
+
+def test_pointer_references_and_expected_negative_tests():
+    from house.normalize import ranges, terminology
+
+    # «Ver Anexo» no dice cuál es el resultado esperado: sin referencia, no "fuera de rango"
+    assert ranges.classify_text("NO DETECTADO", "Ver Anexo") is None
+    assert (
+        ranges.classify_text("Negativo", "Negativo") == "ok"
+        and ranges.classify_text("Positivo", "Negativo") == "abnormal"
+    )
+    # pruebas de presencia de un microorganismo: lo esperado es no detectarlo
+    assert ranges.classify_text("NO DETECTADO", "Ver Anexo", expect_negative=True) == "ok"
+    assert ranges.classify_text("DETECTADO", "Ver Anexo", expect_negative=True) == "abnormal"
+    assert ranges.classify_text("No Reactivo", None, expect_negative=True) == "ok"
+    assert ranges.classify_text("Indeterminado", None, expect_negative=True) is None
+    assert ranges.classify_text("Ausentes", None) is None  # sin la marca, sin referencia sigue sin estado
+    assert terminology.expects_negative("gi_norovirus") and terminology.expects_negative("giardia_antigen")
+    assert not terminology.expects_negative("urine_color") and not terminology.expects_negative("glucose")
+
+
+def test_repair_fixes_stored_text_statuses(tmp_path):
+    import sqlite3
+
+    from house.app import ingest
+
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.executescript(
+        "CREATE TABLE observation(id INTEGER PRIMARY KEY, analyte_key, value_num, value_text, unit, unit_printed, "
+        "ref_printed, ref_low, ref_high, status, qualifier)"
+    )
+    db.execute(
+        "INSERT INTO observation(analyte_key, value_text, ref_printed, status) "
+        "VALUES('gi_norovirus', 'NO DETECTADO', 'Ver Anexo', 'abnormal'), ('urine_nitrite', 'Positivo', 'Negativo', 'abnormal')"
+    )
+    assert ingest.repair_references(db) == 1
+    assert [r["status"] for r in db.execute("SELECT status FROM observation ORDER BY id")] == [
+        "ok",
+        "abnormal",
+    ]
+    assert ingest.repair_references(db) == 0  # idempotente
