@@ -560,16 +560,28 @@ async function renderDocs() {
         <input type="file" id="file" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" hidden multiple></label>
       <div id="up"></div>
     </section>
+    <section class="card cfg">
+      <h2>Subir una receta</h2>
+      <label class="drop" id="rxdrop"><b>Foto o PDF de una receta</b>
+        <span class="tip">Claude lee la receta y te propone los medicamentos; tú los revisas junto al original antes de guardarlos. Se envía la imagen a Claude, y ahí se ven datos personales impresos.</span>
+        <input type="file" id="rxfile" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" hidden></label>
+      <div id="rxup"></div>
+    </section>
     <section class="card cfg"><h2>Estudios</h2>
       ${docs.length ? `<div class="tblwrap"><table><thead><tr><th>Estudio</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
-        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b><small style="display:block;color:var(--muted)">${d.doc_type === 'imagen' ? 'Informe de estudio' : 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
-          <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}${notSaved(d)}</td>
+        ${docs.map(d => `<tr><td><b>${esc(d.title)}</b><small style="display:block;color:var(--muted)">${{ imagen: 'Informe de estudio', receta: 'Receta' }[d.doc_type] || 'Laboratorio'}</small></td><td>${fd(d.collected_on)}</td>
+          <td>${d.review_state === 'revisada' ? (d.doc_type === 'imagen' ? `Revisado · ${d.results} ${d.results === 1 ? 'informe' : 'informes'}` : d.doc_type === 'receta' ? `Revisado · ${d.results} ${d.results === 1 ? 'medicamento' : 'medicamentos'}` : `Revisado · ${d.results} resultados`) : esc(STATE[d.review_state])}${notSaved(d)}</td>
           <td><div class="acts" style="display:flex;gap:6px;flex-wrap:wrap">
             ${d.review_state === 'pendiente' ? `<button class="mini" data-rev="${d.id}">Revisar</button>` : ''}
             <a class="mini" href="/api/documents/${d.id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver original</a>
             <button class="mini dn" data-del="${d.id}" data-t="${esc(d.title)}">Borrar</button></div></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="tip">Aún no hay estudios.</p>'}
     </section>`;
+  const rxIn = document.getElementById('rxfile'), rxDrop = document.getElementById('rxdrop');
+  rxIn.onchange = () => rxIn.files[0] && uploadPrescription(rxIn.files[0]);
+  rxDrop.ondragover = e => { e.preventDefault(); rxDrop.classList.add('over'); };
+  rxDrop.ondragleave = () => rxDrop.classList.remove('over');
+  rxDrop.ondrop = e => { e.preventDefault(); rxDrop.classList.remove('over'); if (e.dataTransfer.files[0]) uploadPrescription(e.dataTransfer.files[0]); };
   const drop = document.getElementById('drop'), input = document.getElementById('file');
   input.onchange = () => uploadFiles([...input.files]);
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
@@ -592,9 +604,23 @@ async function renderDocs() {
     } catch (e) { b.disabled = false; b.textContent = 'Completar estos renglones'; toast(e.message); }
   });
   view().querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-    if (!confirm(`¿Borrar «${b.dataset.t}» y todos sus resultados? No se puede deshacer.`)) return;
+    if (!confirm(`¿Borrar «${b.dataset.t}» y todos sus resultados? Si es una receta, los medicamentos que guardaste se conservan. No se puede deshacer.`)) return;
     await api(`/api/documents/${b.dataset.del}`, { method: 'DELETE' }); toast('Estudio borrado.'); renderDocs();
   });
+}
+
+async function uploadPrescription(f) {
+  const up = document.getElementById('rxup');
+  if (!confirm('Se enviará la imagen de la receta a Claude para leerla. Ahí se ven datos personales impresos (nombre, médico…). ¿Continuar?')) return;
+  up.innerHTML = `<p class="tip"><span class="spin"></span>Claude está leyendo «${esc(f.name)}»… (unos 15 segundos)</p>`;
+  const form = new FormData(); form.append('file', f);
+  try {
+    const r = await api(`/api/people/${S.subject}/prescriptions`, { method: 'POST', form });
+    up.innerHTML = ''; toast(`Leí ${r.medications} ${r.medications === 1 ? 'medicamento' : 'medicamentos'}. Revísalos antes de guardar.`); openReview(r.document_id);
+  } catch (e) {
+    if (e.status === 409 && e.detail?.document_id) { up.innerHTML = ''; toast('Esa receta ya estaba cargada.'); return; }
+    up.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+  }
 }
 
 async function uploadFiles(files) {
@@ -649,6 +675,7 @@ async function openReview(id, opts = {}) {
   const complete = !!opts.complete;  // estudio ya revisado: solo se muestra lo que no quedó guardado
   const [d, layout] = await Promise.all([api(`/api/documents/${id}`), api(`/api/documents/${id}/layout`).catch(() => ({ pages: [], boxes: {} }))]);
   if (d.document.doc_type === 'imagen') return openImagingReview(id, d, layout);
+  if (d.document.doc_type === 'receta') return openPrescriptionReview(id, d);
   const rows = d.rows.filter(r => !complete || r.unsaved).map(r => ({ ...r, accept: !!r.analyte_key && !(complete && r.problems.includes('aparece_mas_de_una_vez')) && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
   let onlyFlags = false, showAi = false, active = null, addOpen = false;
   const manual = [];  // resultados que faltaban y la persona agregó a mano
@@ -802,6 +829,7 @@ const CLIN = {
   medication: { key: 'medications', title: 'Medicamentos', add: 'Agregar medicamento', none: 'Sin medicamentos actuales',
     fields: [F('name', 'Medicamento', 'text', { list: 'medication' }), F('dose', 'Dosis (por ejemplo 50 mg al día)'), F('reason', 'Para qué'), F('prescriber', 'Médico que lo indicó (opcional)'),
       F('since_year', 'Desde (año)', 'text', { ph: '2022' }), F('until_year', 'Hasta (año, si ya lo suspendiste)', 'text', { ph: '2024' }), F('active', 'Lo tomo actualmente', 'check')],
+    badge: m => m.document_id ? `<a class="mini" href="/api/documents/${m.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Ver receta</a>` : '',
     line: m => `<b>${esc(m.name)}</b>${m.dose ? ' · ' + esc(m.dose) : ''}`,
     sub: m => [m.reason, (m.problems || []).filter(p => p.name.toLowerCase() !== (m.reason || '').toLowerCase()).length && 'ligado a ' + m.problems.map(p => p.name).join(', '), m.prescriber && 'indicado por ' + m.prescriber, m.since_year && 'desde ' + m.since_year + (m.until_year ? ' hasta ' + m.until_year : '')].filter(Boolean).join(', ') },
   family: { key: 'family', title: 'Antecedentes familiares', add: 'Agregar antecedente', none: 'Sin antecedentes familiares relevantes',
@@ -818,7 +846,7 @@ const CLIN = {
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
-const EV_KIND = { consulta: 'Consulta', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
+const EV_KIND = { consulta: 'Consulta', receta: 'Receta', laboratorio: 'Laboratorio', imagen: 'Imagen', estudio: 'Otro estudio', vacuna: 'Vacuna', cirugia: 'Cirugía' };
 
 async function renderClinical() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
@@ -1137,6 +1165,60 @@ function openViewer(images, start) {
     apply();
   };
   document.addEventListener('keydown', key);
+  draw();
+}
+
+// Receta: Claude propone los medicamentos; la persona corrige, elige y confirma junto al original.
+function openPrescriptionReview(id, d) {
+  const rx = d.prescription;
+  if (!rx) { toast('Esta receta ya fue revisada.'); return renderDocs(); }
+  const meds = rx.medications.map((m, i) => ({ ...m, index: i, accept: true, active: true, dup: d.current_medications.some(n => n.toLowerCase() === m.name.toLowerCase()) }));
+  const head = { date: rx.prescription_date || '', prescriber: rx.prescriber || '', diagnosis: rx.diagnosis || '', problem: rx.suggested_problem_id || '' };
+  view().innerHTML = `<div class="rv"><div class="pages" id="pages" aria-label="Receta original">
+      ${rx.file_kind === 'pdf' ? `<iframe class="pdf" src="/api/documents/${id}/file" title="Receta original"></iframe>` : `<div class="pg"><img src="/api/documents/${id}/file" alt="Receta original"></div>`}</div>
+    <section class="card cfg" id="side"></section></div>`;
+  const draw = () => {
+    const n = meds.filter(m => m.accept).length;
+    document.getElementById('side').innerHTML = `
+      <div class="bar"><h2>Revisa la receta «${esc(d.document.title)}»</h2><div style="display:flex;gap:6px"><a class="mini" href="/api/documents/${id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir original</a><button class="mini" id="back">Volver</button></div></div>
+      <p class="tip">Claude leyó esta receta; compárala con el original y corrige lo que haga falta. Solo lo que confirmes entra a tus Medicamentos. House no sugiere ni interpreta medicamentos.</p>
+      <div class="fg2"><label>Fecha de la receta<input type="date" id="rd" value="${esc(head.date)}"></label>
+        <label>Médico<input type="text" id="rp" value="${esc(head.prescriber)}" maxlength="120"></label>
+        <label>Diagnóstico o motivo<input type="text" id="rg" value="${esc(head.diagnosis)}" maxlength="200"></label>
+        <label>Ligar a un padecimiento<select id="rq"><option value="">Ninguno</option>${d.problems.map(p => `<option value="${p.id}" ${String(p.id) === String(head.problem) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+      ${meds.map(m => `<div class="prof" style="display:grid;gap:8px">
+        <label><input type="checkbox" data-macc="${m.index}" ${m.accept ? 'checked' : ''}> <b>Guardar este medicamento</b></label>
+        ${!m.legible ? '<span class="flag">Difícil de leer: revisa el nombre y la dosis contra el original</span>' : ''}
+        ${m.dup ? `<span class="flag">Ya tienes «${esc(m.name)}» como medicamento actual</span>` : ''}
+        <div class="fg2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+          <label>Medicamento<input type="text" data-mf="name" data-i="${m.index}" value="${esc(m.name)}" maxlength="120"></label>
+          <label>Dosis<input type="text" data-mf="dose" data-i="${m.index}" value="${esc(m.dose || '')}" maxlength="200"></label>
+          <label>Frecuencia<input type="text" data-mf="frequency" data-i="${m.index}" value="${esc(m.frequency || '')}" maxlength="200"></label>
+          <label>Duración<input type="text" data-mf="duration" data-i="${m.index}" value="${esc(m.duration || '')}" maxlength="200"></label>
+          <label>Indicaciones<input type="text" data-mf="instructions" data-i="${m.index}" value="${esc(m.instructions || '')}" maxlength="400"></label></div>
+        <label><input type="checkbox" data-mact="${m.index}" ${m.active ? 'checked' : ''}> Lo tomo actualmente</label></div>`).join('')}
+      ${rx.notes ? `<p class="tip"><b>Notas de la receta:</b> ${esc(rx.notes)}</p>` : ''}
+      <p class="err" id="e"></p>
+      <div class="bar"><button class="btn danger" id="discard">Descartar receta</button><button class="btn" id="ok" ${n ? '' : 'disabled'}>Guardar ${n} ${n === 1 ? 'medicamento' : 'medicamentos'}</button></div>`;
+    document.getElementById('back').onclick = () => renderDocs();
+    view().querySelectorAll('[data-macc]').forEach(c => c.onchange = () => { meds[c.dataset.macc].accept = c.checked; draw(); });
+    view().querySelectorAll('[data-mact]').forEach(c => c.onchange = () => { meds[c.dataset.mact].active = c.checked; });
+    view().querySelectorAll('[data-mf]').forEach(i => i.oninput = () => { meds[i.dataset.i][i.dataset.mf] = i.value; });
+    ['rd', 'rp', 'rg', 'rq'].forEach(k => { const el = document.getElementById(k); el.oninput = el.onchange = () => { head[{ rd: 'date', rp: 'prescriber', rg: 'diagnosis', rq: 'problem' }[k]] = el.value; }; });
+    document.getElementById('discard').onclick = async () => {
+      if (!confirm('¿Descartar esta receta? Se borra el original y no se guarda ningún medicamento.')) return;
+      await api(`/api/documents/${id}`, { method: 'DELETE' }); toast('Receta descartada.'); renderDocs();
+    };
+    document.getElementById('ok').onclick = async () => {
+      const e = document.getElementById('e');
+      try {
+        const res = await api(`/api/documents/${id}/review-prescription`, { method: 'POST', body: {
+          prescription_date: head.date || null, prescriber: head.prescriber || null, diagnosis: head.diagnosis || null, problem_id: head.problem ? Number(head.problem) : null,
+          decisions: meds.map(m => ({ index: m.index, accept: m.accept, name: m.name, dose: m.dose || null, frequency: m.frequency || null, duration: m.duration || null, instructions: m.instructions || null, active: m.active })) } });
+        toast(`Guardé ${res.saved} ${res.saved === 1 ? 'medicamento' : 'medicamentos'} en tu expediente.`); S.tab = 'exp'; renderShell();
+      } catch (err) { e.textContent = err.message; }
+    };
+  };
   draw();
 }
 

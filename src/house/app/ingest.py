@@ -22,7 +22,7 @@ from ..imaging import ImagingReport, looks_like_lab, parse_reports
 from ..normalize import critical, ranges, terminology, units
 from ..privacy import Anonymizer
 from ..providers import BudgetExceeded, ProviderError, Router
-from . import ocr, tables
+from . import clinical, ocr, prescriptions, tables
 from .vault import Vault
 
 MAX_BYTES = 25 * 1024 * 1024
@@ -89,6 +89,13 @@ CREATE TABLE IF NOT EXISTS custom_analyte (
 );
 """
 
+PRESCRIPTION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS prescription_draft (
+  document_id INTEGER PRIMARY KEY REFERENCES document(id) ON DELETE CASCADE,
+  data        TEXT NOT NULL                        -- receta leída, pendiente de revisar (JSON)
+);
+"""
+
 LINK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS study_link (
   a INTEGER NOT NULL REFERENCES imaging_study(id) ON DELETE CASCADE,
@@ -140,6 +147,7 @@ def migrate_imaging(db: sqlite3.Connection) -> None:
     db.executescript(IMAGING_SCHEMA)
     db.executescript(IMAGE_SCHEMA)
     db.executescript(LINK_SCHEMA)
+    db.executescript(PRESCRIPTION_SCHEMA)
     db.executescript(CUSTOM_SCHEMA)
     have = {r["name"] for r in db.execute("PRAGMA table_info(imaging_study)")}
     for col, typ in _IMAGING_COLUMNS.items():
@@ -729,8 +737,152 @@ def not_saved_rows(db: sqlite3.Connection, doc_id: int, reviewed: bool) -> list[
     return out
 
 
+def prescription_images(data: bytes) -> tuple[list[bytes], str]:
+    """Páginas de una receta como imágenes para Claude: de un PDF, o una foto reducida y enderezada."""
+    if data.startswith(b"%PDF"):
+        import pdfplumber
+
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            pages = min(len(pdf.pages), 4)
+        return [render_page(data, n, resolution=150) for n in range(1, pages + 1)], "pdf"
+    if image_type(data) is None:
+        raise IngestError(415, "Sube una foto (PNG o JPG) o un PDF de la receta.")
+    from PIL import Image, ImageOps
+
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
+    except Exception:
+        raise IngestError(422, "No pude abrir la imagen.") from None
+    img.thumbnail((2000, 2000))
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=85)
+    return [out.getvalue()], "image"
+
+
+def ingest_prescription(
+    db: sqlite3.Connection, vault: Vault, router: Router, person: sqlite3.Row, filename: str, data: bytes
+) -> Ingested:
+    """Receta (foto o PDF): Claude propone los medicamentos y la persona los revisa junto al original."""
+    if len(data) > MAX_BYTES:
+        raise IngestError(413, "El archivo pesa más de 25 MB.")
+    sha = hashlib.sha256(data).hexdigest()
+    dup = db.execute(
+        "SELECT id FROM document WHERE person_id = ? AND file_sha256 = ?", (person["id"], sha)
+    ).fetchone()
+    if dup:
+        raise IngestError(409, "Esta receta ya estaba cargada.", dup["id"])
+    images, kind = prescription_images(data)
+    result = prescriptions.read_prescription(router, images)
+    if not result["medications"]:
+        raise IngestError(422, "No encontré medicamentos en esta receta. ¿Se ve completa y derecha?")
+    result["file_kind"] = kind
+    title = re.sub(r"\.(pdf|png|jpe?g)$", "", filename, flags=re.I).strip() or "Receta"
+    cur = db.execute(
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256) "
+        "VALUES(?, 'receta', ?, ?, ?, ?)",
+        (person["id"], title, result["prescription_date"], vault.put(data), sha),
+    )
+    db.execute(
+        "INSERT INTO prescription_draft(document_id, data) VALUES(?, ?)",
+        (cur.lastrowid, json.dumps(result, ensure_ascii=False)),
+    )
+    return Ingested(cur.lastrowid, len(result["medications"]), "receta")
+
+
+def confirm_prescription(db: sqlite3.Connection, doc_id: int, person_id: int, body: dict) -> int:
+    """Guarda como medicamentos solo lo aceptado (corregido por la persona) y lo liga a un padecimiento."""
+    doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    draft = db.execute("SELECT data FROM prescription_draft WHERE document_id = ?", (doc_id,)).fetchone()
+    if doc["doc_type"] != "receta":
+        raise IngestError(422, "Este documento no es una receta.")
+    if doc["review_state"] != "pendiente" or draft is None:
+        raise IngestError(409, "Esta receta ya fue revisada.")
+    when = (body.get("prescription_date") or "").strip() or None
+    if when:
+        try:
+            date.fromisoformat(when)
+        except ValueError:
+            raise IngestError(422, "Fecha inválida (usa AAAA-MM-DD).") from None
+    picked = [d for d in body.get("decisions", []) if d.get("accept")]
+    if not picked:
+        raise IngestError(422, "Elige al menos un medicamento para guardar.")
+    problem_id = body.get("problem_id")
+    saved = 0
+    for d in picked:
+        name = (d.get("name") or "").strip()
+        if not name:
+            raise IngestError(422, "Todos los medicamentos que guardes necesitan nombre.")
+        dose = " ".join(x.strip() for x in (d.get("dose") or "", d.get("frequency") or "") if x and x.strip())
+        notes = "; ".join(
+            x.strip() for x in (d.get("duration") or "", d.get("instructions") or "") if x and x.strip()
+        )
+        try:
+            mid = clinical.add(
+                db,
+                person_id,
+                "medication",
+                {
+                    "name": name,
+                    "dose": dose or None,
+                    "reason": (body.get("diagnosis") or "").strip() or None,
+                    "prescriber": (body.get("prescriber") or "").strip() or None,
+                    "since_year": when[:4] if when else None,
+                    "active": bool(d.get("active", True)),
+                    "notes": notes or None,
+                },
+            )
+            db.execute("UPDATE medication SET document_id = ? WHERE id = ?", (doc_id, mid))
+            if problem_id:
+                clinical.add_link(db, person_id, int(problem_id), "medication", str(mid))
+        except clinical.ClinicalError as e:
+            raise IngestError(e.status, e.message) from None
+        saved += 1
+    db.execute("UPDATE document SET review_state = 'revisada', collected_on = ? WHERE id = ?", (when, doc_id))
+    db.execute("DELETE FROM prescription_draft WHERE document_id = ?", (doc_id,))
+    return saved
+
+
 def review_payload(db: sqlite3.Connection, doc_id: int) -> dict:
     doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    if doc["doc_type"] == "receta":
+        row = db.execute("SELECT data FROM prescription_draft WHERE document_id = ?", (doc_id,)).fetchone()
+        draft = json.loads(row["data"]) if row else None
+        problems = [
+            {"id": p["id"], "name": p["name"]}
+            for p in db.execute(
+                "SELECT id, name FROM problem WHERE person_id = ? ORDER BY name COLLATE NOCASE",
+                (doc["person_id"],),
+            )
+        ]
+        if draft:
+            draft["suggested_problem_id"] = prescriptions.match_problem(draft.get("diagnosis"), problems)
+        current = [
+            r["name"]
+            for r in db.execute(
+                "SELECT name FROM medication WHERE person_id = ? AND active = 1", (doc["person_id"],)
+            )
+        ]
+        return {
+            "document": {
+                k: doc[k]
+                for k in (
+                    "id",
+                    "person_id",
+                    "doc_type",
+                    "title",
+                    "collected_on",
+                    "review_state",
+                    "uploaded_at",
+                )
+            },
+            "ai_saw": "",
+            "redactions": {},
+            "rows": [],
+            "imaging": [],
+            "prescription": draft,
+            "problems": problems,
+            "current_medications": current,
+        }
     ex = db.execute("SELECT * FROM extraction WHERE document_id = ?", (doc_id,)).fetchone()
     rows = []
     open_ids = (

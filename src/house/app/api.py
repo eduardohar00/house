@@ -82,6 +82,25 @@ class ImagingReview(BaseModel):
     decisions: list[ImagingDecision]
 
 
+class RxDecision(BaseModel):
+    index: int
+    accept: bool
+    name: str = ""
+    dose: str | None = None
+    frequency: str | None = None
+    duration: str | None = None
+    instructions: str | None = None
+    active: bool = True
+
+
+class RxReview(BaseModel):
+    prescription_date: str | None = None
+    prescriber: str | None = None
+    diagnosis: str | None = None
+    problem_id: int | None = None
+    decisions: list[RxDecision]
+
+
 class ChatTurn(BaseModel):
     role: str
     content: str
@@ -447,13 +466,41 @@ def create_app(
             "reader": _who(reader, done),
         }
 
+    @app.post("/api/people/{person_id}/prescriptions")
+    async def upload_prescription(person_id: int, actor: Me, file: Annotated[UploadFile, File()]) -> dict:
+        """Receta en foto o PDF: Claude propone los medicamentos y tú los revisas (se envía la imagen)."""
+        person = subject(person_id, actor, "subir_estudio")
+        data = await file.read(ingest.MAX_BYTES + 1)
+        router = assistant_router()
+        if router is None:
+            raise HTTPException(409, "Leer recetas necesita Claude: conecta tu clave en Configuración.")
+        try:
+            done = ingest.ingest_prescription(db, vault, router, person, file.filename or "Receta", data)
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, {"message": e.message, "document_id": e.document_id}) from None
+        except BudgetExceeded:
+            raise HTTPException(402, "Se alcanzó el tope mensual de gasto en IA.") from None
+        except ProviderError as e:
+            raise HTTPException(502, f"No se pudo leer con Claude: {e}") from None
+        return {"document_id": done.document_id, "medications": done.rows, "kind": "receta"}
+
+    @app.post("/api/documents/{doc_id}/review-prescription")
+    def review_prescription(doc_id: int, body: RxReview, actor: Me) -> dict:
+        doc = document(doc_id, actor, "revisar_estudio")
+        try:
+            saved = ingest.confirm_prescription(db, doc_id, doc["person_id"], body.model_dump())
+        except ingest.IngestError as e:
+            raise HTTPException(e.status, e.message) from None
+        return {"saved": saved}
+
     @app.get("/api/people/{person_id}/documents")
     def list_documents(person_id: int, actor: Me) -> list[dict]:
         subject(person_id, actor, "ver_estudios")
         rows = db.execute(
             "SELECT d.id, d.doc_type, d.title, d.collected_on, d.review_state, d.uploaded_at, "
             "(SELECT COUNT(*) FROM observation o WHERE o.document_id = d.id) "
-            "+ (SELECT COUNT(*) FROM imaging_study i WHERE i.document_id = d.id) AS results "
+            "+ (SELECT COUNT(*) FROM imaging_study i WHERE i.document_id = d.id) "
+            "+ (SELECT COUNT(*) FROM medication m WHERE m.document_id = d.id) AS results "
             "FROM document d WHERE person_id = ? ORDER BY COALESCE(collected_on, uploaded_at) DESC",
             (person_id,),
         )
@@ -473,9 +520,10 @@ def create_app(
     @app.get("/api/documents/{doc_id}/file")
     def get_file(doc_id: int, actor: Me) -> Response:
         doc = document(doc_id, actor, "ver_original")
+        data = vault.get(doc["file_path"])
         return Response(
-            vault.get(doc["file_path"]),
-            media_type="application/pdf",
+            data,
+            media_type=ingest.image_type(data) or "application/pdf",  # las recetas también pueden ser fotos
             headers={"Content-Disposition": "inline", "Cache-Control": "no-store"},
         )
 
@@ -497,6 +545,8 @@ def create_app(
     @app.get("/api/documents/{doc_id}/layout")
     def get_layout(doc_id: int, actor: Me) -> dict:
         doc = document(doc_id, actor, "ver_original")
+        if doc["doc_type"] == "receta":
+            return {"pages": [], "boxes": {}}  # una foto no tiene renglones que resaltar
         rows = db.execute("SELECT * FROM extraction_row WHERE document_id = ?", (doc_id,)).fetchall()
         return ingest.page_layout(vault.get(doc["file_path"]), rows)
 
@@ -749,6 +799,9 @@ def create_app(
     def delete_document(doc_id: int, actor: Me) -> dict:
         doc = document(doc_id, actor, "borrar_estudio")
         db.execute("DELETE FROM imaging_study WHERE document_id = ?", (doc_id,))  # sin restos huérfanos
+        db.execute(
+            "UPDATE medication SET document_id = NULL WHERE document_id = ?", (doc_id,)
+        )  # se conservan
         db.execute("DELETE FROM document WHERE id = ?", (doc_id,))
         vault.delete(doc["file_path"])
         return {"ok": True}

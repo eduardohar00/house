@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS clinical_none (
 """
 
 _EXTRA_COLUMNS = {
-    "medication": {"prescriber": "TEXT", "until_year": "TEXT", "notes": "TEXT"},
+    "medication": {"prescriber": "TEXT", "until_year": "TEXT", "notes": "TEXT", "document_id": "INTEGER"},
     "problem": {"notes": "TEXT"},
     "allergy": {"notes": "TEXT"},
     "procedure_history": {"notes": "TEXT"},
@@ -450,6 +450,15 @@ def timeline(db, person_id: int) -> list[dict]:
         if p["year"]:
             ev.append({"kind": "cirugia", "date": f"{p['year']}-01-01", "approx": True, "title": p["name"],
                        "subtitle": "", "ref": None})  # fmt: skip
+    for d in db.execute(
+        "SELECT d.id, d.title, d.collected_on, GROUP_CONCAT(m.name, ', ') AS names, COUNT(m.id) AS n "
+        "FROM document d LEFT JOIN medication m ON m.document_id = d.id "
+        "WHERE d.person_id = ? AND d.doc_type = 'receta' AND d.review_state = 'revisada' "
+        "AND d.collected_on IS NOT NULL GROUP BY d.id",
+        (person_id,),
+    ):
+        ev.append({"kind": "receta", "date": d["collected_on"], "title": f"Receta · {d['n']} medicamento(s)",
+                   "subtitle": d["names"] or "", "ref": {"type": "document", "id": d["id"]}})  # fmt: skip
     labs = db.execute(
         "SELECT d.id, d.title, d.collected_on, COUNT(o.id) AS n, "
         "COALESCE(SUM(o.status IN ('low','high','abnormal')), 0) AS n_out "

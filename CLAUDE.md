@@ -11,7 +11,7 @@ Documentos clave (léelos antes de proponer cambios grandes):
 ## Reglas de privacidad (obligatorias)
 1. Eduardo autoriza que Claude Code lea `bench/private/` y sus PDFs de estudios (datos de salud reales) para ayudar a armar y revisar casos del banco. Aun así, `verified: true` en `expected.json` se pone solo cuando Eduardo confirma los valores contra su PDF (Claude hace el cambio): la respuesta correcta del banco no la fija un modelo que el banco evalúa. No leas `config/house.toml` (claves).
 2. Nunca subas a git datos de salud, claves de API ni `config/house.toml`. La CI falla si hay PDF o DICOM en el repo.
-3. Las imágenes de un informe solo se envían a Claude cuando la persona lo pide (botón «Leer las tablas con Claude», con aviso); la lectura normal de PDFs ocurre en la Mac.
+3. Las imágenes de un informe solo se envían a Claude cuando la persona lo pide (botones «Leer las tablas con Claude» y «Subir una receta», con aviso); la lectura normal de PDFs ocurre en la Mac.
 3. Los datos de prueba del repo son **sintéticos**. Para nuevas pruebas usa datos inventados.
 4. Los mensajes de error y las bitácoras no deben incluir contenido de documentos.
 
