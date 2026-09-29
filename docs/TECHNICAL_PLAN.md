@@ -33,15 +33,15 @@ Estado: v0.1. Deriva de [PRODUCT.md](PRODUCT.md). Todo lo marcado **(por verific
 |---|---|---|
 | Lenguaje del núcleo | Python 3.11+ | Fase 0 hecha |
 | API local | FastAPI en `127.0.0.1` | Fase 1 |
-| Frontend | React + Vite + TypeScript, instalable como PWA | Fase 1 (la maqueta en `docs/mockup/` es la referencia) |
-| Base de datos | SQLite con cifrado (SQLCipher) **(por verificar)**; alternativa: SQLite común sobre volumen cifrado + FileVault | Esquema en `src/house/db/schema.sql` |
+| Frontend | **Decidido en Fase 1:** HTML + JavaScript sin paso de compilación, servido por la propia API (la Mac no tiene Node y no hace falta). Parte de la maqueta en `docs/mockup/`. PWA después | Fase 1 |
+| Base de datos | **Decidido en Fase 1:** SQLite en `~/Library/Application Support/House` (fuera del repo, permisos 700/600) sobre disco con FileVault (verificado activo). SQLCipher queda como mejora si se sale de la Mac | `src/house/app/store.py` |
 | Texto de PDFs digitales | pdfplumber | Fase 0 (opcional) |
 | OCR local | Apple Vision **(por verificar** el enlace desde Python**)** o PaddleOCR | Fase 1 |
 | Limpieza de datos personales | Reglas propias (hecho) + Presidio como segunda capa | Reglas: Fase 0. Presidio: Fase 1 |
 | Modelo de visión local para escaneos difíciles | Modelo pequeño (4B a 7B, cuantizado) con MLX **(por verificar** calidad en español**)** | Fase 1 |
 | DICOM | pydicom (limpieza de metadatos) + OHIF para el visor | Fase 2 |
 | Búsqueda semántica del asistente | Consultas SQL como herramientas del agente primero; embeddings locales después si hacen falta | Fase 2 |
-| Cifrado de originales | Cifrado por archivo con clave derivada del PIN de admin y llave de recuperación | Fase 1 |
+| Cifrado de originales | AES-256-GCM por archivo; llave maestra en el llavero de macOS (no depende del PIN del admin, así cada persona abre sus documentos). Llave de recuperación: pendiente con el respaldo | `src/house/app/vault.py` |
 
 ### 2.2 Capa de proveedores (implementada)
 - `Provider.complete_json(LLMRequest) -> LLMResponse`: salida estructurada con esquema JSON estricto.
@@ -64,6 +64,12 @@ Agente con herramientas de solo lectura sobre el perfil abierto (`get_series`, `
 
 ### 2.5 Multiagente: solo donde ayuda
 No se orquestan agentes por moda. El flujo es una tubería con pasos deterministas y llamadas puntuales. Se justifica un agente separado en: (a) el **verificador** independiente, (b) el asistente con herramientas, (c) la **segunda lectura de imagen** (experimental, desactivada por defecto). El resto no lo necesita.
+
+### 2.6 Fase 1: orden de construcción
+1. **Base (hecho):** `python -m house.app` en 127.0.0.1:8765; primer uso crea al admin; perfiles con PIN (scrypt), bloqueo tras 5 intentos y por 15 min de inactividad; cada persona ve solo su perfil; accesos del admin a perfiles ajenos en `access_log`; rechazo de otros Host y de escrituras sin cabecera `X-House`.
+2. Subir estudio: original cifrado → texto → limpieza → Claude → verificación → revisión lado a lado → `observation`.
+3. Resumen y gráficas según la maqueta (incluye aviso de métodos mezclados).
+4. Expediente clínico manual.
 
 ## 3. Seguridad y privacidad
 | Tema | Decisión |

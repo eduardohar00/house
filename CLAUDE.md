@@ -30,6 +30,7 @@ ruff check . && ruff format --check .
 python -m house.bench                       # banco offline
 python -m house.bench.new_case <pdf> --id <id> --names "Nombre"   # crea un caso en bench/private/
 python -m house.bench.names bench/private/<id>                    # solo nombres y unidades sin reconocer
+python -m house.app                         # la app en http://127.0.0.1:8765 (datos en ~/Library/Application Support/House)
 ```
 - Python 3.11+, tipado con pydantic, `ruff` (línea 110). Pruebas con `pytest` para todo cambio de comportamiento.
 - El catálogo de analitos está en `src/house/normalize/terminology.py`. **No inventes códigos LOINC**: déjalos en blanco si no estás seguro.
@@ -37,4 +38,4 @@ python -m house.bench.names bench/private/<id>                    # solo nombres
 - Antes de subir: pruebas y ruff en verde. Commits claros en español o inglés; nunca fuerces push a `main`.
 
 ## Estado y siguientes pasos
-Fase 0 lista (plan, proveedores, anonimizador, normalización, banco de pruebas). En curso: **Fase 0b**, Eduardo arma casos reales en `bench/private/` y compara proveedores. Después, **Fase 1** (API local, base cifrada, PIN, ingesta y revisión lado a lado). PDFs escaneados requieren OCR local (Fase 1).
+Fase 0 lista (plan, proveedores, anonimizador, normalización, banco de pruebas). En curso: **Fase 0b**, Eduardo arma casos reales en `bench/private/` y compara proveedores. **Fase 1 en curso** en paralelo (ver `docs/TECHNICAL_PLAN.md` §2.6): base de la app hecha; sigue subir estudio y revisión lado a lado. PDFs escaneados requieren OCR local (Fase 1).
