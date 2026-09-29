@@ -157,3 +157,12 @@ input[type=text],input[type=date],input[type=password],input[type=number]{font:i
 .tag.na{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
 details.hist{border-top:1px solid var(--line);padding-top:10px}
 details.hist summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:600}
+
+button.qp{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--surface);cursor:pointer;display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
+button.qp:hover{border-color:var(--accent)}
+button.qp[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+button.qp.out{border-color:var(--warn);background:var(--warn-bg);color:var(--warn);font-weight:600}
+button.qp.old{opacity:.6}
+.qds{display:inline-flex;gap:3px;margin-left:2px}
+.qd{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--line)}
+.qd.k{background:var(--good)}.qd.o{background:var(--warn)}

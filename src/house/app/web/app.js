@@ -253,7 +253,10 @@ async function renderSummary() {
         <span class="nm">${esc(name(k))}</span><div>${old ? `<span class="pill na">Último: ${yr(l)}</span>` : pill(stOf(k))}</div>
         <div class="row"><div><div class="val">${fnum(l.value_num)}<small>${esc(l.unit)}</small></div><div class="delta">${delta}</div></div>${vals.length > 1 ? spark(vals) : ''}</div></button>`;
     }).join('');
-    const quals = texts.map(k => { const l = last(k), old = !recent.has(k); return `<span class="${!old && OUT(stOf(k)) ? 'out' : ''} ${old ? 'old' : ''}">${esc(name(k))}: <b>${esc(l.value_text ?? fnum(l.value_num))}</b>${old ? ` (${yr(l)})` : ''}</span>`; }).join('');
+    const quals = texts.map(k => {
+      const l = last(k), old = !recent.has(k);
+      return `<button class="qp ${!old && OUT(stOf(k)) ? 'out' : ''} ${old ? 'old' : ''}" data-k="${esc(k)}" aria-pressed="${k === S.sel}" title="Ver cómo ha cambiado">${esc(name(k))}: <b>${esc(qlabel(l))}</b>${old ? ` (${yr(l)})` : ''}<span class="qds">${series[k].slice(-6).map(o => `<i class="qd ${OUT(o.status) ? 'o' : o.status === 'ok' ? 'k' : ''}" title="${esc(fd(o.collected_on) + ': ' + qlabel(o))}"></i>`).join('')}</span></button>`;
+    }).join('');
     return `<section class="grp"><div class="gh"><h3>${gname}</h3>${withRef.length ? `<span class="gc ${ok === withRef.length ? 'ok' : 'out'}">${ok} de ${withRef.length} en rango</span>` : ''}</div>
       ${cards ? `<div class="cards">${cards}</div>` : ''}${quals ? `<div class="qual">${quals}</div>` : ''}</section>`;
   }).join('');
@@ -269,7 +272,7 @@ async function renderSummary() {
     <section class="card detail" id="detail"></section>
     <div class="grid">${groups}</div>`;
   view().querySelectorAll('[data-k]').forEach(el => el.onclick = () => {
-    if (series[el.dataset.k] && last(el.dataset.k).value_num != null) { S.sel = el.dataset.k; renderSummaryDetail(series); markSel(); document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    if (series[el.dataset.k]) { S.sel = el.dataset.k; renderSummaryDetail(series); markSel(); document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   });
   renderSummaryDetail(series);
 }
@@ -281,13 +284,19 @@ function distOut(o) {
   return 0;
 }
 
-function markSel() { view().querySelectorAll('.bm').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === S.sel)); }
+function markSel() { view().querySelectorAll('.bm, .qp').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === S.sel)); }
 
 function normMethod(m) { return (m || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+const qlabel = o => (o.value_text != null && o.value_text !== '') ? o.value_text : fnum(o.value_num);
+// "Ausentes" = "ausente", "Positiva" = "positivo": una misma categoría aunque cambie la forma de escribirla.
+const qkey = t => normMethod(String(t)).split(' ').map(w => w.length > 3 ? w.replace(/s$/, '').replace(/[ao]$/, '') : w).join(' ');
 
 function renderSummaryDetail(series) {
   const box = document.getElementById('detail');
   if (!S.sel) { box.hidden = true; return; }
+  const all = series[S.sel];
+  if (all[all.length - 1].value_num == null) return renderQualDetail(series);
   const pts = series[S.sel].filter(o => o.value_num != null), l = pts[pts.length - 1];
   // Rango del estudio más reciente que lo traiga (algunos laboratorios no lo imprimen para todo).
   const refPt = [...pts].reverse().find(o => o.ref_low != null || o.ref_high != null) || null;
@@ -305,6 +314,89 @@ function renderSummaryDetail(series) {
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
   document.getElementById('tt').onclick = () => { S.view = 't'; renderSummaryDetail(series); };
   if (S.view === 'g') drawChart(pts, refPt);
+}
+
+
+function renderQualDetail(series) {
+  const box = document.getElementById('detail');
+  const pts = series[S.sel], l = pts[pts.length - 1];
+  const methods = [...new Map(pts.filter(o => o.method).map(o => [normMethod(o.method), o.method])).values()];
+  const kinds = new Set(pts.map(o => qkey(qlabel(o)))), outs = pts.filter(o => OUT(o.status));
+  const summary = pts.length === 1 ? `Un solo estudio: «${qlabel(l)}»${OUT(l.status) ? ', fuera de lo esperado' : ''}.`
+    : kinds.size === 1 ? `Siempre «${qlabel(l)}» en los ${pts.length} estudios${outs.length ? ', fuera de lo esperado' : ', dentro de lo esperado'}.`
+    : `Ha cambiado: ${kinds.size} resultados distintos en ${pts.length} estudios. Último: «${qlabel(l)}»${OUT(l.status) ? ' (fuera de lo esperado)' : ''}.${outs.length ? ` Fuera de lo esperado en ${outs.length} de ${pts.length}.` : ''}`;
+  box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
+      <p>Resultado de texto · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
+      <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div></div>
+    <p class="lead" style="font-size:16px;margin:0">${esc(summary)}</p>
+    ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}).</div>` : ''}
+    <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
+    <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Lo esperado</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${esc(qlabel(o))}</b>${o.unit ? ' ' + esc(o.unit) : ''}</td><td>${pill(o.status)}</td><td>${esc(o.ref_printed || '—')}</td><td>${esc(o.document_title)}</td><td>${esc(o.method || '—')}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span><span><i class="lg-band"></i>Lo esperado según el informe${l.ref_printed ? ': ' + esc(l.ref_printed) : ''}</span></div>`;
+  box.hidden = false;
+  document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
+  document.getElementById('tt').onclick = () => { S.view = 't'; renderSummaryDetail(series); };
+  if (S.view === 'g') drawQualChart(pts);
+}
+
+// Una fila por resultado distinto ("Negativo", "Positivo"…); cada estudio es un punto en su fila.
+// Si siempre cae en la misma fila, la línea plana dentro de la banda verde dice "sigue igual".
+function drawQualChart(pts) {
+  const box = document.getElementById('chart');
+  const W = Math.max(box.clientWidth, 280);
+  const cats = [];
+  pts.forEach(o => {
+    const k = qkey(qlabel(o)); let c = cats.find(x => x.key === k);
+    if (!c) cats.push(c = { key: k, label: qlabel(o), st: [] });
+    c.st.push(o.status);
+  });
+  cats.forEach(c => { c.ok = c.st.includes('ok') && !c.st.some(OUT); });
+  cats.sort((a, b) => Number(b.ok) - Number(a.ok));            // lo esperado abajo, dentro de la banda
+  const m = { l: W < 520 ? 96 : 132, r: 24, t: 14, b: 42 };
+  const rh = 44, ih = Math.max(1, cats.length) * rh, H = m.t + ih + m.b, iw = W - m.l - m.r;
+  const rowTop = i => m.t + ih - (i + 1) * rh, Yc = i => rowTop(i) + rh / 2;
+  const X = i => m.l + iw * (i + 0.5) / pts.length;
+  const catIdx = o => cats.findIndex(c => c.key === qkey(qlabel(o)));
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de ${esc(name(S.sel))}">`;
+  cats.forEach((c, i) => {
+    if (c.ok) s += `<rect x="${m.l}" y="${rowTop(i)}" width="${iw}" height="${rh}" fill="var(--band)" stroke="var(--band-line)" stroke-dasharray="3 3"/>`;
+    s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${rowTop(i)}" y2="${rowTop(i)}" stroke="var(--line)" opacity=".7"/>`;
+    const t = c.label.length > 18 ? c.label.slice(0, 17) + '…' : c.label;
+    s += `<text class="ax" x="${m.l - 8}" y="${Yc(i) + 4}" text-anchor="end" style="font-weight:600"><title>${esc(c.label)}</title>${esc(t)}</text>`;
+  });
+  s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${m.t + ih}" y2="${m.t + ih}" stroke="var(--line)"/>`;
+  const every = Math.max(1, Math.ceil(pts.length * 64 / iw));
+  let prevYear = null;
+  pts.forEach((o, i) => {
+    if (i % every && i !== pts.length - 1) return;
+    const d = new Date(ts(o.collected_on)), yr = d.getUTCFullYear();
+    s += `<text class="ax" x="${X(i)}" y="${H - 24}" text-anchor="middle">${d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' })}</text>`;
+    if (yr !== prevYear) s += `<text class="ax" x="${X(i)}" y="${H - 8}" text-anchor="middle" style="font-weight:600">${yr}</text>`;
+    prevYear = yr;
+  });
+  const P = pts.map((o, i) => [X(i), Yc(catIdx(o))]);
+  s += `<polyline points="${P.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  P.forEach((q, i) => s += `<circle cx="${q[0]}" cy="${q[1]}" r="${i === P.length - 1 ? 6 : 5}" fill="${OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)'}" stroke="var(--surface)" stroke-width="2"/>`);
+  s += `<line id="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>`;
+  s += `<rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip-box" id="tip" hidden></div>`;
+  box.innerHTML = s;
+  const svg = box.querySelector('svg'), tip = document.getElementById('tip'), xh = document.getElementById('xh');
+  const show = cx => {
+    const r = svg.getBoundingClientRect(), x = (cx - r.left) * (W / r.width);
+    let bi = 0, bd = 1e9; P.forEach((q, i) => { const d = Math.abs(q[0] - x); if (d < bd) { bd = d; bi = i; } });
+    const q = P[bi], o = pts[bi], sc = r.width / W;
+    xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
+    tip.hidden = false;
+    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${esc(qlabel(o))}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
+    const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
+    tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
+  };
+  const hit = document.getElementById('hit');
+  hit.addEventListener('pointermove', e => show(e.clientX));
+  hit.addEventListener('pointerdown', e => show(e.clientX));
+  hit.addEventListener('pointerleave', () => { tip.hidden = true; xh.style.display = 'none'; });
 }
 
 function niceStep(range, n) { const raw = range / n, m = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / m; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * m; }
