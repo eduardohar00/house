@@ -554,3 +554,10 @@ def test_notas_largas_de_padecimiento(world):
         c.get(f"/api/people/{me}/clinical").json()["problems"][0]["notes"] == texto
     )  # conserva los saltos de línea
     assert add(c, me, "problem", name="Otra", status="En control", notes="x" * 4001).status_code == 422
+
+
+def test_consulta_con_nota_larga(world):
+    c, me, _ = world
+    texto = "Resumen\n" + "y" * 5000
+    add(c, me, "consultation", occurred_on="2026-02-07", reason="Explicación", notes=texto).raise_for_status()
+    assert c.get(f"/api/people/{me}/clinical").json()["consultations"][0]["notes"] == texto

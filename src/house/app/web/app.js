@@ -884,7 +884,7 @@ const CLIN = {
     fields: [F('occurred_on', 'Fecha', 'date'), F('what', 'Qué noté', 'text', { ph: 'Por ejemplo: sangre en las heces' }), F('related', 'Después de qué (medicamento, comida, actividad; opcional)', 'text', { ph: 'Por ejemplo: ibuprofeno' }), F('notes', 'Detalles (opcional): color, cantidad, cuántos días…', 'area')],
     line: s => `<b>${esc(s.what)}</b> <span class="s">${fd(s.occurred_on)}</span>`, sub: s => [s.related && 'después de ' + s.related, s.notes].filter(Boolean).join(' · ') },
   consultation: { key: 'consultations', title: 'Consultas', add: 'Agregar consulta',
-    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)', 'area')],
+    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)', 'area', { max: 8000 })],
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
@@ -1153,7 +1153,7 @@ async function renderClinical() {
         return `<select name="${f.name}">${opts.map(o => `<option value="${esc(o)}" ${o === cur ? 'selected' : ''}>${esc(o || 'Sin especificar')}</option>`).join('')}</select>`;
       }
       if (f.type === 'check') return `<input type="checkbox" name="${f.name}" ${v ? 'checked' : ''}>`;
-      if (f.type === 'area') return `<textarea name="${f.name}" class="notes-area" rows="${Math.min(18, Math.max(6, String(v).split('\n').length + Math.ceil(String(v).length / 90)))}" maxlength="4000" spellcheck="true" lang="es" placeholder="Escribe con libertad; puedes usar renglones y párrafos.">${esc(v)}</textarea><span class="s">Puedes agrandar el cuadro arrastrando la esquina. <span data-count>${String(v).length}</span>/4000</span>`;
+      if (f.type === 'area') return `<textarea name="${f.name}" class="notes-area" rows="${Math.min(18, Math.max(6, String(v).split('\n').length + Math.ceil(String(v).length / 90)))}" maxlength="${f.max || 4000}" spellcheck="true" lang="es" placeholder="Escribe con libertad; puedes usar renglones y párrafos.">${esc(v)}</textarea><span class="s">Puedes agrandar el cuadro arrastrando la esquina. <span data-count>${String(v).length}</span>/${f.max || 4000}</span>`;
       return `<input type="${f.type === 'date' ? 'date' : 'text'}" name="${f.name}" value="${esc(v)}" ${f.list ? `list="dl_${f.list}"` : ''} ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} autocomplete="off" ${f.type === 'date' ? '' : 'spellcheck="true" lang="es"'} style="width:100%">`;
     };
     document.getElementById('clinform').innerHTML = `<form class="card cfg fg2" id="cf"><h2>${editing.item ? 'Editar' : cfg.add}</h2>
