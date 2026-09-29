@@ -77,6 +77,7 @@ _SAME_VALUE = {
     ("potassium", "meq/l"),
     ("chloride", "meq/l"),
     ("co2_total", "meq/l"),
+    ("egfr", "ml/min/172m2"),  # errata de Chopo 2018: "1.72m2" por "1.73m2"
 }
 
 

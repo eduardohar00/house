@@ -158,6 +158,8 @@ class BaselineRegexProvider:
                 continue
             section = f"{major} > {sub}" if major and sub else major
             m = _LINE.match(line) if ", " not in line else None  # ", ": texto explicativo
+            if m and re.search(r"[<>=]", m.group("name")):
+                m = None  # "Leucocitos Negativo Negativo ó < 10 leu/uL": el 10 es la referencia
             if m:
                 row = {
                     "analyte_name": m.group("name").strip(),

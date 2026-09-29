@@ -351,7 +351,7 @@ _CHOPO: tuple[Analyte, ...] = (
         "tasa de filtracion glomerular estimada",
         "tfge",
     ),
-    _a("sd_ldl", "LDL pequeñas y densas (sd LDL)", "", "", "lipidos", "sd ldl"),
+    _a("sd_ldl", "LDL pequeñas y densas (sd LDL)", "", "mg/dL", "lipidos", "sd ldl"),
     _a("phospholipids", "Fosfolípidos", "", "mg/dL", "lipidos", "fosfolipidos en suero", "fosfolipidos"),
     _a("ast_alt_ratio", "Relación AST/ALT", "", "", "higado", "relacion ast alt"),
     _a("uibc", "Capacidad latente de fijación de hierro (UIBC)", "", "µg/dL", "sangre", "uibc"),
@@ -500,6 +500,12 @@ _QUALITATIVE: tuple[Analyte, ...] = (
         "anticuerpos anti vih 1 2",
     ),
     _q("vdrl", "VDRL", "infecciosas", "v d r l", "vdrl"),
+    _q("typhoid_o", "Tífico O", "infecciosas", "tifico o"),
+    _q("typhoid_h", "Tífico H", "infecciosas", "tifico h"),
+    _q("paratyphoid_a", "Paratífico A", "infecciosas", "paratifico a"),
+    _q("paratyphoid_b", "Paratífico B", "infecciosas", "paratifico b"),
+    _q("brucella", "Brucella", "infecciosas", "brucella"),
+    _q("proteus_ox19", "Proteus OX-19", "infecciosas", "proteus ox 19"),
     _q("hcv_ab", "Anticuerpos anti-VHC", "infecciosas", "anticuerpos anti vhc", "anticuerpos anti hcv"),
 )
 
@@ -559,6 +565,8 @@ _MORE_ALIASES = {
     "mchc": ("conc media de hemoglobina corp",),
     "rdw": ("ancho de distrib de eritrocitos cv",),
     "urine_sg": ("densidad",),
+    "egfr": ("tasa de filtracion glomerular",),
+    "ast_alt_ratio": ("relacion tgo tgp",),
 }
 
 CATALOG: tuple[Analyte, ...] = tuple(

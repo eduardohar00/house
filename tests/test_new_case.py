@@ -252,3 +252,23 @@ Hematócrito 45.0 40.0-54.0 %"""
         "Electroquimioluminiscencia",
         None,
     ]
+
+
+def test_text_result_with_unit_after_reference_is_not_read_as_number():
+    from house.bench.new_case import prefill_expected
+
+    doc = """EXAMEN GENERAL DE ORINA
+EXAMEN QUÍMICO ___
+Leucocitos Negativo Negativo ó < 10 leu/uL
+Hemoglobina Negativo Negativo ó < 5 eri/uL
+REACCIONES FEBRILES EN SUERO
+Tífico O Negativo Negativo
+Proteus OX-19 Negativo Negativo"""
+    exp, unrecognized = prefill_expected(doc)
+    assert {(r["key"], r["value"]) for r in exp["results"]} == {
+        ("urine_leuk_esterase", "Negativo"),
+        ("urine_blood", "Negativo"),
+        ("typhoid_o", "Negativo"),
+        ("proteus_ox19", "Negativo"),
+    }
+    assert unrecognized == []
