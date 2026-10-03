@@ -578,3 +578,21 @@ def test_ligar_consulta_a_padecimiento(world):
     assert c.get(f"/api/people/{me}/link-candidates").json()["consultations"][0]["ref"] == str(cid)
     c.delete(f"/api/people/{me}/clinical/consultation/{cid}", headers=H).raise_for_status()
     assert c.get(f"/api/people/{me}/clinical").json()["problems"][0]["links"] == []  # se limpia solo
+
+
+def test_transcripcion_de_consulta_no_llega_al_asistente(world):
+    c, me, _ = world
+    add(
+        c,
+        me,
+        "consultation",
+        occurred_on="2026-02-06",
+        reason="Previa",
+        notes="Resumen",
+        transcript="Texto largo de la cita. " * 500,
+    ).raise_for_status()
+    assert len(c.get(f"/api/people/{me}/clinical").json()["consultations"][0]["transcript"]) > 10000
+    from house.app import assistant
+
+    keys = assistant.Toolbox.get_clinical_record.__code__.co_consts
+    assert "transcript" not in keys  # el asistente solo recibe el resumen, nunca la transcripción

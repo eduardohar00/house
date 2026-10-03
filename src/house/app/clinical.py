@@ -85,6 +85,7 @@ _EXTRA_COLUMNS = {
     "allergy": {"notes": "TEXT", "category": "TEXT"},
     "procedure_history": {"notes": "TEXT"},
     "vaccine": {"brand": "TEXT", "lot": "TEXT"},
+    "consultation": {"transcript": "TEXT"},
 }
 
 
@@ -179,6 +180,7 @@ SPECS: dict[str, tuple[str, dict[str, Field]]] = {
     "consultation": ("consultation", {
         "occurred_on": Field("date", True), "reason": Field("text", True), "doctor": Field("text"),
         "specialty": Field("text"), "notes": Field("text", max=8000),
+        "transcript": Field("text", max=60000),
     }),
 }  # fmt: skip
 

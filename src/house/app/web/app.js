@@ -884,7 +884,7 @@ const CLIN = {
     fields: [F('occurred_on', 'Fecha', 'date'), F('what', 'Qué noté', 'text', { ph: 'Por ejemplo: sangre en las heces' }), F('related', 'Después de qué (medicamento, comida, actividad; opcional)', 'text', { ph: 'Por ejemplo: ibuprofeno' }), F('notes', 'Detalles (opcional): color, cantidad, cuántos días…', 'area')],
     line: s => `<b>${esc(s.what)}</b> <span class="s">${fd(s.occurred_on)}</span>`, sub: s => [s.related && 'después de ' + s.related, s.notes].filter(Boolean).join(' · ') },
   consultation: { key: 'consultations', title: 'Consultas', add: 'Agregar consulta',
-    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Notas (opcional)', 'area', { max: 8000 })],
+    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Resumen o notas (opcional)', 'area', { max: 8000 }), F('transcript', 'Transcripción de la cita (opcional; no se envía a la IA)', 'area', { max: 60000 })],
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
@@ -920,7 +920,7 @@ async function renderClinical() {
     return `<div class="plw">${p.links.map(chip).join('')}${suggChips}${groups ? `<label class="lchip add"><select data-plink="${p.id}" aria-label="Ligar un estudio a este padecimiento"><option value="">＋ Ligar estudio o tratamiento</option>${groups}</select></label>` : ''}</div>`;
   };
   const row = (kind, it, cfg = CLIN[kind]) => { const sub = cfg.sub(it);
-    return `<li><span>${cfg.line(it)}${sub ? (sub.length > 220 || sub.includes('\n') ? `<details class="ntv"><summary>${esc(sub.split('\n')[0].replace(/[.…]+$/, '').slice(0, 110))}… <span class="s">(ver notas completas)</span></summary><div class="ntb">${esc(sub)}</div></details>` : `<br><span class="s">${esc(sub)}</span>`) : ''}${it.duplicate && !cfg.noDup ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
+    return `<li><span>${cfg.line(it)}${sub ? (sub.length > 220 || sub.includes('\n') ? `<details class="ntv"><summary>${esc(sub.split('\n')[0].replace(/[.…]+$/, '').slice(0, 110))}… <span class="s">(ver notas completas)</span></summary><div class="ntb">${esc(sub)}</div></details>` : `<br><span class="s">${esc(sub)}</span>`) : ''}${it.transcript ? `<details class="ntv"><summary>Transcripción de la cita</summary><div class="ntb">${esc(it.transcript)}</div></details>` : ''}${it.duplicate && !cfg.noDup ? '<span class="flag">Aparece más de una vez</span>' : ''}</span>
       <span class="rowact">${cfg.badge ? cfg.badge(it) : ''}<button class="mini" data-edit="${kind}:${it.id}">Editar</button><button class="mini dn" data-del="${kind}:${it.id}">Quitar</button></span>${kind === 'problem' ? plinks(it) : ''}</li>`; };
   // Vacunas agrupadas por vacuna: «COVID-19 · 2 dosis · última mayo 2022», con cada dosis al abrir.
   const plainName = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
