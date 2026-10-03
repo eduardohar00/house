@@ -856,7 +856,7 @@ const CLIN = {
     fields: [F('category', 'Tipo de alergia', 'select', { options: 'allergy_categories' }), F('substance', 'Sustancia', 'text', { list: 'allergy' }), F('reaction', 'Reacción (opcional)'), F('notes', 'Notas (opcional)', 'area')],
     line: a => `<b>${esc(a.substance)}</b>${a.reaction ? ' · ' + esc(a.reaction) : ''}`, sub: a => a.notes },
   problem: { key: 'problems', title: 'Problemas de salud', add: 'Agregar problema', none: 'Sin problemas de salud conocidos',
-    fields: [F('name', 'Problema', 'text', { list: 'problem' }), F('status', 'Estado', 'select', { options: 'statuses' }), F('since_year', 'Desde (año)', 'text', { ph: '2021' }), F('notes', 'Notas (opcional)', 'area')],
+    fields: [F('name', 'Problema', 'text', { list: 'problem' }), F('status', 'Estado', 'select', { options: 'statuses' }), F('since_year', 'Desde (año)', 'text', { ph: '2021' }), F('notes', 'Notas (opcional)', 'area', { max: 12000 })],
     line: p => `<b>${esc(p.name)}</b>${p.since_year ? ` <span class="s">desde ${esc(p.since_year)}</span>` : ''}`, sub: p => p.notes,
     badge: p => `<span class="sp ${STCLS[p.status] || 'c'}">${esc(p.status)}</span>` },
   medication: { key: 'medications', title: 'Medicamentos', add: 'Agregar medicamento', none: 'Sin medicamentos actuales',
