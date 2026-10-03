@@ -884,7 +884,7 @@ const CLIN = {
     fields: [F('occurred_on', 'Fecha', 'date'), F('what', 'Qué noté', 'text', { ph: 'Por ejemplo: sangre en las heces' }), F('related', 'Después de qué (medicamento, comida, actividad; opcional)', 'text', { ph: 'Por ejemplo: ibuprofeno' }), F('notes', 'Detalles (opcional): color, cantidad, cuántos días…', 'area')],
     line: s => `<b>${esc(s.what)}</b> <span class="s">${fd(s.occurred_on)}</span>`, sub: s => [s.related && 'después de ' + s.related, s.notes].filter(Boolean).join(' · ') },
   consultation: { key: 'consultations', title: 'Consultas', add: 'Agregar consulta',
-    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Resumen o notas (opcional)', 'area', { max: 8000 }), F('transcript', 'Transcripción de la cita (opcional; no se envía a la IA)', 'area', { max: 60000 })],
+    fields: [F('occurred_on', 'Fecha', 'date'), F('reason', 'Motivo o resumen'), F('doctor', 'Médico (opcional)'), F('specialty', 'Especialidad (opcional)'), F('notes', 'Resumen o notas (opcional)', 'area', { max: 20000 }), F('transcript', 'Transcripción de la cita (opcional; no se envía a la IA)', 'area', { max: 60000 })],
     line: c => `<b>${esc(c.reason)}</b> <span class="s">${fd(c.occurred_on)}</span>`, sub: c => [c.specialty, c.doctor, c.notes].filter(Boolean).join(' · ') },
 };
 const HAS_NONE = ['allergy', 'problem', 'medication', 'family', 'procedure'];
