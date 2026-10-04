@@ -73,7 +73,31 @@ TIROXINA (T4) TOTAL | µg/dL
 T4 LIBRE | ng/dL
 INDICE DE TIROXINA LIBRE | µg/dL
 YODO PROTEICO HORMONAL | µg/dL
-HORMONA ESTIMULANTE DE TIROIDES (TSH) | µUI/mL"""
+HORMONA ESTIMULANTE DE TIROIDES (TSH) | µUI/mL
+HGM | pg
+CMHG | g/dL
+ADE | %
+Cuenta de Plaquetas | 10^3uL
+Eritrocitos | 10^6uL
+Hemoglobina Glucosilada (HB A1C) Fracción A1C | %
+Lipoproteina VLDL | mg/dL
+Proteína C Reactiva (Ultra sensible) | mg/L
+T.G.O. (AST) | UI/L
+T.G.P. (ALT) | UI/L
+Fosfatasa Alcalina | UI/L
+Albúmina Sérica | g/dL
+Amilasa Sérica | UI/L
+Capacidad de fijación de transferrina | ug/dL
+Nitrógeno de Urea | mg/dL
+Creatinina Sérica | mg/dL
+Creatinina en Orina Aislada | mg/dL
+Relación Albúmina / Creatinina en Orina Aislada | mg/g
+Depuración de Creatinina Calculada | mL/min
+Sodio Sérico | mmol/L
+Dióxido de carbono (CO2) | mmol/L
+Testosterona Total | nmol/L
+Vitamina B - 12 | pg/mL
+Mielocitos | %"""
 CASES = [tuple(x.strip() for x in line.rsplit("|", 1)) for line in PRINTED.splitlines()]
 
 
@@ -116,3 +140,18 @@ def test_catalog_endpoint_carries_the_explanation(tmp_path):
     c = TestClient(create_app(tmp_path, key_provider=lambda: b"k" * 32))
     cat = c.get("/api/catalog").json()
     assert "azúcar" in cat["glucose"]["about"] and cat["gi_norovirus"]["about"]
+
+
+def test_blood_count_absolute_cells_with_103ul_unit():
+    assert terminology.match_analyte("Neutrófilos", "10^3uL").key == "neut_abs"
+    assert terminology.match_analyte("Neutrófilos", "%").key == "neut_pct"
+
+
+def test_urine_sediment_names_and_cells_per_field():
+    sed = "Examen General de Orina > Sedimento"
+    assert terminology.match_analyte("Eritrocitos", "cel/HPF", sed).key == "urine_rbc_micro"
+    assert terminology.match_analyte("Cilindros hialinos", None, sed).key == "urine_casts_hyaline"
+    assert terminology.match_analyte("Células Uroteliales", None, sed).key == "urine_transitional"
+    assert terminology.match_analyte("Leucocitos (Esterasa leucocitaria)", "cel/uL", sed).key == (
+        "urine_leuk_esterase_count"
+    )

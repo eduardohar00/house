@@ -134,6 +134,35 @@ def _a(key, name, loinc, unit, group, *aliases):
 # Ampliación a partir de estudios reales (solo nombres y unidades). Los códigos LOINC en blanco
 # están por completar: no se inventan.
 _EXTRA: tuple[Analyte, ...] = (
+    _a("creatinine_urine", "Creatinina en orina", "", "mg/dL", "orina", "creatinina en orina aislada"),
+    _a(
+        "uacr",
+        "Relación albúmina/creatinina en orina",
+        "",
+        "mg/g",
+        "orina",
+        "relacion albumina creatinina en orina aislada",
+    ),
+    _a(
+        "creatinine_clearance",
+        "Depuración de creatinina calculada",
+        "",
+        "mL/min",
+        "rinon",
+        "depuracion de creatinina calculada",
+    ),
+    _a(
+        "urine_leuk_esterase_count",
+        "Esterasa leucocitaria (cuenta, orina)",
+        "",
+        "cel/µL",
+        "orina",
+        "leucocitos esterasa leucocitaria",
+    ),
+    _a("myelocytes_pct", "Mielocitos %", "", "%", "diferencial", "mielocitos"),
+    _a("metamyelocytes_pct", "Metamielocitos %", "", "%", "diferencial", "metamielocitos"),
+    _a("testosterone_total", "Testosterona total", "", "nmol/L", "marcadores", "testosterona total"),
+    _a("vitamin_b12", "Vitamina B12", "", "pg/mL", "vitaminas", "vitamina b 12", "vitamina b12"),
     _a("albumin", "Albúmina", "1751-7", "g/dL", "higado", "albumina"),
     _a("albumin_urine", "Albúmina (mg/L)", "", "mg/L", "orina"),
     _a("amylase", "Amilasa", "1798-8", "U/L", "pancreas", "amilasa en suero", "amilasa"),
@@ -493,6 +522,15 @@ _QUALITATIVE: tuple[Analyte, ...] = (
     _q("urine_dysmorphic_rbc", "Eritrocitos dismórficos (orina)", "orina", "eritrocitos dismorficos"),
     _q("urine_casts", "Cilindros (orina)", "orina", "cilindros"),
     _q("urine_crystals", "Cristales (orina)", "orina", "cristales"),
+    _q("urine_casts_hyaline", "Cilindros hialinos (orina)", "orina", "cilindros hialinos"),
+    _q("urine_casts_granular", "Cilindros granulosos (orina)", "orina", "cilindros granulosos"),
+    _q(
+        "urine_crystals_ca_oxalate",
+        "Cristales de oxalato de calcio (orina)",
+        "orina",
+        "cristales de oxalato de calcio",
+    ),
+    _q("urine_crystals_uric_acid", "Cristales de ácido úrico (orina)", "orina", "cristales de acido urico"),
     _q("urine_urate_crystals", "Cristales de urato amorfo (orina)", "orina"),
     _q(
         "urine_squamous",
@@ -585,7 +623,7 @@ def section_context(section: str | None) -> list[str]:
     """Contextos de catálogo que aplican a un encabezado de sección, del más al menos específico."""
     s = _norm(section or "")
     if "orina" in s or "urinalisis" in s:
-        return ["orina_micro", "orina"] if "microscop" in s else ["orina"]
+        return ["orina_micro", "orina"] if "microscop" in s or "sedimento" in s else ["orina"]
     if "espermato" in s or "seminograma" in s or "seminal" in s or "espermograma" in s:
         return ["semen"]
     if "cistatina" in s:
@@ -671,26 +709,86 @@ _HOSPITAL: tuple[Analyte, ...] = (
 
 # Otras formas de escribir análisis ya catalogados.
 _MORE_ALIASES = {
-    "bun": ("nitrogeno de urea en sangre bun", "nitrogeno de urea en sangre"),
-    "vldl": ("vldl colesterol",),
+    "bun": (
+        "nitrogeno de urea en sangre bun",
+        "nitrogeno de urea en sangre",
+        "nitrogeno de urea",
+    ),
+    "vldl": (
+        "vldl colesterol",
+        "lipoproteina vldl",
+    ),
     "ggt": ("gama glutamil transpeptidasa",),
     "globulin": ("globulinas",),
     "alp": ("f alcalina total",),
     "ldh": ("ldh",),
     "mcv": ("volumen corp medio",),
-    "mch": ("hemoglobina corp media",),
-    "mchc": ("conc media de hemoglobina corp",),
-    "rdw": ("ancho de distrib de eritrocitos cv",),
+    "mch": (
+        "hemoglobina corp media",
+        "hgm",
+    ),
+    "mchc": (
+        "conc media de hemoglobina corp",
+        "cmhg",
+    ),
+    "rdw": (
+        "ancho de distrib de eritrocitos cv",
+        "ade",
+    ),
     "urine_sg": ("densidad",),
-    "egfr": ("tasa de filtracion glomerular", "tasa de filtracion estimada"),
-    "magnesium": ("magnesio en sangre",),
+    "egfr": (
+        "tasa de filtracion glomerular",
+        "tasa de filtracion estimada",
+    ),
+    "magnesium": (
+        "magnesio en sangre",
+        "magnesio serico",
+    ),
     "brucella": ("brucella abortus",),
-    "hba1c": ("hemoglobina glicosilada a1c", "hemoglobina glucosilada a1c"),
-    "vitamin_d": ("vitamina d 25 hidroxi", "25 hidroxi vitamina d", "vitamina d 25 hidroxi total"),
-    "tibc": ("capacidad total de fijacion del hierro",),
-    "uibc": ("capacidad no saturada de fijacion de hierro", "capacidad no saturada de fijacion de"),
-    "iron_sat": ("indice de saturacion de transferrina", "saturacion de transferrina"),
+    "hba1c": (
+        "hemoglobina glicosilada a1c",
+        "hemoglobina glucosilada a1c",
+        "hemoglobina glucosilada hb a1c fraccion a1c",
+    ),
+    "vitamin_d": (
+        "vitamina d 25 hidroxi",
+        "25 hidroxi vitamina d",
+        "vitamina d 25 hidroxi total",
+    ),
+    "tibc": (
+        "capacidad total de fijacion del hierro",
+        "capacidad de fijacion de transferrina",
+    ),
+    "uibc": (
+        "capacidad no saturada de fijacion de hierro",
+        "capacidad no saturada de fijacion de",
+    ),
+    "iron_sat": (
+        "indice de saturacion de transferrina",
+        "saturacion de transferrina",
+        "de saturacion de transferrina",
+    ),
     "ast_alt_ratio": ("relacion tgo tgp",),
+    "platelets": ("cuenta de plaquetas",),
+    "chol_hdl_ratio": ("indice aterogenico col tot hdl",),
+    "crp_hs": ("proteina c reactiva ultra sensible",),
+    "ast": ("t g o ast",),
+    "alt": ("t g p alt",),
+    "albumin": ("albumina serica",),
+    "amylase": ("amilasa serica",),
+    "lipase": ("lipasa serica",),
+    "creatinine": ("creatinina serica",),
+    "albumin_urine": ("albumina en orina aislada",),
+    "co2_total": ("dioxido de carbono co2",),
+    "sodium": ("sodio serico",),
+    "potassium": ("potasio serico",),
+    "chloride": ("cloro serico",),
+    "phosphorus": ("fosforo serico",),
+    "uric_acid": ("acido urico serico",),
+    "urine_ketones": ("c cetonicos",),
+    "urine_mucus": ("filamento mucoso",),
+    "urine_transitional": ("celulas uroteliales",),
+    "urine_renal_tubular": ("celulas renales",),
 }
 
 CATALOG: tuple[Analyte, ...] = tuple(
@@ -706,7 +804,7 @@ _UNIT_VARIANTS = {
     **{
         (f"{cell}_pct", u): f"{cell}_abs"
         for cell in ("neut", "lymph", "mono", "eos", "baso")
-        for u in ("miles/ul", "103/ul", "x103/ul")
+        for u in ("miles/ul", "103/ul", "x103/ul", "103ul")
     },
 }
 

@@ -902,23 +902,46 @@ def confirm_prescription(db: sqlite3.Connection, doc_id: int, person_id: int, bo
         notes = "; ".join(
             x.strip() for x in (d.get("duration") or "", d.get("instructions") or "") if x and x.strip()
         )
+        fields = {
+            "name": name,
+            "active_ingredient": (d.get("active_ingredient") or "").strip() or None,
+            "brand": (d.get("brand") or "").strip() or None,
+            "dose": dose or None,
+            "reason": (body.get("diagnosis") or "").strip() or None,
+            "prescriber": (body.get("prescriber") or "").strip() or None,
+            "since_year": when[:4] if when else None,
+            "active": bool(d.get("active", True)),
+            "notes": notes or None,
+        }
         try:
-            mid = clinical.add(
-                db,
-                person_id,
-                "medication",
-                {
-                    "name": name,
-                    "active_ingredient": (d.get("active_ingredient") or "").strip() or None,
-                    "brand": (d.get("brand") or "").strip() or None,
-                    "dose": dose or None,
-                    "reason": (body.get("diagnosis") or "").strip() or None,
-                    "prescriber": (body.get("prescriber") or "").strip() or None,
-                    "since_year": when[:4] if when else None,
-                    "active": bool(d.get("active", True)),
-                    "notes": notes or None,
-                },
-            )
+            # Al borrar una receta sus medicamentos se conservan; si la misma receta se vuelve a subir,
+            # se retoma ese medicamento idéntico en vez de guardarlo otra vez.
+            same = db.execute(
+                "SELECT id FROM medication WHERE person_id = ? AND document_id IS NULL AND name = ? "
+                "AND active_ingredient IS ? AND brand IS ? AND dose IS ? AND reason IS ? "
+                "AND prescriber IS ? AND since_year IS ? AND notes IS ? ORDER BY id LIMIT 1",
+                (
+                    person_id,
+                    *(
+                        fields[k]
+                        for k in (
+                            "name",
+                            "active_ingredient",
+                            "brand",
+                            "dose",
+                            "reason",
+                            "prescriber",
+                            "since_year",
+                            "notes",
+                        )
+                    ),
+                ),
+            ).fetchone()
+            if same:
+                mid = same["id"]
+                db.execute("UPDATE medication SET active = ? WHERE id = ?", (int(fields["active"]), mid))
+            else:
+                mid = clinical.add(db, person_id, "medication", fields)
             db.execute("UPDATE medication SET document_id = ? WHERE id = ?", (doc_id, mid))
             if problem_id:
                 clinical.add_link(db, person_id, int(problem_id), "medication", str(mid))
@@ -1120,6 +1143,7 @@ def confirm_review(
     now = datetime.now().isoformat(timespec="seconds")
     common = {"collected_on": collected_on, "reviewer_id": reviewer_id, "now": now}
     saved = 0
+    written: set[tuple] = set()
     for d in decisions:
         r = rows.get(d.get("row_id"))
         if r is None:
@@ -1131,6 +1155,10 @@ def confirm_review(
         if not d.get("accept"):
             continue
         key = d.get("analyte_key") or r["analyte_key"]
+        same = (key, r["value_printed"], r["unit_printed"])
+        if key and same in written:  # el mismo resultado impreso dos veces en el estudio: se guarda una vez
+            continue
+        written.add(same)
         analyte = terminology.BY_KEY.get(key or "")
         if analyte is None:
             raise IngestError(422, f"Falta indicar qué análisis es «{r['printed_name']}».")

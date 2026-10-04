@@ -233,6 +233,28 @@ def test_upload_review_and_confirm(lab_client):
     assert c.get(f"/api/people/{pid}/observations").json() == []
 
 
+def test_same_result_printed_twice_is_saved_once(lab_client):
+    c = lab_client
+    c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()
+    pid = c.post(
+        "/api/people",
+        json={"display_name": "Juan", "birth_date": "1980-05-05", "sex_at_birth": "M", "has_login": False},
+        headers=H,
+    ).json()["id"]
+    lines = LAB_LINES[:5] + ["QUIMICA INTEGRAL", "Glucosa 105 70 - 99 mg/dL"]
+    doc_id = upload(c, pid, make_pdf(lines)).json()["document_id"]
+    rows = [r for r in c.get(f"/api/documents/{doc_id}").json()["rows"] if r["analyte_key"] == "glucose"]
+    assert len(rows) == 2
+    r = c.post(
+        f"/api/documents/{doc_id}/review",
+        json={"collected_on": "2026-03-01", "decisions": [{"row_id": x["id"], "accept": True} for x in rows]},
+        headers=H,
+    )
+    assert r.json() == {"saved": 1}
+    obs = [o for o in c.get(f"/api/people/{pid}/observations").json() if o["analyte_key"] == "glucose"]
+    assert len(obs) == 1
+
+
 def test_upload_rejects_non_pdf_and_scans(lab_client):
     c = lab_client
     c.post("/api/setup", json=ADMIN, headers=H).raise_for_status()

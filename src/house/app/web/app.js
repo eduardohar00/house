@@ -709,7 +709,9 @@ async function openReview(id, opts = {}) {
   if (d.document.doc_type === 'imagen') return openImagingReview(id, d, layout);
   if (d.document.doc_type === 'receta') return openPrescriptionReview(id, d);
   if (d.body_scan) return openBodyScanReview(id, d);
-  const rows = d.rows.filter(r => !complete || r.unsaved).map(r => ({ ...r, accept: !!r.analyte_key && !(complete && r.problems.includes('aparece_mas_de_una_vez')) && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
+  const seenSame = new Set();  // mismo análisis, valor y unidad impresos otra vez: solo se acepta el primero
+  const repeatOfEarlier = r => { const k = [r.analyte_key, r.value_printed, r.unit_printed].join('|'); const dup = seenSame.has(k); seenSame.add(k); return dup; };
+  const rows = d.rows.filter(r => !complete || r.unsaved).map(r => ({ ...r, accept: !!r.analyte_key && !repeatOfEarlier(r) && !(complete && r.problems.includes('aparece_mas_de_una_vez')) && !r.problems.includes('no_respaldada_por_el_documento') && !r.problems.includes('unidad_no_reconocida') && !r.problems.includes('valor_no_numerico') && !r.problems.includes('mismo_valor_en_otra_unidad') }));
   let onlyFlags = false, showAi = false, active = null, addOpen = false;
   const manual = [];  // resultados que faltaban y la persona agregó a mano
   const byName = new Map(Object.entries(S.catalog).map(([k, a]) => [a.name.toLowerCase(), k]));

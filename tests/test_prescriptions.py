@@ -158,6 +158,12 @@ def test_upload_review_and_confirm_a_prescription(tmp_path):
         m["document_id"] is None for m in kept
     )
 
+    # volver a subir y confirmar la misma receta no duplica los medicamentos conservados
+    again = send(c, me, png()).json()["document_id"]
+    assert c.post(f"/api/documents/{again}/review-prescription", json=body, headers=H).json() == {"saved": 2}
+    after = c.get(f"/api/people/{me}/clinical").json()["medications"]
+    assert len(after) == len(kept) and sum(m["document_id"] == again for m in after) == 2
+
 
 def test_prescription_errors(tmp_path):
     empty = FakeRx({**RX, "medications": []})
