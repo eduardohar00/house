@@ -157,11 +157,11 @@ const GROUPS = [
 const STL = { ok: 'En rango', low: 'Por debajo', high: 'Por encima', abnormal: 'Fuera de referencia' };
 const OUT = s => s === 'low' || s === 'high' || s === 'abnormal';
 
-function pill(s) {
+function pill(s, text) {
   if (!s) return '<span class="pill na">Sin referencia</span>';
-  if (s === 'ok') return `<span class="pill ok"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>${STL.ok}</span>`;
+  if (s === 'ok') return `<span class="pill ok"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>${text || STL.ok}</span>`;
   const path = s === 'high' ? 'M6 2l4.5 8h-9z' : s === 'low' ? 'M6 10L1.5 2h9z' : 'M6 1l5.5 10h-11z';
-  return `<span class="pill out"><svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="${path}"/></svg>${STL[s]}</span>`;
+  return `<span class="pill out"><svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="${path}"/></svg>${text || STL[s]}</span>`;
 }
 function spark(vals) {
   const w = 88, h = 32, p = 3, mn = Math.min(...vals), mx = Math.max(...vals), r = (mx - mn) || 1;
@@ -365,7 +365,7 @@ const zoneAt = (g, v) => g.zones.find(z => (z.low == null || v >= z.low) && (z.h
 // Rango sin la unidad (la unidad ya va junto al valor).
 const rangeNoUnit = o => { const t = bandText(o); return o.unit && t.endsWith(' ' + o.unit) ? t.slice(0, -o.unit.length - 1) : t; };
 // Globo de la gráfica: fecha y laboratorio, valor con su estado y, aparte, los datos de apoyo en filas.
-function tipHtml(o, gl, valueHtml, unit) {
+function tipHtml(o, gl, valueHtml, unit, touch) {
   const z = gl && o.value_num != null ? zoneAt(gl, o.value_num) : null, rows = [];
   if (hasRange(o)) rows.push([o.ref_note ? 'Rango general' : o.lab ? `Rango ${labShort(o.lab)}` : 'Rango', rangeNoUnit(o)]);
   if (z) rows.push(['Meta de guía', z.name]);
@@ -375,13 +375,25 @@ function tipHtml(o, gl, valueHtml, unit) {
     <div class="tv"><b>${valueHtml}</b>${unit ? `<small>${esc(unit)}</small>` : ''}</div>
     <div class="ts"><i style="background:${dot}"></i>${o.status ? STL[o.status] : 'Sin referencia'}</div>
     ${rows.length ? `<dl class="tk">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
-    <div class="tf">${esc(o.document_title)}${o.row_id ? ' · clic para ver el original' : ''}</div>`;
+    <div class="tf">${esc(o.document_title)}</div>
+    ${o.row_id ? (touch ? '<button class="ta" data-open>Ver estudio original ↗</button>' : '<div class="ta">Clic para abrir el estudio original ↗</div>') : ''}`;
 }
 
 // Resumen del resultado más reciente: valor, estado, laboratorio y cambio frente al anterior.
 function summaryCard(pts, gl) {
   const l = pts[pts.length - 1], prev = pts.length > 1 ? pts[pts.length - 2] : null;
   const z = gl ? zoneAt(gl, l.value_num) : null;
+  // Estado frente al rango del laboratorio y frente a la meta de la guía: una sola etiqueta si dicen lo mismo,
+  // dos (cada una con su referencia) si difieren.
+  const LABST = { ok: 'En el rango del laboratorio', high: 'Por encima del rango del laboratorio', low: 'Por debajo del rango del laboratorio', abnormal: 'Fuera de lo esperado por el laboratorio' };
+  let chips = l.status ? pill(l.status) : '';
+  if (z) {
+    const zi = gl.zones.indexOf(z), good = zi === 0, zc = good ? 'z0' : zi === gl.zones.length - 1 ? 'z2' : 'z1';
+    const zchip = `<span class="zchip ${zc}" title="Meta según guía clínica">Meta de guía: ${esc(z.name.toLowerCase())}</span>`;
+    const agree = (l.status === 'ok' && good) || (l.status === 'high' && !good);
+    chips = agree ? pill(l.status, good ? 'En el rango y dentro de la meta' : 'Por encima del rango y de la meta')
+      : (l.status ? pill(l.status, LABST[l.status]) : '') + zchip;
+  }
   let delta = '';
   if (prev) {
     const d = l.value_num - prev.value_num, pct = prev.value_num ? Math.abs(d / prev.value_num) * 100 : null;
@@ -390,7 +402,7 @@ function summaryCard(pts, gl) {
       : `${arrow} ${d > 0 ? '+' : '−'}${fnum(Math.abs(Number(d.toFixed(2))))}${pct != null ? ` (${pct.toFixed(1).replace('.', ',')} %)` : ''} frente a ${fnum(prev.value_num)} del ${fd(prev.collected_on)}`;
   }
   return `<div class="sumcard">
-    <div class="sc-main"><b>${vnum(l)}</b><small>${esc(l.unit)}</small>${l.status ? pill(l.status) : ''}${z ? `<span class="zchip ${gl.zones.indexOf(z) === 0 ? 'z0' : gl.zones.indexOf(z) === gl.zones.length - 1 ? 'z2' : 'z1'}" title="Meta según guía clínica">Meta: ${esc(z.name.toLowerCase())}</span>` : ''}</div>
+    <div class="sc-main"><b>${vnum(l)}</b><small>${esc(l.unit)}</small>${chips}</div>
     <div class="sc-sub">${fd(l.collected_on)}${l.lab ? ' · ' + esc(l.lab) : ''}${l.row_id ? ` · <button class="link" data-orig="${l.document_id}:${l.row_id}">ver en el original</button>` : ''}</div>
     ${delta ? `<div class="sc-delta">${delta}</div>` : ''}
   </div>`;
@@ -433,6 +445,18 @@ function askAbout(pts, gl) {
   return `Sobre mi ${name(l.analyte_key).toLowerCase()}: mi último resultado es ${vnum(l)} ${l.unit} (${fd(l.collected_on)}${l.lab ? ', ' + l.lab : ''})${rango}${meta}. ¿Cómo ha evolucionado en mis estudios, qué puede explicarlo y qué cuidados o estudios conviene considerar?`;
 }
 
+// Aviso discreto de métodos distintos: una línea plegada; el detalle (qué método y cuántos resultados) solo si lo pides.
+function methodNote(pts) {
+  const by = new Map();
+  pts.filter(o => o.method && !o.entered_manually).forEach(o => {
+    const k = normMethod(o.method), e = by.get(k) || { label: o.method, n: 0, labs: new Set() };
+    e.n++; if (o.lab) e.labs.add(labShort(o.lab)); by.set(k, e);
+  });
+  if (by.size < 2) return '';
+  return `<details class="mnote"><summary><span aria-hidden="true">ⓘ</span> Se midió con ${by.size} métodos distintos: compara la tendencia con cautela</summary>
+    <ul>${[...by.values()].map(e => `<li><b>${esc(e.label)}</b>: ${e.n} ${e.n === 1 ? 'resultado' : 'resultados'}${e.labs.size ? ' · ' + [...e.labs].map(esc).join(', ') : ''}</li>`).join('')}</ul></details>`;
+}
+
 // Meta de una guía clínica (distinta del rango del laboratorio): solo orienta, no cambia el estado del resultado.
 function guideBox(g, l) {
   if (!g) return '';
@@ -464,17 +488,16 @@ function renderSummaryDetail(series) {
   const pts = series[S.sel].filter(o => o.value_num != null), l = pts[pts.length - 1];
   const gl = S.guidelines?.[S.sel] || null;
   const shapes = labShapes(pts), unlabeled = pts.some(o => !o.lab);
-  const methods = [...new Map(pts.filter(o => o.method).map(o => [normMethod(o.method), o.method])).values()];
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>${esc(l.unit)} · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
       <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
     ${summaryCard(pts, gl)}
-    ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}). Compara la tendencia con cautela.</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
+    ${pts.some(o => o.row_id) ? `<p class="charthint" ${S.view === 'g' ? '' : 'hidden'}>↗ Haz clic en un punto para abrir el estudio original. En pantalla táctil, tócalo y pulsa «Ver estudio original».</p>` : ''}
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Laboratorio</th><th>Método</th><th>Original</th></tr></thead><tbody>
       ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}${refNote(o)}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td><td>${o.row_id ? `<button class="mini" data-orig="${o.document_id}:${o.row_id}">Ver</button>` : '—'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...shapes].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}${shapes.size && unlabeled ? `<span>${shapeIcon('circle')}Laboratorio no identificado</span>` : ''}${pts.some(hasRange) ? '<span><i class="lg-band"></i>Rango de referencia de cada laboratorio (franja verde)</span>' : ''}${gl ? `<span><i class="lg-goal"></i>Meta de guía: menos de ${fnum(gl.goal_high)}</span>` : ''}</div>${pts.some(o => o.ref_note) ? '<p class="tip">Donde el estudio no traía rango, la franja marcada «General» es un rango provisional por sexo y edad, no del laboratorio.</p>' : ''}`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...shapes].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}${shapes.size && unlabeled ? `<span>${shapeIcon('circle')}Laboratorio no identificado</span>` : ''}${pts.some(hasRange) ? '<span><i class="lg-band"></i>Rango de referencia de cada laboratorio (franja verde)</span>' : ''}${gl ? `<span><i class="lg-goal"></i>Meta de guía: menos de ${fnum(gl.goal_high)}</span>` : ''}</div>${pts.some(o => o.ref_note) ? '<p class="tip">Donde el estudio no traía rango, la franja marcada «General» es un rango provisional por sexo y edad, no del laboratorio.</p>' : ''}${methodNote(pts)}`;
   box.insertAdjacentHTML('beforeend', guideBox(gl, l) + aboutBox(S.sel) + '<div class="askrow"><button class="mini" id="askabout">Preguntar al asistente sobre este resultado</button><span class="tip">Escribe la pregunta por ti; tú decides si la envías.</span></div>');
   const byRow = new Map(pts.filter(o => o.row_id).map(o => [`${o.document_id}:${o.row_id}`, o]));
   box.querySelectorAll('[data-orig]').forEach(b => b.onclick = () => openOriginal(byRow.get(b.dataset.orig)));
@@ -490,7 +513,6 @@ function renderSummaryDetail(series) {
 function renderQualDetail(series) {
   const box = document.getElementById('detail');
   const pts = series[S.sel], l = pts[pts.length - 1];
-  const methods = [...new Map(pts.filter(o => o.method).map(o => [normMethod(o.method), o.method])).values()];
   const kinds = new Set(pts.map(o => qkey(qlabel(o)))), outs = pts.filter(o => OUT(o.status));
   const summary = pts.length === 1 ? `Un solo estudio: «${qlabel(l)}»${OUT(l.status) ? ', fuera de lo esperado' : ''}.`
     : kinds.size === 1 ? `Siempre «${qlabel(l)}» en los ${pts.length} estudios${outs.length ? ', fuera de lo esperado' : ', dentro de lo esperado'}.`
@@ -500,12 +522,12 @@ function renderQualDetail(series) {
       <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
     ${aboutBox(S.sel)}
     <p class="lead" style="font-size:16px;margin:0">${esc(summary)}</p>
-    ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}).</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
+    ${pts.some(o => o.row_id) ? `<p class="charthint" ${S.view === 'g' ? '' : 'hidden'}>↗ Haz clic en un punto para abrir el estudio original. En pantalla táctil, tócalo y pulsa «Ver estudio original».</p>` : ''}
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Lo esperado</th><th>Estudio</th><th>Laboratorio</th><th>Método</th></tr></thead><tbody>
       ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${esc(qlabel(o))}</b>${o.unit ? ' ' + esc(o.unit) : ''}</td><td>${pill(o.status)}</td><td>${esc(o.ref_printed || '—')}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${esc(o.method || '—')}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span><span><i class="lg-band"></i>Lo esperado según el informe${l.ref_printed ? ': ' + esc(l.ref_printed) : ''}</span></div>`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span><span><i class="lg-band"></i>Lo esperado según el informe${l.ref_printed ? ': ' + esc(l.ref_printed) : ''}</span></div>${methodNote(pts)}`;
   box.hidden = false;
   document.getElementById('dclose').onclick = closeDetail;
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
@@ -552,16 +574,20 @@ function drawQualChart(pts) {
   s += `<polyline points="${P.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   P.forEach((q, i) => s += `<circle cx="${q[0]}" cy="${q[1]}" r="${i === P.length - 1 ? 6 : 5}" fill="${OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)'}" stroke="var(--surface)" stroke-width="2"/>`);
   s += `<line id="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>`;
+  s += `<circle id="hring" r="9" fill="none" stroke="var(--accent)" stroke-width="2.5" style="display:none;pointer-events:none"/>`;
   s += `<rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip-box" id="tip" hidden></div>`;
   box.innerHTML = s;
-  const svg = box.querySelector('svg'), tip = document.getElementById('tip'), xh = document.getElementById('xh');
+  const svg = box.querySelector('svg'), tip = document.getElementById('tip'), xh = document.getElementById('xh'), ring = document.getElementById('hring');
   const show = cx => {
     const r = svg.getBoundingClientRect(), x = (cx - r.left) * (W / r.width);
     let bi = 0, bd = 1e9; P.forEach((q, i) => { const d = Math.abs(q[0] - x); if (d < bd) { bd = d; bi = i; } });
     const q = P[bi], o = pts[bi], sc = r.width / W;
     xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
+    ring.setAttribute('cx', q[0]); ring.setAttribute('cy', q[1]); ring.style.display = o.row_id ? '' : 'none';
     tip.hidden = false;
-    tip.innerHTML = tipHtml(o, null, esc(qlabel(o)), o.unit);
+    tip.innerHTML = tipHtml(o, null, esc(qlabel(o)), o.unit, ptype !== 'mouse');
+    tip.style.pointerEvents = ptype !== 'mouse' && o.row_id ? 'auto' : 'none';
+    const ob = tip.querySelector('[data-open]'); if (ob) ob.onclick = () => openOriginal(o);
     const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
     tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
   };
@@ -569,7 +595,7 @@ function drawQualChart(pts) {
   hit.addEventListener('pointermove', e => show(e.clientX));
   let ptype = 'mouse';
   hit.addEventListener('pointerdown', e => { ptype = e.pointerType; show(e.clientX); });
-  hit.addEventListener('pointerleave', () => { tip.hidden = true; xh.style.display = 'none'; });
+  hit.addEventListener('pointerleave', () => { if (ptype !== 'mouse') return; tip.hidden = true; xh.style.display = 'none'; ring.style.display = 'none'; });
   hit.style.cursor = 'pointer';
   hit.addEventListener('click', e => {  // con ratón abre el original; en pantalla táctil basta el globo y el botón de la tabla
     if (ptype !== 'mouse') return;
@@ -659,16 +685,20 @@ function drawChart(pts, gl) {
   const lp = P[P.length - 1];
   s += `<text x="${lp[0] + 10}" y="${lp[1] + 4}" fill="var(--ink)" style="font:600 13px var(--font)">${fnum(l.value_num)}</text>`;
   s += `<line id="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>`;
+  s += `<circle id="hring" r="9" fill="none" stroke="var(--accent)" stroke-width="2.5" style="display:none;pointer-events:none"/>`;
   s += `<rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip-box" id="tip" hidden></div>`;
   box.innerHTML = s;
-  const svg = box.querySelector('svg'), tip = document.getElementById('tip'), xh = document.getElementById('xh');
+  const svg = box.querySelector('svg'), tip = document.getElementById('tip'), xh = document.getElementById('xh'), ring = document.getElementById('hring');
   const show = cx => {
     const r = svg.getBoundingClientRect(), x = (cx - r.left) * (W / r.width);
     let bi = 0, bd = 1e9; P.forEach((q, i) => { const d = Math.abs(q[0] - x); if (d < bd) { bd = d; bi = i; } });
     const q = P[bi], o = pts[bi], sc = r.width / W;
     xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
+    ring.setAttribute('cx', q[0]); ring.setAttribute('cy', q[1]); ring.style.display = o.row_id ? '' : 'none';
     tip.hidden = false;
-    tip.innerHTML = tipHtml(o, gl, vnum(o), o.unit);
+    tip.innerHTML = tipHtml(o, gl, vnum(o), o.unit, ptype !== 'mouse');
+    tip.style.pointerEvents = ptype !== 'mouse' && o.row_id ? 'auto' : 'none';
+    const ob = tip.querySelector('[data-open]'); if (ob) ob.onclick = () => openOriginal(o);
     const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
     tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
   };
@@ -676,7 +706,7 @@ function drawChart(pts, gl) {
   hit.addEventListener('pointermove', e => show(e.clientX));
   let ptype = 'mouse';
   hit.addEventListener('pointerdown', e => { ptype = e.pointerType; show(e.clientX); });
-  hit.addEventListener('pointerleave', () => { tip.hidden = true; xh.style.display = 'none'; });
+  hit.addEventListener('pointerleave', () => { if (ptype !== 'mouse') return; tip.hidden = true; xh.style.display = 'none'; ring.style.display = 'none'; });
   hit.style.cursor = 'pointer';
   hit.addEventListener('click', e => {  // con ratón abre el original; en pantalla táctil basta el globo y el botón de la tabla
     if (ptype !== 'mouse') return;
