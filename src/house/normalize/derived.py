@@ -22,7 +22,11 @@ def _r(x: float, digits: int = 2) -> float:
 
 
 def _ckd_epi_2021(creatinine_mg_dl: float, age: int, sex: str) -> float:
-    """CKD-EPI 2021 sin raza (Inker et al., N Engl J Med 2021): mL/min/1.73 m²."""
+    """CKD-EPI 2021 sin raza (Inker et al., N Engl J Med 2021): mL/min/1.73 m².
+
+    Constantes verificadas contra la National Kidney Foundation:
+    https://www.kidney.org/professionals/ckd-epi-creatinine-equation-2021 (creatinina estandarizada IDMS, mg/dL).
+    """
     female = sex == "F"
     kappa, alpha = (0.7, -0.241) if female else (0.9, -0.302)
     ratio = creatinine_mg_dl / kappa
