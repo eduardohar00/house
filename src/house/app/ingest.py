@@ -1335,7 +1335,7 @@ def repair_references(db: sqlite3.Connection) -> int:
             )
             changed += 1
     for r in db.execute(
-        "SELECT id, analyte_key, value_text, ref_printed, status FROM observation "
+        "SELECT id, analyte_key, value_text, ref_printed, status, ref_low, ref_high FROM observation "
         "WHERE value_num IS NULL AND value_text IS NOT NULL"
     ).fetchall():
         status = ranges.classify_text(
@@ -1343,6 +1343,17 @@ def repair_references(db: sqlite3.Connection) -> int:
         )
         if status != r["status"]:
             db.execute("UPDATE observation SET status = ? WHERE id = ?", (status, r["id"]))
+            changed += 1
+        # El rango numérico de un resultado de texto («Ausentes ó 1 - 2») también se usa al comparar con otros
+        # estudios: se mantiene al día con lo impreso.
+        ref = ranges.parse_ref_full(r["ref_printed"])
+        if (ref.low is not None or ref.high is not None) and (ref.low, ref.high) != (
+            r["ref_low"],
+            r["ref_high"],
+        ):
+            db.execute(
+                "UPDATE observation SET ref_low = ?, ref_high = ? WHERE id = ?", (ref.low, ref.high, r["id"])
+            )
             changed += 1
     return changed
 

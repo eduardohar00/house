@@ -138,3 +138,18 @@ def test_tiered_reference_uses_the_good_tier_not_the_first_interval():
     r = ranges.parse_ref_full("Recomendable < 4; Riesgo Moderado 4 - 7; Riesgo Alto > 7")
     assert (r.low, r.high, r.high_strict) == (None, 4.0, True)
     assert ranges.parse_ref_full("70 - 99").high == 99.0  # sin niveles: igual que antes
+
+
+def test_absent_counts_are_in_range_and_per_field_units_keep_the_reference():
+    from house.extract import convert_ref
+    from house.normalize import ranges
+
+    r = ranges.parse_ref_full("Ausentes ó 1 - 2 /campo")
+    assert (r.low, r.high) == (0.0, 2.0)  # ausente (0) es lo esperado, no «bajo»
+    assert ranges.classify_ref(0.0, r) == "ok"
+    z = ranges.parse_ref_full("0")
+    assert (z.low, z.high) == (0.0, 0.0) and ranges.classify_ref(1.0, z) == "high"
+    # un conteo «0 - 5 cel/HPF» no pierde su rango por la unidad
+    kept = convert_ref("urine_wbc_micro", ranges.parse_ref_full("0 - 5"), "cel/HPF", "")
+    assert (kept.low, kept.high) == (0.0, 5.0)
+    assert convert_ref("urine_casts_hyaline", ranges.parse_ref_full("0"), "cél/HPF", "").high == 0.0

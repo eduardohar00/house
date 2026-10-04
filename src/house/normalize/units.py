@@ -101,15 +101,26 @@ _SAME_VALUE = {
 }
 
 
+# Conteos por campo del microscopio («cel/HPF», «/campo»): los marcadores de sedimento no tienen otra unidad.
+_PER_FIELD = {"cel/hpf", "/hpf", "/campo", "cel/campo", "x campo", "xcampo"}
+
+
 def same_unit(key: str, unit_text: str | None, canonical_unit: str) -> bool:
     u = norm_unit(unit_text)
-    return u == norm_unit(canonical_unit) or _CANON.get(u) == canonical_unit or (key, u) in _SAME_VALUE
+    return (
+        u == norm_unit(canonical_unit)
+        or _CANON.get(u) == canonical_unit
+        or (key, u) in _SAME_VALUE
+        or (canonical_unit == "" and u in _PER_FIELD)
+    )
 
 
 def to_canonical(key: str, value: float, unit_text: str | None, canonical_unit: str) -> tuple[float, str]:
     """Devuelve (valor, unidad canónica). Lanza UnknownUnit si no sabe convertir."""
     u = norm_unit(unit_text)
     if (key, u) in _SAME_VALUE or (u and u == norm_unit(canonical_unit)):
+        return value, canonical_unit
+    if canonical_unit == "" and u in _PER_FIELD:
         return value, canonical_unit
     if u == "" and canonical_unit == "":
         return value, canonical_unit

@@ -47,7 +47,11 @@ def parse_ref_full(text: str | None) -> Ref:
         return Ref()
     t = _good_tier(text).strip().lower().replace("–", "-").replace("—", "-")
     if m := re.search(_NUM + r"\s*(?:-|a|hasta)\s*" + _NUM, t):
+        if "ausent" in t:  # «Ausentes ó 1 - 2»: ausente (0) también es lo esperado
+            return Ref(0.0, _f(m[2]))
         return Ref(_f(m[1]), _f(m[2]))
+    if t == "0":  # un conteo que debe ser cero (cilindros, cristales…)
+        return Ref(0.0, 0.0)
     if m := re.search(r"(?:≤|<\s*=|menor\s+o\s+igual\s+(?:a|que)|hasta)\s*" + _NUM, t):
         return Ref(high=_f(m[1]))
     if m := re.search(r"(?:<|menor(?:\s+a|\s+que)?)\s*" + _NUM, t):
