@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from ..config import Config, ProviderConfig
-from ..normalize import explanations, terminology
+from ..normalize import explanations, guidelines, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
@@ -376,7 +376,11 @@ def create_app(
             "SELECT o.analyte_key, o.printed_name, o.value_num, o.qualifier, o.value_text, o.unit, "
             "o.ref_low, o.ref_high, o.ref_printed, o.status, o.method, o.collected_on, o.document_id, "
             "o.entered_manually, "
-            "d.title AS document_title "
+            "d.title AS document_title, d.source_name AS lab, "
+            # renglón del original que respalda este resultado (para abrirlo resaltado)
+            "(SELECT MIN(r.id) FROM extraction_row r WHERE r.document_id = o.document_id "
+            "AND r.analyte_key = o.analyte_key AND r.value_printed = o.value_printed "
+            "AND COALESCE(r.unit_printed, '') = COALESCE(o.unit_printed, '')) AS row_id "
             "FROM observation o JOIN document d ON d.id = o.document_id WHERE o.person_id = ? "
             "ORDER BY o.collected_on, o.analyte_key",
             (person_id,),
@@ -467,7 +471,11 @@ def create_app(
         person = subject(person_id, actor, "ver_resultados")
         profile = profile_of(person)
         obs = summary_mod.apply_references(load_observations(person_id), profile)
-        return {"observations": obs, "summary": summary_mod.summarize(obs, profile=profile)}
+        return {
+            "observations": obs,
+            "summary": summary_mod.summarize(obs, profile=profile),
+            "guidelines": guidelines.for_person(profile),
+        }
 
     def document(doc_id: int, actor: sqlite3.Row, action: str) -> sqlite3.Row:
         doc = db.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()

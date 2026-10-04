@@ -19,7 +19,7 @@ from datetime import date, datetime
 
 from ..extract import Outcome, Row, convert_ref, extract_document
 from ..imaging import ImagingReport, looks_like_lab, parse_reports
-from ..normalize import critical, ranges, terminology, units
+from ..normalize import critical, labs, ranges, terminology, units
 from ..privacy import Anonymizer
 from ..providers import BudgetExceeded, ProviderError, Router
 from . import bodyscan, clinical, health, ocr, prescriptions, tables
@@ -408,9 +408,9 @@ def ingest_pdf(
     stored = vault.put(data)
     title = re.sub(r"\.pdf$", "", filename, flags=re.I).strip() or "Estudio"
     cur = db.execute(
-        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256, filename) "
-        "VALUES(?, 'laboratorio', ?, ?, ?, ?, ?)",
-        (person["id"], title, outcome.collected_on, stored, sha, filename),
+        "INSERT INTO document(person_id, doc_type, title, collected_on, file_path, file_sha256, filename, "
+        "source_name) VALUES(?, 'laboratorio', ?, ?, ?, ?, ?, ?)",
+        (person["id"], title, outcome.collected_on, stored, sha, filename, labs.detect_lab(text)),
     )
     _store_extraction(db, cur.lastrowid, person["id"], outcome)
     return Ingested(cur.lastrowid, len(outcome.rows), used_fallback=used_fallback)
@@ -564,12 +564,14 @@ def reread(
         db.execute("UPDATE document SET collected_on = ? WHERE id = ?", (first_date, doc_id))
         _store_imaging_drafts(db, doc_id, reports, first_date)
         return Ingested(doc_id, len(reports), "imagen")
-    outcome, used_fallback = read_lab_text(
-        pdf_text(vault.get(doc["file_path"])), router, fallback, person_names(db, person), today
-    )
+    text = pdf_text(vault.get(doc["file_path"]))
+    outcome, used_fallback = read_lab_text(text, router, fallback, person_names(db, person), today)
     db.execute("DELETE FROM extraction_row WHERE document_id = ?", (doc_id,))
     db.execute("DELETE FROM extraction WHERE document_id = ?", (doc_id,))
-    db.execute("UPDATE document SET collected_on = ? WHERE id = ?", (outcome.collected_on, doc_id))
+    db.execute(
+        "UPDATE document SET collected_on = ?, source_name = COALESCE(?, source_name) WHERE id = ?",
+        (outcome.collected_on, labs.detect_lab(text), doc_id),
+    )
     _store_extraction(db, doc_id, person["id"], outcome)
     return Ingested(doc_id, len(outcome.rows), used_fallback=used_fallback)
 

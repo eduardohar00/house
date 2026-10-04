@@ -70,12 +70,22 @@ header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
 .tabs button[aria-pressed="true"]{background:var(--accent-soft);color:var(--ink)}
 .chartbox{position:relative;width:100%}
 .chartbox svg{display:block;width:100%;height:auto;overflow:visible}
-.tip-box{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:10px;padding:8px 10px;font-size:13px;line-height:1.4;min-width:170px;max-width:260px;z-index:2;box-shadow:0 6px 20px rgba(0,0,0,.2)}
-.tip-box b{font-size:16px}
-.tip-box span{display:block;opacity:.85}
+.tip-box{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.4;min-width:190px;max-width:270px;z-index:2;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.tip-box .th{display:flex;justify-content:space-between;gap:12px;font-size:12px;opacity:.8}
+.tip-box .tl{font-weight:600}
+.tip-box .tv{margin-top:2px}
+.tip-box .tv b{font-size:20px}
+.tip-box .tv small{margin-left:4px;font-size:12px;opacity:.75}
+.tip-box .ts{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
+.tip-box .ts i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.tip-box .tk{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:8px 0 0;padding-top:8px;border-top:1px solid color-mix(in srgb,var(--bg) 25%,transparent);font-size:12px}
+.tip-box dt{opacity:.7}
+.tip-box dd{margin:0;text-align:right}
+.tip-box .tf{margin-top:6px;font-size:11px;opacity:.65}
 .legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted)}
 .legend i{display:inline-block;vertical-align:-2px;margin-right:6px}
 .lg-line{width:18px;height:0;border-top:2px solid var(--accent)}
+.lg-goal{width:18px;height:0;border-top:2px dashed var(--warn)}
 .lg-band{width:18px;height:10px;background:var(--band);border:1px solid var(--band-line);border-radius:3px}
 .col{display:flex;flex-direction:column;gap:20px}
 .nav{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto}
@@ -419,3 +429,40 @@ label.wide{grid-column:1/-1}
 .ntv{margin-top:4px}
 .ntv>summary{cursor:pointer;color:var(--muted);font-size:13px}
 .ntb{white-space:pre-line;margin-top:6px;padding:10px 12px;border-left:3px solid var(--line);background:var(--bg);border-radius:0 8px 8px 0;font-size:14.5px;line-height:1.55;color:var(--ink)}
+
+/* Meta según guía clínica */
+.goal{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:16px;background:var(--surface)}
+.goal-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.goal h3{margin:0;font-size:15px}
+.zchip{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px}
+.goal-lead{margin:8px 0 6px;font-size:15px}
+.zbar{position:relative;padding-top:24px}
+.zrow{display:flex;gap:3px}
+.zseg{flex:1;border-radius:6px;padding:7px 9px;font-size:12px;line-height:1.35}
+.zseg b{display:block;font-size:12px}
+.z0{background:var(--good-bg);color:var(--good)}
+.z1{background:var(--warn-bg);color:var(--warn)}
+.z2{background:var(--crit-bg);color:var(--crit)}
+.zmark{position:absolute;top:0;transform:translateX(-50%);text-align:center;font-size:12px;font-weight:700;color:var(--ink)}
+.zmark::after{content:'';display:block;margin:2px auto 0;border:5px solid transparent;border-top-color:var(--ink);border-bottom:0}
+.gnote{margin-top:12px;font-size:14px}
+.gnote summary{cursor:pointer;color:var(--muted)}
+.gnote p{margin:6px 0 0}
+.gfoot{margin:12px 0 0;font-size:12px;color:var(--muted)}
+.gfoot a{color:var(--accent)}
+
+/* Resumen del resultado */
+.sumcard{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--surface)}
+.sc-main{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.sc-main b{font-size:30px;line-height:1.1}
+.sc-main small{font-size:14px;color:var(--muted)}
+.sc-sub{margin-top:2px;font-size:13px;color:var(--muted)}
+.sc-delta{margin-top:6px;font-size:14px}
+.askrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+/* Original abierto desde un resultado */
+.orig{position:fixed;inset:0;z-index:70;background:var(--bg);display:flex;flex-direction:column}
+.orig-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line)}
+.orig-h small{display:block;color:var(--muted);font-size:12px}
+.orig-b{display:flex;gap:6px}
+.orig-p{position:static;flex:1;align-content:start;max-height:none;border:0;border-radius:0;max-width:900px;width:100%;margin:0 auto}
+.orig-p .pdf{width:100%;height:100%;border:0}

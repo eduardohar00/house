@@ -187,7 +187,8 @@ const refNote = o => o.ref_note ? `<small style="display:block;color:var(--muted
 
 async function renderSummary() {
   view().innerHTML = '<p class="tip"><span class="spin"></span>Cargando…</p>';
-  const { observations: obs, summary: sm } = await api(`/api/people/${S.subject}/overview`);
+  const { observations: obs, summary: sm, guidelines: gls } = await api(`/api/people/${S.subject}/overview`);
+  S.guidelines = gls || {};
   if (!obs.length) {
     view().innerHTML = `<section class="card empty"><h2>Todavía no hay resultados</h2>
       <p>Sube un estudio de laboratorio en PDF. Lo revisarás junto al original y solo lo que confirmes aparecerá aquí.</p>
@@ -346,6 +347,113 @@ const qlabel = o => (o.value_text != null && o.value_text !== '') ? o.value_text
 const qkey = t => normMethod(String(t)).split(' ').map(w => w.length > 3 ? w.replace(/s$/, '').replace(/[ao]$/, '') : w).join(' ');
 
 // Qué mide el análisis, en palabras simples (información general; no interpreta el resultado de la persona).
+// Laboratorio de cada resultado: nombre corto y una forma por laboratorio (el color queda para el estado).
+const labShort = lab => lab ? lab.split(' ')[0] : null;
+const SHAPES = ['circle', 'square', 'diamond', 'triangle'];
+const labShapes = pts => { const m = new Map(); pts.forEach(o => { if (o.lab && !m.has(o.lab)) m.set(o.lab, SHAPES[m.size % SHAPES.length]); }); return m; };
+function markerSvg(shape, x, y, r, fill, stroke) {
+  const a = `fill="${fill}" stroke="${stroke}" stroke-width="2"`;
+  if (shape === 'square') return `<rect class="pt" x="${x - r}" y="${y - r}" width="${2 * r}" height="${2 * r}" rx="1.5" ${a}/>`;
+  if (shape === 'diamond') return `<polygon class="pt" points="${x},${y - r * 1.35} ${x + r * 1.35},${y} ${x},${y + r * 1.35} ${x - r * 1.35},${y}" ${a}/>`;
+  if (shape === 'triangle') return `<polygon class="pt" points="${x},${y - r * 1.35} ${x + r * 1.3},${y + r} ${x - r * 1.3},${y + r}" ${a}/>`;
+  return `<circle class="pt" cx="${x}" cy="${y}" r="${r}" ${a}/>`;
+}
+const shapeIcon = shape => `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">${markerSvg(shape, 7, 7, 4, 'var(--muted)', 'var(--surface)')}</svg>`;
+const hasRange = o => o.ref_low != null || o.ref_high != null;
+const zoneAt = (g, v) => g.zones.find(z => (z.low == null || v >= z.low) && (z.high == null || v < z.high));
+
+// Rango sin la unidad (la unidad ya va junto al valor).
+const rangeNoUnit = o => { const t = bandText(o); return o.unit && t.endsWith(' ' + o.unit) ? t.slice(0, -o.unit.length - 1) : t; };
+// Globo de la gráfica: fecha y laboratorio, valor con su estado y, aparte, los datos de apoyo en filas.
+function tipHtml(o, gl, valueHtml, unit) {
+  const z = gl && o.value_num != null ? zoneAt(gl, o.value_num) : null, rows = [];
+  if (hasRange(o)) rows.push([o.ref_note ? 'Rango general' : o.lab ? `Rango ${labShort(o.lab)}` : 'Rango', rangeNoUnit(o)]);
+  if (z) rows.push(['Meta de guía', z.name]);
+  if (o.entered_manually) rows.push(['Origen', 'Agregado a mano']); else if (o.method) rows.push(['Método', o.method]);
+  const dot = o.status ? (o.status === 'ok' ? 'var(--good)' : 'var(--warn)') : 'var(--muted)';
+  return `<div class="th"><span>${fd(o.collected_on)}</span>${o.lab ? `<span class="tl">${esc(o.lab)}</span>` : ''}</div>
+    <div class="tv"><b>${valueHtml}</b>${unit ? `<small>${esc(unit)}</small>` : ''}</div>
+    <div class="ts"><i style="background:${dot}"></i>${o.status ? STL[o.status] : 'Sin referencia'}</div>
+    ${rows.length ? `<dl class="tk">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+    <div class="tf">${esc(o.document_title)}${o.row_id ? ' · clic para ver el original' : ''}</div>`;
+}
+
+// Resumen del resultado más reciente: valor, estado, laboratorio y cambio frente al anterior.
+function summaryCard(pts, gl) {
+  const l = pts[pts.length - 1], prev = pts.length > 1 ? pts[pts.length - 2] : null;
+  const z = gl ? zoneAt(gl, l.value_num) : null;
+  let delta = '';
+  if (prev) {
+    const d = l.value_num - prev.value_num, pct = prev.value_num ? Math.abs(d / prev.value_num) * 100 : null;
+    const arrow = d > 0 ? '↑' : d < 0 ? '↓' : '→';
+    delta = d === 0 ? `Igual que el anterior (${fnum(prev.value_num)}, ${fd(prev.collected_on)})`
+      : `${arrow} ${d > 0 ? '+' : '−'}${fnum(Math.abs(Number(d.toFixed(2))))}${pct != null ? ` (${pct.toFixed(1).replace('.', ',')} %)` : ''} frente a ${fnum(prev.value_num)} del ${fd(prev.collected_on)}`;
+  }
+  return `<div class="sumcard">
+    <div class="sc-main"><b>${vnum(l)}</b><small>${esc(l.unit)}</small>${l.status ? pill(l.status) : ''}${z ? `<span class="zchip ${gl.zones.indexOf(z) === 0 ? 'z0' : gl.zones.indexOf(z) === gl.zones.length - 1 ? 'z2' : 'z1'}" title="Meta según guía clínica">Meta: ${esc(z.name.toLowerCase())}</span>` : ''}</div>
+    <div class="sc-sub">${fd(l.collected_on)}${l.lab ? ' · ' + esc(l.lab) : ''}${l.row_id ? ` · <button class="link" data-orig="${l.document_id}:${l.row_id}">ver en el original</button>` : ''}</div>
+    ${delta ? `<div class="sc-delta">${delta}</div>` : ''}
+  </div>`;
+}
+
+// Original del estudio abierto en el renglón que respalda un resultado.
+async function openOriginal(o) {
+  const layout = await api(`/api/documents/${o.document_id}/layout`).catch(() => ({ pages: [], boxes: {} }));
+  document.getElementById('orig')?.remove();
+  const el = document.createElement('div');
+  el.id = 'orig'; el.className = 'orig'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Estudio original');
+  const box = layout.boxes[o.row_id];
+  el.innerHTML = `<div class="orig-h"><div><b>${esc(name(o.analyte_key))}: ${vnum(o)} ${esc(o.unit)}</b>
+      <small>${fd(o.collected_on)}${o.lab ? ' · ' + esc(o.lab) : ''} · ${esc(o.document_title)}</small></div>
+      <div class="orig-b"><a class="mini" href="/api/documents/${o.document_id}/file" target="_blank" rel="noopener" style="text-decoration:none">Abrir PDF</a><button class="mini" id="origx">Cerrar ✕</button></div></div>
+    ${layout.pages.length && !box ? '<p class="tip" style="margin:0;padding:8px 14px">No pude ubicar el renglón exacto en la página; búscalo en el documento.</p>' : ''}
+    <div class="pages orig-p" id="origp">${layout.pages.length ? layout.pages.map(pg => `<div class="pg" data-n="${pg.n}"><img src="/api/documents/${o.document_id}/pages/${pg.n}" alt="Página ${pg.n}" style="aspect-ratio:${pg.width}/${pg.height}"><div class="hl" hidden></div></div>`).join('')
+      : `<iframe class="pdf" src="/api/documents/${o.document_id}/file" title="Estudio original"></iframe>`}</div>`;
+  document.body.appendChild(el);
+  const close = () => { el.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  document.getElementById('origx').onclick = close;
+  document.getElementById('origx').focus();
+  if (box) {
+    const pg = layout.pages[box.page - 1], page = el.querySelector(`.pg[data-n="${box.page}"]`), hl = page.querySelector('.hl'), cont = document.getElementById('origp');
+    const padX = 3, padY = 2;
+    Object.assign(hl.style, { left: `${(box.x0 - padX) / pg.width * 100}%`, top: `${(box.top - padY) / pg.height * 100}%`,
+      width: `${(box.x1 - box.x0 + 2 * padX) / pg.width * 100}%`, height: `${(box.bottom - box.top + 2 * padY) / pg.height * 100}%` });
+    hl.hidden = false;
+    cont.scrollTo({ top: Math.max(0, page.offsetTop + (box.top / pg.height) * page.clientHeight - cont.clientHeight / 2) });
+  }
+}
+
+// Pregunta ya escrita para el asistente (no se envía sola: la persona la revisa y decide).
+function askAbout(pts, gl) {
+  const l = pts[pts.length - 1];
+  const rango = hasRange(l) ? `; el rango del laboratorio es ${rangeNoUnit(l)} ${l.unit}` : '';
+  const meta = gl ? ` y la meta de la guía clínica es menos de ${fnum(gl.goal_high)} ${l.unit}` : '';
+  return `Sobre mi ${name(l.analyte_key).toLowerCase()}: mi último resultado es ${vnum(l)} ${l.unit} (${fd(l.collected_on)}${l.lab ? ', ' + l.lab : ''})${rango}${meta}. ¿Cómo ha evolucionado en mis estudios, qué puede explicarlo y qué cuidados o estudios conviene considerar?`;
+}
+
+// Meta de una guía clínica (distinta del rango del laboratorio): solo orienta, no cambia el estado del resultado.
+function guideBox(g, l) {
+  if (!g) return '';
+  const zs = g.zones, n = zs.length, v = l.value_num, hit = zoneAt(g, v), hi = zs.indexOf(hit);
+  const cls = i => 'z' + (i === 0 ? 0 : i === n - 1 ? 2 : 1);
+  const zt = z => z.low == null ? `menos de ${fnum(z.high)}` : z.high == null ? `${fnum(z.low)} o más` : `${fnum(z.low)} a ${fnum(z.high - 1)}`;
+  const clamp = x => Math.max(0.04, Math.min(0.96, x));
+  const frac = z => z.low != null && z.high != null ? (v - z.low) / (z.high - z.low)
+    : z.low == null ? (v - z.high * 0.6) / (z.high * 0.4) : (v - z.low) / (z.low * 0.25);
+  const pos = hit ? ((hi + clamp(frac(hit))) / n) * 100 : 50;
+  return `<section class="goal" aria-label="Meta según guía clínica">
+    <div class="goal-h"><h3>Meta según guía clínica</h3>${hit ? `<span class="zchip ${cls(hi)}">${esc(hit.name)}</span>` : ''}</div>
+    <p class="goal-lead">Meta: <b>menos de ${fnum(g.goal_high)} ${esc(l.unit)}</b>. Tu último resultado: <b>${fnum(v)}</b>.</p>
+    <div class="zbar" role="img" aria-label="Zonas de la guía; tu resultado está en ${esc(hit ? hit.name : 'ninguna')}">
+      ${hit ? `<div class="zmark" style="left:${pos}%"><span>${fnum(v)}</span></div>` : ''}
+      <div class="zrow">${zs.map((z, i) => `<div class="zseg ${cls(i)}"><b>${esc(z.name)}</b>${zt(z)}</div>`).join('')}</div>
+    </div>
+    ${g.notes.length ? `<details class="gnote"><summary>Por qué es solo una referencia</summary>${g.notes.map(t => `<p>${esc(t)}</p>`).join('')}</details>` : ''}
+    <p class="gfoot">Fuente: <a href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">${esc(g.source)}</a>. Orientación provisional: confírmala con tu médico. No cambia el estado ni el rango del laboratorio.</p>
+  </section>`;
+}
 const aboutBox = k => S.catalog[k]?.about ? `<div class="about"><b>Qué mide</b><p>${esc(S.catalog[k].about)}</p></div>` : '';
 
 function renderSummaryDetail(series) {
@@ -354,24 +462,28 @@ function renderSummaryDetail(series) {
   const all = series[S.sel];
   if (all[all.length - 1].value_num == null) return renderQualDetail(series);
   const pts = series[S.sel].filter(o => o.value_num != null), l = pts[pts.length - 1];
-  // Rango del estudio más reciente que lo traiga (algunos laboratorios no lo imprimen para todo).
-  const refPt = [...pts].reverse().find(o => o.ref_low != null || o.ref_high != null) || null;
+  const gl = S.guidelines?.[S.sel] || null;
+  const shapes = labShapes(pts), unlabeled = pts.some(o => !o.lab);
   const methods = [...new Map(pts.filter(o => o.method).map(o => [normMethod(o.method), o.method])).values()];
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>${esc(l.unit)} · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
       <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
-    ${aboutBox(S.sel)}
+    ${summaryCard(pts, gl)}
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}). Compara la tendencia con cautela.</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
-    <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
-      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}${refNote(o)}</td><td>${esc(o.document_title)}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td></tr>`).join('')}
+    <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Laboratorio</th><th>Método</th><th>Original</th></tr></thead><tbody>
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}${refNote(o)}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td><td>${o.row_id ? `<button class="mini" data-orig="${o.document_id}:${o.row_id}">Ver</button>` : '—'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${refPt ? `<span><i class="lg-band"></i>${refPt.ref_note ? `${esc(refPt.ref_note)} (provisional)` : `Rango de referencia${refPt === l ? ' del último estudio' : ` (del estudio del ${fd(refPt.collected_on)}; el último no lo trae)`}`}: ${esc(bandText(refPt))}</span>` : ''}</div>`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...shapes].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}${shapes.size && unlabeled ? `<span>${shapeIcon('circle')}Laboratorio no identificado</span>` : ''}${pts.some(hasRange) ? '<span><i class="lg-band"></i>Rango de referencia de cada laboratorio (franja verde)</span>' : ''}${gl ? `<span><i class="lg-goal"></i>Meta de guía: menos de ${fnum(gl.goal_high)}</span>` : ''}</div>${pts.some(o => o.ref_note) ? '<p class="tip">Donde el estudio no traía rango, la franja marcada «General» es un rango provisional por sexo y edad, no del laboratorio.</p>' : ''}`;
+  box.insertAdjacentHTML('beforeend', guideBox(gl, l) + aboutBox(S.sel) + '<div class="askrow"><button class="mini" id="askabout">Preguntar al asistente sobre este resultado</button><span class="tip">Escribe la pregunta por ti; tú decides si la envías.</span></div>');
+  const byRow = new Map(pts.filter(o => o.row_id).map(o => [`${o.document_id}:${o.row_id}`, o]));
+  box.querySelectorAll('[data-orig]').forEach(b => b.onclick = () => openOriginal(byRow.get(b.dataset.orig)));
+  document.getElementById('askabout').onclick = () => { S.askDraft = askAbout(pts, gl); closeDetail(); S.tab = 'ask'; renderShell(); };
   box.hidden = false;
   document.getElementById('dclose').onclick = closeDetail;
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
   document.getElementById('tt').onclick = () => { S.view = 't'; renderSummaryDetail(series); };
-  if (S.view === 'g') drawChart(pts, refPt);
+  if (S.view === 'g') drawChart(pts, gl);
 }
 
 
@@ -390,8 +502,8 @@ function renderQualDetail(series) {
     <p class="lead" style="font-size:16px;margin:0">${esc(summary)}</p>
     ${methods.length > 1 ? `<div class="mixed">Ojo: estos resultados se midieron con métodos distintos (${methods.map(esc).join(', ')}).</div>` : ''}
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
-    <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Lo esperado</th><th>Estudio</th><th>Método</th></tr></thead><tbody>
-      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${esc(qlabel(o))}</b>${o.unit ? ' ' + esc(o.unit) : ''}</td><td>${pill(o.status)}</td><td>${esc(o.ref_printed || '—')}</td><td>${esc(o.document_title)}</td><td>${esc(o.method || '—')}</td></tr>`).join('')}
+    <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Lo esperado</th><th>Estudio</th><th>Laboratorio</th><th>Método</th></tr></thead><tbody>
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${esc(qlabel(o))}</b>${o.unit ? ' ' + esc(o.unit) : ''}</td><td>${pill(o.status)}</td><td>${esc(o.ref_printed || '—')}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${esc(o.method || '—')}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="legend"><span><i class="lg-line"></i>Tus resultados</span><span><i class="lg-band"></i>Lo esperado según el informe${l.ref_printed ? ': ' + esc(l.ref_printed) : ''}</span></div>`;
   box.hidden = false;
@@ -449,14 +561,22 @@ function drawQualChart(pts) {
     const q = P[bi], o = pts[bi], sc = r.width / W;
     xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
     tip.hidden = false;
-    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${esc(qlabel(o))}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.entered_manually ? '<span>Agregado a mano</span>' : o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
+    tip.innerHTML = tipHtml(o, null, esc(qlabel(o)), o.unit);
     const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
     tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
   };
   const hit = document.getElementById('hit');
   hit.addEventListener('pointermove', e => show(e.clientX));
-  hit.addEventListener('pointerdown', e => show(e.clientX));
+  let ptype = 'mouse';
+  hit.addEventListener('pointerdown', e => { ptype = e.pointerType; show(e.clientX); });
   hit.addEventListener('pointerleave', () => { tip.hidden = true; xh.style.display = 'none'; });
+  hit.style.cursor = 'pointer';
+  hit.addEventListener('click', e => {  // con ratón abre el original; en pantalla táctil basta el globo y el botón de la tabla
+    if (ptype !== 'mouse') return;
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * (W / r.width);
+    let bi = 0, bd = 1e9; P.forEach((q, i) => { const d = Math.abs(q[0] - x); if (d < bd) { bd = d; bi = i; } });
+    if (pts[bi].row_id) openOriginal(pts[bi]);
+  });
 }
 
 function niceStep(range, n) { const raw = range / n, m = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / m; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * m; }
@@ -469,17 +589,18 @@ function bandText(o) {
   return `${strictLow ? 'más de' : 'desde'} ${f(o.ref_low)}`;
 }
 
-function drawChart(pts, refPt) {
+function drawChart(pts, gl) {
   const box = document.getElementById('chart');
-  const W = Math.max(box.clientWidth, 280), H = W < 520 ? 250 : 320;
-  const m = { l: W < 520 ? 40 : 48, r: W < 520 ? 52 : 64, t: 14, b: 42 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const W = Math.max(box.clientWidth, 280), H = (W < 520 ? 250 : 320) + 14;
+  const m = { l: W < 520 ? 40 : 48, r: W < 520 ? 52 : 64, t: 14, b: 56 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
   const l = pts[pts.length - 1], vals = pts.map(o => o.value_num);
   // Pocos resultados (lo normal): cada uno en su lugar, con espacio parejo y su fecha debajo; así
   // dos estudios del mismo mes o año no quedan encimados. Muchos: escala de tiempo con años.
   const ordinal = pts.length <= 12;
   let t0 = ts(pts[0].collected_on), t1 = ts(l.collected_on);
   const padT = Math.max((t1 - t0) * 0.04, 60 * 864e5); t0 -= padT; t1 += padT;
-  const lims = refPt ? [refPt.ref_low, refPt.ref_high].filter(v => v != null) : [];
+  const shapes = labShapes(pts);
+  const lims = [...pts.flatMap(o => [o.ref_low, o.ref_high]).filter(v => v != null), ...(gl ? [gl.goal_high] : [])];
   let mn = Math.min(...vals, ...lims), mx = Math.max(...vals, ...lims);
   const pad = (mx - mn) * 0.18 || Math.abs(mx) * 0.2 || 1; mn -= pad; mx += pad;
   const step = niceStep(mx - mn, 4);
@@ -487,9 +608,24 @@ function drawChart(pts, refPt) {
   const Y = v => m.t + (1 - (v - mn) / (mx - mn)) * ih;
   const X = ordinal ? i => m.l + iw * (i + 0.5) / pts.length : i => m.l + (ts(pts[i].collected_on) - t0) / (t1 - t0) * iw;
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de ${esc(name(S.sel))}">`;
-  if (lims.length) {
-    const top = Y(refPt.ref_high ?? mx), bot = Y(refPt.ref_low ?? mn);
-    s += `<rect x="${m.l}" y="${top}" width="${iw}" height="${Math.max(0, bot - top)}" fill="var(--band)" stroke="var(--band-line)" stroke-dasharray="3 3"/>`;
+  // Franja de referencia por resultado: cada uno con el rango que imprimió su propio laboratorio.
+  const rkey = o => hasRange(o) ? [o.lab, o.ref_low, o.ref_high, o.ref_note].join('|') : '';
+  for (let i = 0; i < pts.length;) {
+    let j = i; while (j + 1 < pts.length && rkey(pts[j + 1]) === rkey(pts[i])) j++;
+    const o = pts[i];
+    if (hasRange(o)) {
+      const xL = i === 0 ? m.l : (X(i - 1) + X(i)) / 2, xR = j === pts.length - 1 ? m.l + iw : (X(j) + X(j + 1)) / 2;
+      const top = Y(o.ref_high ?? mx), bot = Y(o.ref_low ?? mn);
+      s += `<rect x="${xL}" y="${top}" width="${xR - xL}" height="${Math.max(0, bot - top)}" fill="var(--band)"/>`;
+      s += `<path d="M${xL} ${top}H${xR}M${xL} ${bot}H${xR}" stroke="var(--band-line)" stroke-dasharray="3 3" fill="none"/>`;
+      if (i > 0 && hasRange(pts[i - 1])) s += `<path d="M${xL} ${top}V${bot}" stroke="var(--band-line)" stroke-dasharray="3 3" fill="none"/>`;
+      // Etiqueta al pie de la franja (lejos de la línea de datos): laboratorio y rango; si no cabe, solo el laboratorio.
+      const range = rangeNoUnit(o);
+      const who = o.ref_note ? 'General' : labShort(o.lab) || 'Rango', full = `${who}: ${range}`, room = xR - xL - 12;
+      const label = full.length * 5.9 <= room ? full : who.length * 5.9 <= room ? who : '';
+      if (label) s += `<text x="${xL + 6}" y="${bot - 6}" fill="var(--muted)" style="font:600 10.5px var(--font)">${esc(label)}</text>`;
+    }
+    i = j + 1;
   }
   for (let v = mn; v <= mx + 1e-9; v += step) s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" opacity=".7"/><text class="ax" x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${Number(v.toFixed(3))}</text>`;
   if (ordinal) {
@@ -499,7 +635,8 @@ function drawChart(pts, refPt) {
       if (i % every && i !== pts.length - 1) return;
       const d = new Date(ts(o.collected_on)), yr = d.getUTCFullYear();
       const dm = d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-      s += `<text class="ax" x="${X(i)}" y="${H - 24}" text-anchor="middle">${dm}</text>`;
+      s += `<text class="ax" x="${X(i)}" y="${H - 38}" text-anchor="middle">${dm}</text>`;
+      if (o.lab) s += `<text class="ax" x="${X(i)}" y="${H - 24}" text-anchor="middle" style="font-size:10.5px">${esc(labShort(o.lab))}</text>`;
       if (yr !== prevYear) s += `<text class="ax" x="${X(i)}" y="${H - 8}" text-anchor="middle" style="font-weight:600">${yr}</text>`;
       prevYear = yr;
     });
@@ -510,9 +647,15 @@ function drawChart(pts, refPt) {
       s += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${m.t + ih}" stroke="var(--line)" opacity=".7"/><text class="ax" x="${x}" y="${H - 16}" text-anchor="middle">${y}</text>`;
     }
   }
+  if (gl) {  // meta de guía: zona por encima de la meta en tono de aviso y línea punteada con su etiqueta
+    const gy = Y(gl.goal_high);
+    s += `<rect x="${m.l}" y="${m.t}" width="${iw}" height="${Math.max(0, gy - m.t)}" fill="var(--warn-bg)" opacity=".55"/>`;
+    s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${gy}" y2="${gy}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 4"/>`;
+    s += `<text x="${m.l + iw - 4}" y="${gy - 5}" text-anchor="end" fill="var(--warn)" style="font:600 11px var(--font)">Meta &lt; ${fnum(gl.goal_high)}</text>`;
+  }
   const P = pts.map((o, i) => [X(i), Y(o.value_num)]);
   s += `<polyline points="${P.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-  P.forEach((q, i) => s += `<circle class="pt" cx="${q[0]}" cy="${q[1]}" r="${i === P.length - 1 ? 5 : 4}" fill="${OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)'}" stroke="var(--surface)" stroke-width="2"/>`);
+  P.forEach((q, i) => s += markerSvg(shapes.get(pts[i].lab) || 'circle', q[0], q[1], i === P.length - 1 ? 5 : 4, OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)', 'var(--surface)'));
   const lp = P[P.length - 1];
   s += `<text x="${lp[0] + 10}" y="${lp[1] + 4}" fill="var(--ink)" style="font:600 13px var(--font)">${fnum(l.value_num)}</text>`;
   s += `<line id="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>`;
@@ -525,14 +668,22 @@ function drawChart(pts, refPt) {
     const q = P[bi], o = pts[bi], sc = r.width / W;
     xh.setAttribute('x1', q[0]); xh.setAttribute('x2', q[0]); xh.style.display = '';
     tip.hidden = false;
-    tip.innerHTML = `<span>${fd(o.collected_on)}</span><b>${vnum(o)} ${esc(o.unit)}</b><span>${o.status ? STL[o.status] : 'Sin referencia'}</span><span>${esc(o.document_title)}</span>${o.entered_manually ? '<span>Agregado a mano</span>' : o.method ? `<span>Método: ${esc(o.method)}</span>` : ''}`;
+    tip.innerHTML = tipHtml(o, gl, vnum(o), o.unit);
     const tw = tip.offsetWidth; let left = q[0] * sc + 14; if (left + tw > r.width) left = q[0] * sc - tw - 14;
     tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, q[1] * sc - 30) + 'px';
   };
   const hit = document.getElementById('hit');
   hit.addEventListener('pointermove', e => show(e.clientX));
-  hit.addEventListener('pointerdown', e => show(e.clientX));
+  let ptype = 'mouse';
+  hit.addEventListener('pointerdown', e => { ptype = e.pointerType; show(e.clientX); });
   hit.addEventListener('pointerleave', () => { tip.hidden = true; xh.style.display = 'none'; });
+  hit.style.cursor = 'pointer';
+  hit.addEventListener('click', e => {  // con ratón abre el original; en pantalla táctil basta el globo y el botón de la tabla
+    if (ptype !== 'mouse') return;
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * (W / r.width);
+    let bi = 0, bd = 1e9; P.forEach((q, i) => { const d = Math.abs(q[0] - x); if (d < bd) { bd = d; bi = i; } });
+    if (pts[bi].row_id) openOriginal(pts[bi]);
+  });
 }
 
 /* ---------- Documentos: subir y revisar ---------- */
@@ -1702,6 +1853,7 @@ async function renderAssistant() {
     const f = document.getElementById('askf');
     f.onsubmit = e => { e.preventDefault(); const q = f.elements.q.value.trim(); if (q && !chat.busy) send(q); };
     f.elements.q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
+    if (S.askDraft) { f.elements.q.value = S.askDraft; S.askDraft = null; f.elements.q.setSelectionRange(f.elements.q.value.length, f.elements.q.value.length); }
     if (!chat.busy) f.elements.q.focus();
   };
   const send = async q => {
