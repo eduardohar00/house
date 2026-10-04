@@ -235,9 +235,11 @@ async function renderSummary() {
     ${sm.study_is_old ? `<div class="mixed">Tu estudio más reciente es de ${fd(sm.reference_date)}, hace ${Math.round(sm.study_age_days / 365 * 10) / 10} años. Estos resultados pueden no reflejar tu estado actual.</div>` : ''}`;
 
   // ---- lo más importante: 4 tarjetas
-  const measured = sm.attention.filter(a => !a.derived), derived = sm.attention.filter(a => a.derived);
+  // Solo lo fuera de rango y reciente (últimos 6 meses); lo más antiguo sigue en «Por sistema» y en el historial.
+  const imp = sm.attention.filter(a => a.important);
+  const measured = imp.filter(a => !a.derived), derived = imp.filter(a => a.derived);
   const ranked = [...measured, ...derived], top = ranked.slice(0, 4), rest = ranked.slice(4);
-  const KIND = { persistente: 'Persistente', continua: 'Continúa', nuevo: 'Nuevo', unico: '' };
+  const KIND = { persistente: 'Persistente', continua: 'Continúa', nuevo: '', unico: '' };
   const change = a => {
     const p = a.previous, l = a.last;
     if (!p || p.value_num == null || l.value_num == null || !a.trend || a.trend === 'estable') return '';
@@ -251,7 +253,7 @@ async function renderSummary() {
       <span class="pri-meta">${how} · rango ${esc(refText(l))}${l.ref_from ? ` (del estudio de ${yr({ collected_on: l.ref_from })})` : ''}</span>${change(a)}</button>`;
   };
   const line = (cls, label, k, sub) => `<button class="fr" data-k="${esc(k)}"><span class="tag ${cls}">${label}</span><span class="fm">${esc(name(k))} · ${valTxt(last(k))}</span><span class="fs">${sub}</span></button>`;
-  const importantes = nOut ? `<section class="sec"><div class="sec-h"><h3>Lo más importante</h3><span class="tip">Ordenado por qué tan lejos está del rango y cuánto se repite</span></div>
+  const importantes = imp.length ? `<section class="sec"><div class="sec-h"><h3>Lo más importante</h3><span class="tip">Fuera de rango en los últimos 6 meses, de lo más lejano a lo más cercano</span></div>
     <div class="pri-grid">${top.map(priCard).join('')}</div>
     ${rest.length ? `<button class="link" id="moreAtt">Ver los ${rest.length} restantes</button><div class="fl" id="restAtt" hidden>${rest.map(a => line('at', a.derived ? 'Calculado' : 'Atención', a.key, `${fd(last(a.key).collected_on)} · rango ${esc(refText(last(a.key)))}`)).join('')}</div>` : ''}</section>` : '';
 
@@ -284,7 +286,10 @@ async function renderSummary() {
   const sysHtml = alerts.map(sysRow).join('') + (quiet.length ? `<details class="sys quiet"><summary class="sys-head"><span class="sys-name">${quiet.length} ${quiet.length === 1 ? 'sistema' : 'sistemas'} sin alertas<small>${esc(quiet.map(q => q.gname).join(', '))}</small></span><span class="sys-n ok">todo en rango</span><span class="chev" aria-hidden="true">▾</span></summary>${quiet.map(sysRow).join('')}</details>` : '');
 
   const morePanel = `<section class="sec" id="morepanel" hidden></section>`;
-  view().innerHTML = `${hero}${importantes}
+  const searchBox = `<div class="msearch"><label class="msr-l" for="msq">Buscar un marcador</label>
+    <input id="msq" type="search" placeholder="Escribe un nombre: colesterol, ALT, TGO, glucosa…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="msr" aria-autocomplete="list">
+    <div class="msr" id="msr" role="listbox" hidden></div></div>`;
+  view().innerHTML = `${searchBox}${hero}${importantes}
     <section class="sec"><div class="sec-h"><h3>Por sistema</h3><span class="tip">Toca un sistema para ver sus análisis</span></div><div class="card syslist">${sysHtml}</div></section>
     ${morePanel}
     <p class="tip fine">Informativo; no sustituye una valoración médica. Los criterios de «atención» y «vigilar» son provisionales y están pendientes de revisión por un médico.</p>
@@ -314,6 +319,49 @@ async function renderSummary() {
   const bindOpen = root => root.querySelectorAll('[data-k]').forEach(el => el.onclick = () => openDetail(el.dataset.k, series));
   bindOpen(view());
   S.sumMore = null;
+
+  // ---- buscador de marcadores: por nombre, por como lo imprime el laboratorio y por sistema
+  const gname = Object.fromEntries(GROUPS);
+  const printed = {};
+  obs.forEach(o => { (printed[o.analyte_key] ||= new Set()).add(o.printed_name); });
+  const index = Object.keys(series).map(k => ({
+    k, nm: normMethod(name(k)),
+    hay: normMethod([name(k), ...(printed[k] || []), gname[S.catalog[k]?.group] || '', k.replace(/_/g, ' ')].join(' ')),
+  }));
+  const qi = document.getElementById('msq'), box = document.getElementById('msr');
+  let found = [], cur = -1;
+  const rowHtml = (m, i) => {
+    const l = last(m.k), val = l.value_num != null ? `${vnum(l)} ${esc(l.unit)}` : esc(qlabel(l));
+    return `<button class="msr-i" role="option" id="msr-${i}" aria-selected="${i === cur}" data-i="${i}"><span class="msr-n"><b>${esc(name(m.k))}</b><small>${esc(gname[S.catalog[m.k]?.group] || 'Otros')}</small></span>
+      <span class="msr-v">${val}<small>${fd(l.collected_on)}</small></span>${recent.has(m.k) ? pill(stOf(m.k)) : '<span class="pill na">Sin medición reciente</span>'}</button>`;
+  };
+  const pick = i => { const m = found[i]; if (!m) return; qi.value = ''; box.hidden = true; qi.setAttribute('aria-expanded', 'false'); openDetail(m.k, series); };
+  const paint = () => {
+    const q = normMethod(qi.value), toks = q.split(' ').filter(Boolean);
+    if (!toks.length) { box.hidden = true; qi.setAttribute('aria-expanded', 'false'); found = []; return; }
+    found = index.filter(m => toks.every(t => m.hay.includes(t)))
+      .map(m => ({ ...m, sc: m.nm.startsWith(toks[0]) ? 3 : m.nm.split(' ').some(w => w.startsWith(toks[0])) ? 2 : 1 }))
+      .sort((a, b) => b.sc - a.sc || a.nm.localeCompare(b.nm)).slice(0, 8);
+    cur = found.length ? 0 : -1;
+    box.innerHTML = found.length ? found.map(rowHtml).join('') : '<p class="msr-none">Ningún marcador coincide. Prueba con otra palabra.</p>';
+    box.hidden = false; qi.setAttribute('aria-expanded', 'true');
+    box.querySelectorAll('.msr-i').forEach(b => b.onclick = () => pick(Number(b.dataset.i)));
+  };
+  const mark = () => { box.querySelectorAll('.msr-i').forEach((b, i) => { b.setAttribute('aria-selected', String(i === cur)); if (i === cur) b.scrollIntoView({ block: 'nearest' }); }); };
+  qi.addEventListener('input', paint);
+  qi.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' && found.length) { e.preventDefault(); cur = (cur + 1) % found.length; mark(); }
+    else if (e.key === 'ArrowUp' && found.length) { e.preventDefault(); cur = (cur - 1 + found.length) % found.length; mark(); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(cur); }
+    else if (e.key === 'Escape') { qi.value = ''; paint(); }
+  });
+  // Los escuchas globales se reemplazan en cada pintado para no acumularse.
+  document.removeEventListener('click', S.msClick); document.removeEventListener('keydown', S.msKey);
+  S.msClick = e => { if (!e.target.closest?.('.msearch')) { box.hidden = true; qi.setAttribute('aria-expanded', 'false'); } };
+  S.msKey = e => {  // «/» enfoca el buscador, como en otros sitios
+    if (e.key === '/' && S.tab === 'res' && document.getElementById('msq') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) { e.preventDefault(); document.getElementById('msq').focus(); }
+  };
+  document.addEventListener('click', S.msClick); document.addEventListener('keydown', S.msKey);
 }
 
 function openDetail(k, series) {
@@ -360,7 +408,8 @@ function markerSvg(shape, x, y, r, fill, stroke) {
 }
 const shapeIcon = shape => `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">${markerSvg(shape, 7, 7, 4, 'var(--muted)', 'var(--surface)')}</svg>`;
 const hasRange = o => o.ref_low != null || o.ref_high != null;
-const zoneAt = (g, v) => g.zones.find(z => (z.low == null || v >= z.low) && (z.high == null || v < z.high));
+const TONE = { good: 'z0', warn: 'z1', crit: 'z2', info: 'z3' };
+const zoneAt = (g, v) => g.zones.find(z => (z.low == null || (z.low_excl ? v > z.low : v >= z.low)) && (z.high == null || (z.high_incl ? v <= z.high : v < z.high)));
 
 // Rango sin la unidad (la unidad ya va junto al valor).
 const rangeNoUnit = o => { const t = bandText(o); return o.unit && t.endsWith(' ' + o.unit) ? t.slice(0, -o.unit.length - 1) : t; };
@@ -388,10 +437,10 @@ function summaryCard(pts, gl) {
   const LABST = { ok: 'En el rango del laboratorio', high: 'Por encima del rango del laboratorio', low: 'Por debajo del rango del laboratorio', abnormal: 'Fuera de lo esperado por el laboratorio' };
   let chips = l.status ? pill(l.status) : '';
   if (z) {
-    const zi = gl.zones.indexOf(z), good = zi === 0, zc = good ? 'z0' : zi === gl.zones.length - 1 ? 'z2' : 'z1';
-    const zchip = `<span class="zchip ${zc}" title="Meta según guía clínica">Meta de guía: ${esc(z.name.toLowerCase())}</span>`;
-    const agree = (l.status === 'ok' && good) || (l.status === 'high' && !good);
-    chips = agree ? pill(l.status, good ? 'En el rango y dentro de la meta' : 'Por encima del rango y de la meta')
+    const good = z.tone === 'good', bad = z.tone === 'warn' || z.tone === 'crit';
+    const zchip = `<span class="zchip ${TONE[z.tone]}" title="Meta según guía clínica">Meta de guía: ${esc(z.name)}</span>`;
+    const agree = (l.status === 'ok' && good) || ((l.status === 'high' || l.status === 'low') && bad);
+    chips = agree ? pill(l.status, l.status === 'ok' ? 'En el rango y dentro de la meta' : `${STL[l.status]} del rango y de la meta`)
       : (l.status ? pill(l.status, LABST[l.status]) : '') + zchip;
   }
   let delta = '';
@@ -405,6 +454,18 @@ function summaryCard(pts, gl) {
     <div class="sc-main"><b>${vnum(l)}</b><small>${esc(l.unit)}</small>${chips}</div>
     <div class="sc-sub">${fd(l.collected_on)}${l.lab ? ' · ' + esc(l.lab) : ''}${l.row_id ? ` · <button class="link" data-orig="${l.document_id}:${l.row_id}">ver en el original</button>` : ''}</div>
     ${delta ? `<div class="sc-delta">${delta}</div>` : ''}
+  </div>`;
+}
+
+// Resumen del resultado más reciente de un marcador de texto («Negativo», «Ausentes»…).
+function summaryCardQual(pts) {
+  const l = pts[pts.length - 1], prev = pts.length > 1 ? pts[pts.length - 2] : null;
+  const change = !prev ? '' : qkey(qlabel(prev)) === qkey(qlabel(l)) ? `Igual que el anterior (${fd(prev.collected_on)})`
+    : `Cambió: antes «${esc(qlabel(prev))}» (${fd(prev.collected_on)})`;
+  return `<div class="sumcard">
+    <div class="sc-main"><b>${esc(qlabel(l))}</b>${l.unit ? `<small>${esc(l.unit)}</small>` : ''}${l.status ? pill(l.status) : ''}</div>
+    <div class="sc-sub">${fd(l.collected_on)}${l.lab ? ' · ' + esc(l.lab) : ''}${l.row_id ? ` · <button class="link" data-orig="${l.document_id}:${l.row_id}">ver en el original</button>` : ''}</div>
+    ${change ? `<div class="sc-delta">${change}</div>` : ''}
   </div>`;
 }
 
@@ -439,10 +500,10 @@ async function openOriginal(o) {
 
 // Pregunta ya escrita para el asistente (no se envía sola: la persona la revisa y decide).
 function askAbout(pts, gl) {
-  const l = pts[pts.length - 1];
-  const rango = hasRange(l) ? `; el rango del laboratorio es ${rangeNoUnit(l)} ${l.unit}` : '';
-  const meta = gl ? ` y la meta de la guía clínica es menos de ${fnum(gl.goal_high)} ${l.unit}` : '';
-  return `Sobre mi ${name(l.analyte_key).toLowerCase()}: mi último resultado es ${vnum(l)} ${l.unit} (${fd(l.collected_on)}${l.lab ? ', ' + l.lab : ''})${rango}${meta}. ¿Cómo ha evolucionado en mis estudios, qué puede explicarlo y qué cuidados o estudios conviene considerar?`;
+  const l = pts[pts.length - 1], num = l.value_num != null;
+  const rango = num && hasRange(l) ? `; el rango del laboratorio es ${rangeNoUnit(l)} ${l.unit}` : !num && l.ref_printed ? `; lo esperado según el informe es «${l.ref_printed}»` : '';
+  const meta = gl ? ` y la meta de la guía clínica es ${gl.short} ${l.unit}` : '';
+  return `Sobre mi ${name(l.analyte_key).toLowerCase()}: mi último resultado es ${num ? `${vnum(l)} ${l.unit}` : `«${qlabel(l)}»${l.unit ? ' ' + l.unit : ''}`} (${fd(l.collected_on)}${l.lab ? ', ' + l.lab : ''})${rango}${meta}. ¿Cómo ha evolucionado en mis estudios, qué puede explicarlo y qué cuidados o estudios conviene considerar?`;
 }
 
 // Aviso discreto de métodos distintos: una línea plegada; el detalle (qué método y cuántos resultados) solo si lo pides.
@@ -461,18 +522,17 @@ function methodNote(pts) {
 function guideBox(g, l) {
   if (!g) return '';
   const zs = g.zones, n = zs.length, v = l.value_num, hit = zoneAt(g, v), hi = zs.indexOf(hit);
-  const cls = i => 'z' + (i === 0 ? 0 : i === n - 1 ? 2 : 1);
-  const zt = z => z.low == null ? `menos de ${fnum(z.high)}` : z.high == null ? `${fnum(z.low)} o más` : `${fnum(z.low)} a ${fnum(z.high - 1)}`;
+  const cls = i => TONE[zs[i].tone];
   const clamp = x => Math.max(0.04, Math.min(0.96, x));
   const frac = z => z.low != null && z.high != null ? (v - z.low) / (z.high - z.low)
     : z.low == null ? (v - z.high * 0.6) / (z.high * 0.4) : (v - z.low) / (z.low * 0.25);
   const pos = hit ? ((hi + clamp(frac(hit))) / n) * 100 : 50;
   return `<section class="goal" aria-label="Meta según guía clínica">
     <div class="goal-h"><h3>Meta según guía clínica</h3>${hit ? `<span class="zchip ${cls(hi)}">${esc(hit.name)}</span>` : ''}</div>
-    <p class="goal-lead">Meta: <b>menos de ${fnum(g.goal_high)} ${esc(l.unit)}</b>. Tu último resultado: <b>${fnum(v)}</b>.</p>
+    <p class="goal-lead">Meta: <b>${esc(g.goal)}</b>. Tu último resultado: <b>${fnum(v)} ${esc(l.unit)}</b>.</p>
     <div class="zbar" role="img" aria-label="Zonas de la guía; tu resultado está en ${esc(hit ? hit.name : 'ninguna')}">
       ${hit ? `<div class="zmark" style="left:${pos}%"><span>${fnum(v)}</span></div>` : ''}
-      <div class="zrow">${zs.map((z, i) => `<div class="zseg ${cls(i)}"><b>${esc(z.name)}</b>${zt(z)}</div>`).join('')}</div>
+      <div class="zrow">${zs.map((z, i) => `<div class="zseg ${cls(i)}"><b>${esc(z.name)}</b>${esc(z.text)}</div>`).join('')}</div>
     </div>
     ${g.notes.length ? `<details class="gnote"><summary>Por qué es solo una referencia</summary>${g.notes.map(t => `<p>${esc(t)}</p>`).join('')}</details>` : ''}
     <p class="gfoot">Fuente: <a href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">${esc(g.source)}</a>. Orientación provisional: confírmala con tu médico. No cambia el estado ni el rango del laboratorio.</p>
@@ -497,7 +557,7 @@ function renderSummaryDetail(series) {
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Laboratorio</th><th>Método</th><th>Original</th></tr></thead><tbody>
       ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}${refNote(o)}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td><td>${o.row_id ? `<button class="mini" data-orig="${o.document_id}:${o.row_id}">Ver</button>` : '—'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...shapes].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}${shapes.size && unlabeled ? `<span>${shapeIcon('circle')}Laboratorio no identificado</span>` : ''}${pts.some(hasRange) ? '<span><i class="lg-band"></i>Rango de referencia de cada laboratorio (franja verde)</span>' : ''}${gl ? `<span><i class="lg-goal"></i>Meta de guía: menos de ${fnum(gl.goal_high)}</span>` : ''}</div>${pts.some(o => o.ref_note) ? '<p class="tip">Donde el estudio no traía rango, la franja marcada «General» es un rango provisional por sexo y edad, no del laboratorio.</p>' : ''}${methodNote(pts)}`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...shapes].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}${shapes.size && unlabeled ? `<span>${shapeIcon('circle')}Laboratorio no identificado</span>` : ''}${pts.some(hasRange) ? '<span><i class="lg-band"></i>Rango de referencia de cada laboratorio (franja verde)</span>' : ''}${gl ? `<span><i class="lg-goal"></i>Meta de guía: ${esc(gl.short)}</span>` : ''}</div>${pts.some(o => o.ref_note) ? '<p class="tip">Donde el estudio no traía rango, la franja marcada «General» es un rango provisional por sexo y edad, no del laboratorio.</p>' : ''}${methodNote(pts)}`;
   box.insertAdjacentHTML('beforeend', guideBox(gl, l) + aboutBox(S.sel) + '<div class="askrow"><button class="mini" id="askabout">Preguntar al asistente sobre este resultado</button><span class="tip">Escribe la pregunta por ti; tú decides si la envías.</span></div>');
   const byRow = new Map(pts.filter(o => o.row_id).map(o => [`${o.document_id}:${o.row_id}`, o]));
   box.querySelectorAll('[data-orig]').forEach(b => b.onclick = () => openOriginal(byRow.get(b.dataset.orig)));
@@ -520,14 +580,18 @@ function renderQualDetail(series) {
   box.innerHTML = `<div class="dh"><div><h2>${esc(name(S.sel))}</h2>
       <p>Resultado de texto · ${pts.length} ${pts.length === 1 ? 'resultado' : 'resultados'}, ${pts[0].collected_on.slice(0, 4)}${pts.length > 1 ? ' a ' + l.collected_on.slice(0, 4) : ''}</p></div>
       <div class="tabs"><button id="tg" aria-pressed="${S.view === 'g'}">Gráfica</button><button id="tt" aria-pressed="${S.view === 't'}">Tabla</button></div><button class="mini" id="dclose" aria-label="Cerrar el detalle">Cerrar ✕</button></div>
-    ${aboutBox(S.sel)}
+    ${summaryCardQual(pts)}
     <p class="lead" style="font-size:16px;margin:0">${esc(summary)}</p>
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
     ${pts.some(o => o.row_id) ? `<p class="charthint" ${S.view === 'g' ? '' : 'hidden'}>↗ Haz clic en un punto para abrir el estudio original. En pantalla táctil, tócalo y pulsa «Ver estudio original».</p>` : ''}
-    <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Lo esperado</th><th>Estudio</th><th>Laboratorio</th><th>Método</th></tr></thead><tbody>
-      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${esc(qlabel(o))}</b>${o.unit ? ' ' + esc(o.unit) : ''}</td><td>${pill(o.status)}</td><td>${esc(o.ref_printed || '—')}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${esc(o.method || '—')}</td></tr>`).join('')}
+    <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Lo esperado</th><th>Estudio</th><th>Laboratorio</th><th>Método</th><th>Original</th></tr></thead><tbody>
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${esc(qlabel(o))}</b>${o.unit ? ' ' + esc(o.unit) : ''}</td><td>${pill(o.status)}</td><td>${esc(o.ref_printed || '—')}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${esc(o.method || '—')}</td><td>${o.row_id ? `<button class="mini" data-orig="${o.document_id}:${o.row_id}">Ver</button>` : '—'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span><span><i class="lg-band"></i>Lo esperado según el informe${l.ref_printed ? ': ' + esc(l.ref_printed) : ''}</span></div>${methodNote(pts)}`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...labShapes(pts)].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}<span><i class="lg-band"></i>Lo esperado según el informe${l.ref_printed ? ': ' + esc(l.ref_printed) : ''}</span></div>${methodNote(pts)}`;
+  box.insertAdjacentHTML('beforeend', aboutBox(S.sel) + '<div class="askrow"><button class="mini" id="askabout">Preguntar al asistente sobre este resultado</button><span class="tip">Escribe la pregunta por ti; tú decides si la envías.</span></div>');
+  const byRow = new Map(pts.filter(o => o.row_id).map(o => [`${o.document_id}:${o.row_id}`, o]));
+  box.querySelectorAll('[data-orig]').forEach(b => b.onclick = () => openOriginal(byRow.get(b.dataset.orig)));
+  document.getElementById('askabout').onclick = () => { S.askDraft = askAbout(pts, null); closeDetail(); S.tab = 'ask'; renderShell(); };
   box.hidden = false;
   document.getElementById('dclose').onclick = closeDetail;
   document.getElementById('tg').onclick = () => { S.view = 'g'; renderSummaryDetail(series); };
@@ -548,7 +612,7 @@ function drawQualChart(pts) {
   });
   cats.forEach(c => { c.ok = c.st.includes('ok') && !c.st.some(OUT); });
   cats.sort((a, b) => Number(b.ok) - Number(a.ok));            // lo esperado abajo, dentro de la banda
-  const m = { l: W < 520 ? 96 : 132, r: 24, t: 14, b: 42 };
+  const m = { l: W < 520 ? 96 : 132, r: 24, t: 14, b: 56 }, shapes = labShapes(pts);
   const rh = 44, ih = Math.max(1, cats.length) * rh, H = m.t + ih + m.b, iw = W - m.l - m.r;
   const rowTop = i => m.t + ih - (i + 1) * rh, Yc = i => rowTop(i) + rh / 2;
   const X = i => m.l + iw * (i + 0.5) / pts.length;
@@ -566,13 +630,14 @@ function drawQualChart(pts) {
   pts.forEach((o, i) => {
     if (i % every && i !== pts.length - 1) return;
     const d = new Date(ts(o.collected_on)), yr = d.getUTCFullYear();
-    s += `<text class="ax" x="${X(i)}" y="${H - 24}" text-anchor="middle">${d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' })}</text>`;
+    s += `<text class="ax" x="${X(i)}" y="${H - 38}" text-anchor="middle">${d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' })}</text>`;
+    if (o.lab) s += `<text class="ax" x="${X(i)}" y="${H - 24}" text-anchor="middle" style="font-size:10.5px">${esc(labShort(o.lab))}</text>`;
     if (yr !== prevYear) s += `<text class="ax" x="${X(i)}" y="${H - 8}" text-anchor="middle" style="font-weight:600">${yr}</text>`;
     prevYear = yr;
   });
   const P = pts.map((o, i) => [X(i), Yc(catIdx(o))]);
   s += `<polyline points="${P.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-  P.forEach((q, i) => s += `<circle cx="${q[0]}" cy="${q[1]}" r="${i === P.length - 1 ? 6 : 5}" fill="${OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)'}" stroke="var(--surface)" stroke-width="2"/>`);
+  P.forEach((q, i) => s += markerSvg(shapes.get(pts[i].lab) || 'circle', q[0], q[1], i === P.length - 1 ? 6 : 5, OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)', 'var(--surface)'));
   s += `<line id="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>`;
   s += `<circle id="hring" r="9" fill="none" stroke="var(--accent)" stroke-width="2.5" style="display:none;pointer-events:none"/>`;
   s += `<rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip-box" id="tip" hidden></div>`;
@@ -626,7 +691,7 @@ function drawChart(pts, gl) {
   let t0 = ts(pts[0].collected_on), t1 = ts(l.collected_on);
   const padT = Math.max((t1 - t0) * 0.04, 60 * 864e5); t0 -= padT; t1 += padT;
   const shapes = labShapes(pts);
-  const lims = [...pts.flatMap(o => [o.ref_low, o.ref_high]).filter(v => v != null), ...(gl ? [gl.goal_high] : [])];
+  const lims = [...pts.flatMap(o => [o.ref_low, o.ref_high]).filter(v => v != null), ...(gl ? gl.marks.map(k => k.value) : [])];
   let mn = Math.min(...vals, ...lims), mx = Math.max(...vals, ...lims);
   const pad = (mx - mn) * 0.18 || Math.abs(mx) * 0.2 || 1; mn -= pad; mx += pad;
   const step = niceStep(mx - mn, 4);
@@ -673,11 +738,16 @@ function drawChart(pts, gl) {
       s += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${m.t + ih}" stroke="var(--line)" opacity=".7"/><text class="ax" x="${x}" y="${H - 16}" text-anchor="middle">${y}</text>`;
     }
   }
-  if (gl) {  // meta de guía: zona por encima de la meta en tono de aviso y línea punteada con su etiqueta
-    const gy = Y(gl.goal_high);
-    s += `<rect x="${m.l}" y="${m.t}" width="${iw}" height="${Math.max(0, gy - m.t)}" fill="var(--warn-bg)" opacity=".55"/>`;
-    s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${gy}" y2="${gy}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 4"/>`;
-    s += `<text x="${m.l + iw - 4}" y="${gy - 5}" text-anchor="end" fill="var(--warn)" style="font:600 11px var(--font)">Meta &lt; ${fnum(gl.goal_high)}</text>`;
+  if (gl) {  // meta de guía: franjas que no cumplen en tono de aviso y línea punteada donde cambia, con su etiqueta
+    gl.bands.forEach(bd => {
+      const y0 = bd.to == null ? m.t : Math.max(m.t, Y(bd.to)), y1 = bd.from == null ? m.t + ih : Math.min(m.t + ih, Y(bd.from));
+      if (y1 > y0) s += `<rect x="${m.l}" y="${y0}" width="${iw}" height="${y1 - y0}" fill="var(${bd.tone === 'crit' ? '--crit-bg' : '--warn-bg'})" opacity=".55"/>`;
+    });
+    gl.marks.forEach(k => {
+      const gy = Y(k.value); if (gy < m.t || gy > m.t + ih) return;
+      s += `<line x1="${m.l}" x2="${m.l + iw}" y1="${gy}" y2="${gy}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 4"/>`;
+      s += `<text x="${m.l + iw - 4}" y="${gy - 5}" text-anchor="end" fill="var(--warn)" style="font:600 11px var(--font)">Meta ${esc(k.label)}</text>`;
+    });
   }
   const P = pts.map((o, i) => [X(i), Y(o.value_num)]);
   s += `<polyline points="${P.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;

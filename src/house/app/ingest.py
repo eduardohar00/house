@@ -1306,6 +1306,12 @@ def repair_references(db: sqlite3.Connection) -> int:
     (p. ej. PCR: valor en mg/L con el rango "< 0.5" que era mg/dL). Devuelve cuántos cambió.
     """
     changed = 0
+    # El «*» tras un valor fuera de rango no es un límite del método («<», «>»): se quita.
+    cur = db.execute(
+        "UPDATE observation SET qualifier = NULL "
+        "WHERE qualifier IS NOT NULL AND qualifier NOT IN ('<', '<=', '>', '>=')"
+    )
+    changed += cur.rowcount
     rows = db.execute(
         "SELECT id, analyte_key, value_num, unit, unit_printed, ref_printed, ref_low, ref_high, status, "
         "qualifier FROM observation WHERE value_num IS NOT NULL"  # también los que no traían rango

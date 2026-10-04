@@ -24,6 +24,7 @@ from typing import Any
 from . import critical, ranges, reference_ranges
 
 RECENT_DAYS = 365
+IMPORTANT_DAYS = 180  # «lo más importante»: fuera de rango y medido en los últimos 6 meses
 STALE_STUDY_DAYS = 365
 OUT = {"low", "high", "abnormal"}
 PERSISTENT_STREAK = 3
@@ -295,8 +296,16 @@ def summarize(observations: list[Obs], today: date | None = None, profile: dict 
             )
             if last["value_num"] is None:
                 score = max(score, 0.05) + 0.1 * min(streak - 1, 4)
+            important = _date(last) >= reference - timedelta(days=IMPORTANT_DAYS)
             attention.append(
-                {**entry, "streak": streak, "kind": kind, "trend": trend, "score": round(score, 3)}
+                {
+                    **entry,
+                    "streak": streak,
+                    "kind": kind,
+                    "trend": trend,
+                    "score": round(score, 3),
+                    "important": important,
+                }
             )
         elif recent and last["status"] == "ok" and prev is not None and prev["status"] in OUT:
             improved.append(entry)

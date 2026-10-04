@@ -122,3 +122,19 @@ def test_repair_fixes_stored_text_statuses(tmp_path):
         "abnormal",
     ]
     assert ingest.repair_references(db) == 0  # idempotente
+
+
+def test_tiered_reference_uses_the_good_tier_not_the_first_interval():
+    from house.normalize import ranges
+
+    r = ranges.parse_ref_full("Recomendable Menor a 149; Limite Alto 150 - 199; Alto 200 - 499")
+    assert (r.low, r.high, r.high_strict) == (None, 149.0, True)
+    r = ranges.parse_ref_full("Recomendable >= 60; Riesgo Alto < 40; Riesgo intermedio 40 - 59")
+    assert (r.low, r.high) == (60.0, None)
+    r = ranges.parse_ref_full("Bajo Menor a 20; Moderado bajo 21 - 29; Ideal 30 - 100")
+    assert (r.low, r.high) == (30.0, 100.0)
+    r = ranges.parse_ref_full("Recomendable 130 - 199; Limite Alto 200 - 239; Alto Igual o Mayor a 240")
+    assert (r.low, r.high) == (130.0, 199.0)
+    r = ranges.parse_ref_full("Recomendable < 4; Riesgo Moderado 4 - 7; Riesgo Alto > 7")
+    assert (r.low, r.high, r.high_strict) == (None, 4.0, True)
+    assert ranges.parse_ref_full("70 - 99").high == 99.0  # sin niveles: igual que antes

@@ -317,3 +317,31 @@ def test_same_unit_spelled_differently_is_not_a_conversion():
     (row,) = process(raw, line)
     assert (row.key, row.value, row.unit) == ("tsh", 2.1, "mIU/L")
     assert not row.converted and not row.problems and row.status == "ok"
+
+
+def test_lab_asterisk_is_not_a_censoring_qualifier():
+    from house.extract import process
+    from house.schema import RawExtraction
+
+    raw = RawExtraction.model_validate(
+        {
+            "document_type": "laboratorio",
+            "collected_on": "2026-10-03",
+            "lab_name": None,
+            "rows": [
+                {
+                    "analyte_name": "Colesterol de Alta Densidad (HDL)",
+                    "value_text": "36",
+                    "qualifier": "*",
+                    "unit_text": "mg/dL",
+                    "ref_text": "Recomendable >= 60",
+                    "evidence": "Colesterol de Alta Densidad (HDL) 36 * Recomendable >= 60",
+                    "section": None,
+                    "method": None,
+                }
+            ],
+        }
+    )
+    out = process(raw, "Colesterol de Alta Densidad (HDL) 36 * Recomendable >= 60 mg/dL")
+    (row,) = out
+    assert row.qualifier is None and row.status == "low"

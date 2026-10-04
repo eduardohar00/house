@@ -135,6 +135,14 @@ def process(raw: RawExtraction, sent_text: str) -> list[Row]:
             r"^\s*(<=?|>=?)\s*(\d+(?:[.,]\d+)?)\s*$", value_text
         ):  # "< 0.02" tal cual lo copió la IA
             qualifier, value_text = m.group(1), m.group(2)
+        if qualifier not in (
+            None,
+            "<",
+            "<=",
+            ">",
+            ">=",
+        ):  # el «*» del laboratorio marca fuera de rango, no un límite
+            qualifier = None
         row.qualifier = qualifier
         if not _grounded(r.evidence, value_text, sent_text):
             row.problems.append(Provenance.NOT_GROUNDED)

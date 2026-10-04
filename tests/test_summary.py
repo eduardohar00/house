@@ -151,3 +151,13 @@ def test_critical_values_alert_only_for_the_latest_study_and_never_for_censored_
     assert old["critical"] == []  # el crítico es de hace 2 años: historial, no alarma
     now = summarize([obs("potassium", 7.0, "2026-03-01"), obs("sodium", 140, "2026-03-01")], date(2026, 3, 5))
     assert [c["key"] for c in now["critical"]] == ["potassium"] and now["critical"][0]["side"] == "high"
+
+
+def test_only_recent_out_of_range_is_marked_important():
+    data = [
+        obs("ldl", "2026-02-20", 150, "high", 0, 100),  # hace ~6 meses: reciente
+        obs("ferritin", "2025-06-01", 400, "high", 20, 300),  # vigente (menos de un año) pero no reciente
+    ]
+    s = summarize(data, TODAY)
+    flags = {a["key"]: a["important"] for a in s["attention"]}
+    assert flags == {"ldl": True, "ferritin": False}

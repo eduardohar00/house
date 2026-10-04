@@ -26,12 +26,26 @@ class Ref:
     high_strict: bool = False
 
 
+# Referencias por niveles («Recomendable < 100; Límite alto 130 - 159; Alto 160 - 189»): el rango del
+# resultado es el nivel bueno, no el primer intervalo que aparezca (que suele ser un nivel de riesgo).
+_GOOD_TIER = re.compile(r"^\s*(?:recomendable|ideal|deseable|normal|[oó]ptimo)\b\s*[:\-]?\s*", re.I)
+
+
+def _good_tier(text: str) -> str:
+    parts = [p for p in text.split(";") if p.strip()]
+    if len(parts) > 1:
+        for p in parts:
+            if m := _GOOD_TIER.match(p):
+                return p[m.end() :]
+    return text
+
+
 def parse_ref_full(text: str | None) -> Ref:
     """'70 - 99' -> 70 a 99 inclusive; '< 100' o 'menor a 100' -> hasta 100 sin incluirlo;
     '<= 100', '< = 100' o 'hasta 100' -> hasta 100 incluido; '> 40' -> más de 40; '40 o más' -> 40+."""
     if not text:
         return Ref()
-    t = text.strip().lower().replace("–", "-").replace("—", "-")
+    t = _good_tier(text).strip().lower().replace("–", "-").replace("—", "-")
     if m := re.search(_NUM + r"\s*(?:-|a|hasta)\s*" + _NUM, t):
         return Ref(_f(m[1]), _f(m[2]))
     if m := re.search(r"(?:≤|<\s*=|menor\s+o\s+igual\s+(?:a|que)|hasta)\s*" + _NUM, t):
