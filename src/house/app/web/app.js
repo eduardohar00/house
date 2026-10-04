@@ -196,9 +196,9 @@ async function renderSummary() {
     document.getElementById('go').onclick = () => { S.tab = 'doc'; renderShell(); };
     return;
   }
-  const series = {};
-  obs.forEach(o => (series[o.analyte_key] ||= []).push(o));
-  Object.values(series).forEach(v => v.sort((a, b) => a.collected_on.localeCompare(b.collected_on)));
+  const series = {}, seriesAll = {};  // `series`: lo que midió el laboratorio; `seriesAll` suma lo que House calcula
+  obs.forEach(o => { if (!o.calc) (series[o.analyte_key] ||= []).push(o); (seriesAll[o.analyte_key] ||= []).push(o); });
+  [...Object.values(series), ...Object.values(seriesAll)].forEach(v => v.sort((a, b) => a.collected_on.localeCompare(b.collected_on)));
   const last = k => series[k][series[k].length - 1];
   const recent = new Set(sm.recent_keys);
   const stOf = k => sm.last_status[k]?.status ?? last(k).status;
@@ -316,7 +316,7 @@ async function renderSummary() {
     panel.innerHTML = `<div class="sec-h"><h3>${d.title}</h3><span class="tip">${d.note}</span></div><div class="fl card" style="padding:6px 16px">${d.rows.join('')}</div>`;
     panel.hidden = false; bindOpen(panel); panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
-  const bindOpen = root => root.querySelectorAll('[data-k]').forEach(el => el.onclick = () => openDetail(el.dataset.k, series));
+  const bindOpen = root => root.querySelectorAll('[data-k]').forEach(el => el.onclick = () => openDetail(el.dataset.k, seriesAll));
   bindOpen(view());
   S.sumMore = null;
 
@@ -335,7 +335,7 @@ async function renderSummary() {
     return `<button class="msr-i" role="option" id="msr-${i}" aria-selected="${i === cur}" data-i="${i}"><span class="msr-n"><b>${esc(name(m.k))}</b><small>${esc(gname[S.catalog[m.k]?.group] || 'Otros')}</small></span>
       <span class="msr-v">${val}<small>${fd(l.collected_on)}</small></span>${recent.has(m.k) ? pill(stOf(m.k)) : '<span class="pill na">Sin medición reciente</span>'}</button>`;
   };
-  const pick = i => { const m = found[i]; if (!m) return; qi.value = ''; box.hidden = true; qi.setAttribute('aria-expanded', 'false'); openDetail(m.k, series); };
+  const pick = i => { const m = found[i]; if (!m) return; qi.value = ''; box.hidden = true; qi.setAttribute('aria-expanded', 'false'); openDetail(m.k, seriesAll); };
   const paint = () => {
     const q = normMethod(qi.value), toks = q.split(' ').filter(Boolean);
     if (!toks.length) { box.hidden = true; qi.setAttribute('aria-expanded', 'false'); found = []; return; }
@@ -418,13 +418,13 @@ function tipHtml(o, gl, valueHtml, unit, touch) {
   const z = gl && o.value_num != null ? zoneAt(gl, o.value_num) : null, rows = [];
   if (hasRange(o)) rows.push([o.ref_note ? 'Rango general' : o.lab ? `Rango ${labShort(o.lab)}` : 'Rango', rangeNoUnit(o)]);
   if (z) rows.push(['Meta de guía', z.name]);
-  if (o.entered_manually) rows.push(['Origen', 'Agregado a mano']); else if (o.method) rows.push(['Método', o.method]);
+  if (o.calc) rows.push(['Origen', 'Calculado por House']); else if (o.entered_manually) rows.push(['Origen', 'Agregado a mano']); else if (o.method) rows.push(['Método', o.method]);
   const dot = o.status ? (o.status === 'ok' ? 'var(--good)' : 'var(--warn)') : 'var(--muted)';
   return `<div class="th"><span>${fd(o.collected_on)}</span>${o.lab ? `<span class="tl">${esc(o.lab)}</span>` : ''}</div>
     <div class="tv"><b>${valueHtml}</b>${unit ? `<small>${esc(unit)}</small>` : ''}</div>
     <div class="ts"><i style="background:${dot}"></i>${o.status ? STL[o.status] : 'Sin referencia'}</div>
     ${rows.length ? `<dl class="tk">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
-    <div class="tf">${esc(o.document_title)}</div>
+    <div class="tf">${o.calc ? 'Calculado: ' + esc(o.calc_text) : esc(o.document_title)}</div>
     ${o.row_id ? (touch ? '<button class="ta" data-open>Ver estudio original ↗</button>' : '<div class="ta">Clic para abrir el estudio original ↗</div>') : ''}`;
 }
 
@@ -452,7 +452,8 @@ function summaryCard(pts, gl) {
   }
   return `<div class="sumcard">
     <div class="sc-main"><b>${vnum(l)}</b><small>${esc(l.unit)}</small>${chips}</div>
-    <div class="sc-sub">${fd(l.collected_on)}${l.lab ? ' · ' + esc(l.lab) : ''}${l.row_id ? ` · <button class="link" data-orig="${l.document_id}:${l.row_id}">ver en el original</button>` : ''}</div>
+    <div class="sc-sub">${fd(l.collected_on)}${l.lab ? ' · ' + esc(l.lab) : ''}${l.calc ? ` · <span title="${esc(l.calc_text)}">calculado por House</span>` : l.row_id ? ` · <button class="link" data-orig="${l.document_id}:${l.row_id}">ver en el original</button>` : ''}</div>
+    ${l.calc ? `<div class="sc-delta" style="color:var(--muted)">${esc(l.calc_text)}. El laboratorio no lo imprimió en este estudio.</div>` : ''}
     ${delta ? `<div class="sc-delta">${delta}</div>` : ''}
   </div>`;
 }
@@ -503,13 +504,13 @@ function askAbout(pts, gl) {
   const l = pts[pts.length - 1], num = l.value_num != null;
   const rango = num && hasRange(l) ? `; el rango del laboratorio es ${rangeNoUnit(l)} ${l.unit}` : !num && l.ref_printed ? `; lo esperado según el informe es «${l.ref_printed}»` : '';
   const meta = gl ? ` y la meta de la guía clínica es ${gl.short} ${l.unit}` : '';
-  return `Sobre mi ${name(l.analyte_key).toLowerCase()}: mi último resultado es ${num ? `${vnum(l)} ${l.unit}` : `«${qlabel(l)}»${l.unit ? ' ' + l.unit : ''}`} (${fd(l.collected_on)}${l.lab ? ', ' + l.lab : ''})${rango}${meta}. ¿Cómo ha evolucionado en mis estudios, qué puede explicarlo y qué cuidados o estudios conviene considerar?`;
+  return `Sobre mi ${name(l.analyte_key).toLowerCase()}: mi último resultado es ${num ? `${vnum(l)} ${l.unit}` : `«${qlabel(l)}»${l.unit ? ' ' + l.unit : ''}`} (${fd(l.collected_on)}${l.lab ? ', ' + l.lab : ''}${l.calc ? '; lo calculó House a partir de otros resultados del mismo estudio' : ''})${rango}${meta}. ¿Cómo ha evolucionado en mis estudios, qué puede explicarlo y qué cuidados o estudios conviene considerar?`;
 }
 
 // Aviso discreto de métodos distintos: una línea plegada; el detalle (qué método y cuántos resultados) solo si lo pides.
 function methodNote(pts) {
   const by = new Map();
-  pts.filter(o => o.method && !o.entered_manually).forEach(o => {
+  pts.filter(o => o.method && !o.entered_manually && !o.calc).forEach(o => {
     const k = normMethod(o.method), e = by.get(k) || { label: o.method, n: 0, labs: new Set() };
     e.n++; if (o.lab) e.labs.add(labShort(o.lab)); by.set(k, e);
   });
@@ -555,9 +556,9 @@ function renderSummaryDetail(series) {
     <div class="chartbox" id="chart" ${S.view === 'g' ? '' : 'hidden'}></div>
     ${pts.some(o => o.row_id) ? `<p class="charthint" ${S.view === 'g' ? '' : 'hidden'}>↗ Haz clic en un punto para abrir el estudio original. En pantalla táctil, tócalo y pulsa «Ver estudio original».</p>` : ''}
     <div class="tblwrap" ${S.view === 't' ? '' : 'hidden'}><table><thead><tr><th>Fecha</th><th>Resultado</th><th>Estado</th><th>Referencia</th><th>Estudio</th><th>Laboratorio</th><th>Método</th><th>Original</th></tr></thead><tbody>
-      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}${refNote(o)}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td><td>${o.row_id ? `<button class="mini" data-orig="${o.document_id}:${o.row_id}">Ver</button>` : '—'}</td></tr>`).join('')}
+      ${[...pts].reverse().map(o => `<tr><td>${fd(o.collected_on)}</td><td><b>${vnum(o)}</b> ${esc(o.unit)}</td><td>${pill(o.status)}</td><td>${esc(refText(o))}${refNote(o)}</td><td>${esc(o.document_title)}</td><td>${esc(o.lab || '—')}</td><td>${o.calc ? `Calculado por House<small style="display:block;color:var(--muted)">${esc(o.calc_text)}</small>` : o.entered_manually ? 'Agregado a mano' : esc(o.method || '—')}</td><td>${o.row_id ? `<button class="mini" data-orig="${o.document_id}:${o.row_id}">Ver</button>` : '—'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...shapes].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}${shapes.size && unlabeled ? `<span>${shapeIcon('circle')}Laboratorio no identificado</span>` : ''}${pts.some(hasRange) ? '<span><i class="lg-band"></i>Rango de referencia de cada laboratorio (franja verde)</span>' : ''}${gl ? `<span><i class="lg-goal"></i>Meta de guía: ${esc(gl.short)}</span>` : ''}</div>${pts.some(o => o.ref_note) ? '<p class="tip">Donde el estudio no traía rango, la franja marcada «General» es un rango provisional por sexo y edad, no del laboratorio.</p>' : ''}${methodNote(pts)}`;
+    <div class="legend"><span><i class="lg-line"></i>Tus resultados</span>${[...shapes].map(([lab, sh]) => `<span>${shapeIcon(sh)}${esc(lab)} <small>(${pts.filter(o => o.lab === lab).length})</small></span>`).join('')}${shapes.size && unlabeled ? `<span>${shapeIcon('circle')}Laboratorio no identificado</span>` : ''}${pts.some(hasRange) ? '<span><i class="lg-band"></i>Rango de referencia de cada laboratorio (franja verde)</span>' : ''}${pts.some(o => o.calc) ? '<span><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="4" fill="none" stroke="var(--muted)" stroke-width="2"/></svg>Calculado por House (punto hueco)</span>' : ''}${gl ? `<span><i class="lg-goal"></i>Meta de guía: ${esc(gl.short)}</span>` : ''}</div>${pts.some(o => o.ref_note) ? '<p class="tip">Donde el estudio no traía rango, la franja marcada «General» es un rango provisional por sexo y edad, no del laboratorio.</p>' : ''}${methodNote(pts)}`;
   box.insertAdjacentHTML('beforeend', guideBox(gl, l) + aboutBox(S.sel) + '<div class="askrow"><button class="mini" id="askabout">Preguntar al asistente sobre este resultado</button><span class="tip">Escribe la pregunta por ti; tú decides si la envías.</span></div>');
   const byRow = new Map(pts.filter(o => o.row_id).map(o => [`${o.document_id}:${o.row_id}`, o]));
   box.querySelectorAll('[data-orig]').forEach(b => b.onclick = () => openOriginal(byRow.get(b.dataset.orig)));
@@ -751,7 +752,10 @@ function drawChart(pts, gl) {
   }
   const P = pts.map((o, i) => [X(i), Y(o.value_num)]);
   s += `<polyline points="${P.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-  P.forEach((q, i) => s += markerSvg(shapes.get(pts[i].lab) || 'circle', q[0], q[1], i === P.length - 1 ? 5 : 4, OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)', 'var(--surface)'));
+  P.forEach((q, i) => {
+    const col = OUT(pts[i].status) ? 'var(--warn)' : 'var(--accent)', r = i === P.length - 1 ? 5 : 4, sh = shapes.get(pts[i].lab) || 'circle';
+    s += pts[i].calc ? markerSvg(sh, q[0], q[1], r, 'var(--surface)', col) : markerSvg(sh, q[0], q[1], r, col, 'var(--surface)');  // hueco = calculado
+  });
   const lp = P[P.length - 1];
   s += `<text x="${lp[0] + 10}" y="${lp[1] + 4}" fill="var(--ink)" style="font:600 13px var(--font)">${fnum(l.value_num)}</text>`;
   s += `<line id="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>`;

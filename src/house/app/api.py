@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from ..config import Config, ProviderConfig
-from ..normalize import explanations, guidelines, terminology
+from ..normalize import derived, explanations, guidelines, terminology
 from ..normalize import summary as summary_mod
 from ..providers import ProviderError, Router
 from ..providers.registry import BudgetExceeded, UsageLedger
@@ -470,10 +470,13 @@ def create_app(
         """
         person = subject(person_id, actor, "ver_resultados")
         profile = profile_of(person)
-        obs = summary_mod.apply_references(load_observations(person_id), profile)
+        real = load_observations(person_id)
+        # Lo que el estudio no trae pero se puede calcular (se marca «Calculado» y no cuenta para el resumen).
+        everything = summary_mod.apply_references(real + derived.calculate(real, profile), profile)
+        measured = [o for o in everything if not o.get("calc")]
         return {
-            "observations": obs,
-            "summary": summary_mod.summarize(obs, profile=profile),
+            "observations": measured + [o for o in everything if o.get("calc")],
+            "summary": summary_mod.summarize(measured, profile=profile),
             "guidelines": guidelines.for_person(profile),
         }
 

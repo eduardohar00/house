@@ -755,13 +755,13 @@ _MORE_ALIASES = {
         "25 hidroxi vitamina d",
         "vitamina d 25 hidroxi total",
     ),
-    "tibc": (
-        "capacidad total de fijacion del hierro",
-        "capacidad de fijacion de transferrina",
-    ),
+    "tibc": ("capacidad total de fijacion del hierro",),
     "uibc": (
         "capacidad no saturada de fijacion de hierro",
         "capacidad no saturada de fijacion de",
+        # Lapi: 166 de hierro + 148 de «capacidad de fijación» da el 53 % de saturación que imprime, así que
+        # esa capacidad es la libre (UIBC), no la total.
+        "capacidad de fijacion de transferrina",
     ),
     "iron_sat": (
         "indice de saturacion de transferrina",
